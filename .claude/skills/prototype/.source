@@ -1,0 +1,6 @@
+origin = mattpocock/skills
+path = skills/engineering/prototype
+ref = 6654f6b60cd9d5be8b54c6fafe44346dabeb3b76
+license = MIT
+default = false
+installed_from = d3fc74689bd993e39c44bfae510d014eecffbeec2922764b065377fd1327c0f6

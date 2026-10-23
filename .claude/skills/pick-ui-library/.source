@@ -1,0 +1,6 @@
+origin = emilkowalski/skills
+path = skills/pick-ui-library
+ref = d23d7f88a2e21c9e4b1418c7abe420f5c1052ba7
+license = MIT
+default = false
+installed_from = f8d4d2cf4677bf54b14f35f62a741add93541bfcb67863315a40164365161b49

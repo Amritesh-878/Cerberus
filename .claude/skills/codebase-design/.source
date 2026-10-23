@@ -1,0 +1,6 @@
+origin = mattpocock/skills
+path = skills/engineering/codebase-design
+ref = 6654f6b60cd9d5be8b54c6fafe44346dabeb3b76
+license = MIT
+default = false
+installed_from = 5a17552cc1482f1a40124bf4e6c9dbd90ac0dbb47e71c07d47369f9e5f2ae3b5

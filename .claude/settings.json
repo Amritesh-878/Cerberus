@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git status)",
+      "Bash(git status --short)",
+      "Bash(git diff)",
+      "Bash(git diff --staged)",
+      "Bash(git diff --stat)",
+      "Bash(git log --oneline -20)",
+      "Bash(git branch)",
+      "Bash(git branch --show-current)",
+      "Bash(git remote -v)",
+      "Bash(git rev-parse --abbrev-ref HEAD)",
+      "Bash(git worktree list)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

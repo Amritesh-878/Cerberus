@@ -1,0 +1,35 @@
+# Secrets
+.env
+
+# Local app data and benchmark captures
+*.db
+*.db-journal
+bench/raw/
+
+# CLAUDE.md is tracked: it is a one-line `@AGENTS.md` import, not a symlink, so a fresh
+# clone loads the standards with no setup step. Do not add it here.
+
+# .claude/ holds tracked commands, skills, agents, and project settings plus a
+# machine-local overrides file. Ignore only the local one; the rest is version controlled.
+.claude/settings.local.json
+
+# Never commit editor-local state. Planning files live in plans/, not here.
+.vscode/*
+!.vscode/extensions.json
+
+# This repo's own Python artifacts; the commented block below is the stack guidance to replace, not this.
+__pycache__/
+*.py[cod]
+.mypy_cache/
+.ruff_cache/
+
+# Rust and Tauri (Cargo.lock is tracked: this is an app)
+/target/
+src-tauri/target/
+src-tauri/gen/
+
+# Node
+node_modules/
+dist/
+*.tsbuildinfo
+coverage/

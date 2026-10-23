@@ -1,0 +1,4 @@
+origin = first-party
+license = MIT
+default = true
+installed_from = 3e3e98a58d0946bf5d42cb2bb24520ee9c5cc41045536bc4aedcf5ff9efbe60a

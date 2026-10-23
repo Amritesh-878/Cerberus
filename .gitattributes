@@ -1,0 +1,20 @@
+# Normalize line endings so the same file does not churn between machines.
+# Stored LF in git; checked out LF everywhere. Without this, Windows checkouts
+# rewrite every file to CRLF and each cross-platform edit shows as a full-file diff.
+* text=auto eol=lf
+
+# Windows-only scripts must keep CRLF or some shells refuse to run them.
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary, never touch.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.docx binary
+*.xlsx binary

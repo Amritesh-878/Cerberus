@@ -1,0 +1,7 @@
+origin = emilkowalski/skills
+path = skills/prototype
+ref = d23d7f88a2e21c9e4b1418c7abe420f5c1052ba7
+license = MIT
+default = true
+# Renamed from prototype: Matt's prototype answers a different question.
+installed_from = b7225a12def0da2997353f58320dcb70c1df1f150e525885d0f725df277bcbc6

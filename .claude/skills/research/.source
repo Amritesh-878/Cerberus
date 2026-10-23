@@ -1,0 +1,6 @@
+origin = mattpocock/skills
+path = skills/engineering/research
+ref = 6654f6b60cd9d5be8b54c6fafe44346dabeb3b76
+license = MIT
+default = false
+installed_from = c8c1cba327a6f824b554cd978079a3dadd7406d73174f8fb9bfef58824691970

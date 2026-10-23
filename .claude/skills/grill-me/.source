@@ -1,0 +1,7 @@
+origin = mattpocock/skills
+path = skills/productivity/grilling
+ref = 6654f6b60cd9d5be8b54c6fafe44346dabeb3b76
+license = MIT
+default = true
+# Upstream body under this repo's name: its grill-me is a shim pointing at grilling.
+installed_from = 96dba6d116bfbbfd3a18c75a5870a746747d7a0c5adf5b56175ad30386a1fcc8

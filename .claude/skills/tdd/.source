@@ -1,0 +1,6 @@
+origin = mattpocock/skills
+path = skills/engineering/tdd
+ref = 6654f6b60cd9d5be8b54c6fafe44346dabeb3b76
+license = MIT
+default = false
+installed_from = e753a5da75292bbe59d302d89566bc2c53d0e73944da2f0e944a7578883c07d0

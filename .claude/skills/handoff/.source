@@ -1,0 +1,6 @@
+origin = mattpocock/skills
+path = skills/productivity/handoff
+ref = 6654f6b60cd9d5be8b54c6fafe44346dabeb3b76
+license = MIT
+default = false
+installed_from = 20e5f4afdef502637510bc5c64d27645d3c85c88df9cb006824bbb0980166319
