@@ -1,0 +1,27 @@
+[package]
+name = "cerberus"
+version = "0.1.0"
+description = "A fast Windows terminal built around Claude Code"
+license = "MIT"
+edition = "2024"
+
+[lib]
+# Distinct from the bin name: on Windows a shared name collides (rust-lang/cargo#8519).
+name = "cerberus_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+
+[dev-dependencies]
+serde_json = "1"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true

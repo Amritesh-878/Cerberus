@@ -17,7 +17,8 @@ here. When you follow an override, say so.
 4. **Build in small steps** that each leave the code working. Write or extend the test with the
    change, before it when fixing a bug.
 5. **Gate:** lint with autofix, typecheck, tests, in that order, through the `verify-quality`
-   skill (`.claude/skills/verify-quality/`). Until TASK-002 configures it, it halts by design.
+   skill (`.claude/skills/verify-quality/`), which runs the Rust and TypeScript commands of
+   section 10.
 6. **Self-review the diff** against section 9 before anyone else sees it.
 7. **Commit** atomically (section 7), then open a PR (section 8).
 8. **Done** means the gate is green on the final commit and docs and `project_state.md` are
@@ -122,17 +123,18 @@ review.
 
 The repo is public, so every PR is too.
 
-- **Title** in commit format. **Body:**
+- **Title** in commit format. **Body**, short:
 
   ```
-  ## What
-  ## Why
-  ## How it was tested   (gate output pasted verbatim)
-  ## Risk and rollback
+  ## What     five bullets or fewer
+  ## Why      one or two lines
+  ## Tested   one line, e.g. "Gate green locally: lint, typecheck, 2 tests. CI: gate."
+  ## Risk     one line
   ```
 
-  The body stands on its own: no plan content, private paths, account details or links to the
-  private plans repo. Add screenshots for UI changes.
+  Add a screenshot under Tested for UI changes. Gate output never goes in the PR: it goes
+  verbatim in the private handoff, and the CI check is the public proof. The body stands on its
+  own: no plan content, private paths, account details or links to the private plans repo.
 - Small and single-purpose; draft while incomplete.
 - Self-review before asking for review. Never merge on a red gate, and never treat a green or
   missing CI run as a substitute for running the gate.
@@ -169,6 +171,25 @@ Apply every item to the diff:
 - Named function declarations for exported functions; arrows for callbacks.
 - No `any` in production code; `?.`, `??` and type guards over casts.
 - Clean up every subscription, listener and timer, including xterm.js and Tauri event listeners.
-- The webview framework is not chosen yet; its rules land here with DEC-001. Keep the bundle
-  small, since startup time and memory are what this app competes on.
-- Gate: the repo's `lint:fix` (ESLint and Prettier), then `tsc --noEmit`, then tests.
+- Keep the bundle small, since startup time and memory are what this app competes on.
+- Gate: `npm run lint:fix` (ESLint and Prettier), then `npm run typecheck` (`tsc --noEmit` on both projects), then
+  `npm test` (Vitest).
+
+### Solid
+
+The webview uses Solid (DEC-001). Models trained mostly on React write React habits into Solid,
+and several of them compile, render once and then silently stop updating.
+
+- **Never destructure props**, in the parameter list or after it: `const { x } = props` reads the
+  value once and drops the subscription. Read `props.x` where it is used; use `splitProps` or
+  `mergeProps` to split or default them.
+- **`<For>` and `<Show>`, not `.map()` and `&&`.** `.map()` recreates every row's DOM on each
+  change; `<For>` keeps rows keyed. Use `<Index>` when position matters more than identity, and
+  `<Switch>`/`<Match>` for several branches.
+- **Signals for state, `createStore` for nested state.** `createSignal` holds a value; nested
+  objects and arrays go in a store so one field changing updates only what reads it. Derive with
+  plain functions or `createMemo`, never by copying into another signal in an effect.
+- Components run once, so no hooks rules apply; code that must re-run goes in JSX, `createMemo`
+  or `createEffect`, and cleanup in `onCleanup`.
+- ESLint enforces the first three with `eslint-plugin-solid` (`no-destructure`, `reactivity`,
+  `prefer-for`, `prefer-show`) as errors.

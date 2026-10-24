@@ -1,0 +1,14 @@
+:root {
+  color-scheme: dark;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  color: #e6e6e6;
+  background-color: #1a1a1a;
+}
+
+body {
+  margin: 0;
+}
+
+.app {
+  padding: 24px;
+}
