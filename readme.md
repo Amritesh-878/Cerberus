@@ -48,7 +48,9 @@ cd src-tauri && cargo fmt && cargo clippy --all-targets -- -D warnings && cargo 
 | `coding_standards.md` | How code, commits and PRs are written and reviewed |
 | `.claude/` | The skills, agents and settings Claude Code loads in this repo |
 
-The agent workflow comes from the `prompts` template, kept as the `template` remote.
+The agent workflow comes from the `prompts` template, kept as the `template` remote. Planning docs
+(task files, decisions such as `DEC-###`, project state) are kept privately and are not part of
+this repo.
 
 ## License
 

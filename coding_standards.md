@@ -177,7 +177,7 @@ Apply every item to the diff:
 
 ### Solid
 
-The webview uses Solid. Models trained mostly on React write React habits into Solid,
+The webview uses Solid (DEC-001). Models trained mostly on React write React habits into Solid,
 and several of them compile, render once and then silently stop updating.
 
 - **Never destructure props**, in the parameter list or after it: `const { x } = props` reads the

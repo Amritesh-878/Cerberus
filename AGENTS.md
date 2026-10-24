@@ -16,7 +16,9 @@ CodeMirror in the webview, a Claude Code mod in TypeScript.
 - **Planning lives in the sibling repo `../Plans/`**, never in this one. Agent files and
   `coding_standards.md` say "plans/" and "templates/"; read them as `../Plans/` and
   `../Plans/templates/`. The repo checks live in `../Plans/tools/`. Start sessions here with
-  `claude --add-dir ../Plans`.
+  `claude --add-dir ../Plans`. `../Plans` is a private planning repo and is not published:
+  `DEC-###` (decisions), `TASK-###` (tasks) and `project_state.md` all live there. If `../Plans`
+  is absent, work from this repo alone and treat those references as background.
 - **Markdown file names are lowercase** in both repos, IDs included: TASK-002 is `tasks/task-002.md`
   and its handoff `completed/task-002.md`. Only `AGENTS.md`, `CLAUDE.md` and `SKILL.md` stay upper
   case, because tools load them by exact name.
