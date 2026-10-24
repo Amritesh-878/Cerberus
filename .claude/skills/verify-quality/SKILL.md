@@ -5,59 +5,40 @@ description: Run the project's lint, typecheck, and test pipeline in that mandat
 
 Run the quality pipeline in order. Never run tests before lint and typecheck pass clean.
 
-## Step 0 — confirm this skill is configured (do this first, every time)
-
-**This file ships as a template with placeholder commands.** Before running anything,
-check that the commands in "The pipeline" below match this project: the paths exist and
-the tools appear in the manifest (`package.json`, `pyproject.toml`, `Makefile`, …).
-
-If they do not match, **stop and report this, do not guess a substitute**:
-
-> verify-quality is not configured for this project. The commands in
-> `.claude/skills/verify-quality/SKILL.md` are template defaults and do not match this
-> repo. See SETUP.md step 3.
-
-Then offer to fill it in from the real manifest. A quality gate that silently runs the
-wrong commands, or nothing at all, reports a pass it never earned, which is worse than
-having no gate. Do not proceed to Step 1 until the commands are real.
-
-Delete this Step 0 section once the pipeline below is filled in for the project.
-
 ## The pipeline
 
-<!-- SETUP AGENT: replace everything below with this project's real commands, in this
-     order. Read the manifest for actual script names; do not invent them. Delete the
-     language blocks that do not apply. -->
+Run both halves; a change to either side can break the other (Tauri commands, shared config).
 
-### Python
+### TypeScript (repo root)
 
-```sh
-ruff check --fix .   # auto-fix lint, then confirm 0 errors remain
-mypy .               # typecheck, must be 0 errors
-pytest               # tests, must be 100% passing
-```
-
-Run `ruff check --fix .` first and confirm 0 errors remain before moving to `mypy`.
-
-### JavaScript / TypeScript
+Install from the lockfile first if `node_modules/` is missing or stale: `npm ci`, never
+`npm install`, which on Windows rewrites `package-lock.json`.
 
 ```sh
-npm run lint:fix     # ESLint + Prettier, not `npm run lint`
-npm run typecheck
-npm test
+npm run lint:fix     # ESLint --fix, then Prettier --write
+npm run typecheck    # tsc --noEmit
+npm test             # vitest run
 ```
 
-Use `lint:fix` rather than `lint` so autofixable problems are corrected, not just
-reported.
+### Rust (`src-tauri/`)
+
+```sh
+cargo fmt
+cargo clippy --all-targets -- -D warnings
+cargo test
+```
+
+Run each half in its order: lint, then typecheck (`clippy` is both for Rust), then tests. Confirm
+0 errors and 0 warnings before the next step.
 
 ## Acceptable results
 
 - Lint and typecheck: 0 errors, 0 warnings.
 - Tests: 100% passing.
 
-**Name the interpreter or toolchain when reporting these.** A tool resolved from `PATH` rather than
-the project's own environment reports a clean repo as broken, and the report reads identical either
-way.
+**Name the toolchain when reporting these:** Node and npm versions, and `cargo -V`. A tool
+resolved from `PATH` rather than the project's own `node_modules/.bin` or the pinned toolchain
+reports a clean repo as broken, and the report reads identical either way.
 
 If a check fails, fix the underlying cause. Do not comment out code, skip or delete
 tests, or disable rules project-wide to make a check pass. If a rule genuinely must be
