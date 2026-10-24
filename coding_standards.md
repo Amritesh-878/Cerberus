@@ -123,17 +123,18 @@ review.
 
 The repo is public, so every PR is too.
 
-- **Title** in commit format. **Body:**
+- **Title** in commit format. **Body**, short:
 
   ```
-  ## What
-  ## Why
-  ## How it was tested   (gate output pasted verbatim)
-  ## Risk and rollback
+  ## What     five bullets or fewer
+  ## Why      one or two lines
+  ## Tested   one line, e.g. "Gate green locally: lint, typecheck, 2 tests. CI: gate."
+  ## Risk     one line
   ```
 
-  The body stands on its own: no plan content, private paths, account details or links to the
-  private plans repo. Add screenshots for UI changes.
+  Add a screenshot under Tested for UI changes. Gate output never goes in the PR: it goes
+  verbatim in the private handoff, and the CI check is the public proof. The body stands on its
+  own: no plan content, private paths, account details or links to the private plans repo.
 - Small and single-purpose; draft while incomplete.
 - Self-review before asking for review. Never merge on a red gate, and never treat a green or
   missing CI run as a substitute for running the gate.
@@ -171,12 +172,12 @@ Apply every item to the diff:
 - No `any` in production code; `?.`, `??` and type guards over casts.
 - Clean up every subscription, listener and timer, including xterm.js and Tauri event listeners.
 - Keep the bundle small, since startup time and memory are what this app competes on.
-- Gate: `npm run lint:fix` (ESLint and Prettier), then `npm run typecheck` (`tsc --noEmit`), then
+- Gate: `npm run lint:fix` (ESLint and Prettier), then `npm run typecheck` (`tsc --noEmit` on both projects), then
   `npm test` (Vitest).
 
 ### Solid
 
-The webview uses Solid (DEC-001). Models trained mostly on React write React habits into Solid,
+The webview uses Solid. Models trained mostly on React write React habits into Solid,
 and several of them compile, render once and then silently stop updating.
 
 - **Never destructure props**, in the parameter list or after it: `const { x } = props` reads the

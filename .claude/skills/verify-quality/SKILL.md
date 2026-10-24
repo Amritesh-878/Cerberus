@@ -16,7 +16,7 @@ Install from the lockfile first if `node_modules/` is missing or stale: `npm ci`
 
 ```sh
 npm run lint:fix     # ESLint --fix, then Prettier --write
-npm run typecheck    # tsc --noEmit
+npm run typecheck    # tsc --noEmit for src/ and for vite.config.ts
 npm test             # vitest run
 ```
 

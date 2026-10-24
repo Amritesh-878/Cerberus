@@ -13,7 +13,10 @@ export default defineConfig(
     languageOptions: {
       globals: { ...globals.browser },
       parserOptions: {
-        projectService: true,
+        projectService: {
+          allowDefaultProject: ["vite.config.ts"],
+          defaultProject: "tsconfig.node.json",
+        },
         tsconfigRootDir: import.meta.dirname,
       },
     },
@@ -24,10 +27,8 @@ export default defineConfig(
     ...solid,
     rules: {
       ...solid.rules,
-      // React habits that break Solid's reactivity or skip its keyed rendering.
-      "solid/no-destructure": "error",
+      // The plugin defaults leave reactivity at warn and prefer-show off; raise both to errors.
       "solid/reactivity": "error",
-      "solid/prefer-for": "error",
       "solid/prefer-show": "error",
     },
   },
