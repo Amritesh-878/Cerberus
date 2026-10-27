@@ -3,7 +3,7 @@ import { afterEach, expect, test } from "vitest";
 
 import { PtySession } from "./pty";
 
-const SPEC = { program: "cmd.exe", args: [], cwd: null };
+const SPEC = { program: "cmd.exe", args: [], cwd: null, account: 2 };
 const SIZE = { cols: 80, rows: 24 };
 const HANDLERS = { output: () => undefined, exit: () => undefined };
 
@@ -67,12 +67,16 @@ test("input typed before the program starts reaches it afterwards, in order", as
   ]);
 });
 
-test("spawn sends the program, its size and an event channel", async () => {
+test("spawn sends the program, its size and its account apart", async () => {
   const core = mockCore();
   new PtySession(SPEC, SIZE, HANDLERS);
   await settled();
 
-  expect(core.calls[0]?.args).toMatchObject({ request: { ...SPEC, ...SIZE } });
+  expect(core.calls[0]?.args).toMatchObject({
+    request: { program: "cmd.exe", args: [], cwd: null, ...SIZE },
+    account: 2,
+  });
+  expect(core.calls[0]?.args).not.toHaveProperty("request.account");
 });
 
 test("a tab closed while starting still kills its program", async () => {

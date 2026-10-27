@@ -34,6 +34,7 @@ function copySelection(term: Terminal): void {
 export function TerminalView(props: {
   spec: SpawnSpec;
   pastesImages: boolean;
+  input: string | null;
 }) {
   let host: HTMLDivElement | undefined;
 
@@ -55,6 +56,7 @@ export function TerminalView(props: {
     fit.fit();
     term.attachCustomKeyEventHandler(terminalHandlesKey);
 
+    let input = props.input;
     const session = new PtySession(
       props.spec,
       { cols: term.cols, rows: term.rows },
@@ -63,6 +65,9 @@ export function TerminalView(props: {
           if (disposed) return;
           term.write(bytes, () => {
             session.drawn(bytes.length);
+            // After the first draw, so it follows xterm's answer to ConPTY's cursor query.
+            if (input) session.write(input);
+            input = null;
           });
         },
         exit: (code) => {

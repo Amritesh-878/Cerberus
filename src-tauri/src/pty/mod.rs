@@ -4,7 +4,7 @@ mod flow;
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::io::{self, ErrorKind, Read, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::mpsc::{self, SyncSender};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -61,6 +61,9 @@ pub struct SpawnRequest {
     pub cwd: Option<String>,
     pub cols: u16,
     pub rows: u16,
+    /// Set by the core from the tab's account, never by the webview.
+    #[serde(skip)]
+    pub claude_config_dir: Option<PathBuf>,
 }
 
 struct Session {
@@ -232,6 +235,11 @@ fn command_for(request: &SpawnRequest) -> Result<CommandBuilder, PtyError> {
     }
     command.env("TERM", "xterm-256color");
     command.env("COLORTERM", "truecolor");
+    match &request.claude_config_dir {
+        Some(dir) => command.env("CLAUDE_CONFIG_DIR", dir),
+        // An inherited value would move a default-account tab onto another account.
+        None => command.env_remove("CLAUDE_CONFIG_DIR"),
+    }
     Ok(command)
 }
 
@@ -285,6 +293,7 @@ mod tests {
             cwd: None,
             cols: 80,
             rows: 24,
+            claude_config_dir: None,
         };
         let id = manager
             .spawn(
@@ -436,6 +445,7 @@ mod tests {
             cwd: None,
             cols: 80,
             rows: 24,
+            claude_config_dir: None,
         };
 
         let result = manager.spawn(&request, |_| {}, |_| {});
@@ -452,10 +462,38 @@ mod tests {
             cwd: Some(r"C:\no\such\folder\cerberus".to_owned()),
             cols: 80,
             rows: 24,
+            claude_config_dir: None,
         };
 
         let result = manager.spawn(&request, |_| {}, |_| {});
 
         assert!(matches!(result, Err(PtyError::NoSuchDir(_))));
+    }
+
+    fn shell_under(claude_config_dir: Option<&str>) -> CommandBuilder {
+        command_for(&SpawnRequest {
+            program: "cmd".to_owned(),
+            args: Vec::new(),
+            cwd: None,
+            cols: 80,
+            rows: 24,
+            claude_config_dir: claude_config_dir.map(PathBuf::from),
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn a_tab_under_a_named_account_gets_its_config_dir() {
+        let command = shell_under(Some(r"C:\Users\u\.claude-acc2"));
+
+        assert_eq!(
+            command.get_env("CLAUDE_CONFIG_DIR"),
+            Some(std::ffi::OsStr::new(r"C:\Users\u\.claude-acc2"))
+        );
+    }
+
+    #[test]
+    fn a_tab_under_the_default_account_has_no_config_dir() {
+        assert_eq!(shell_under(None).get_env("CLAUDE_CONFIG_DIR"), None);
     }
 }

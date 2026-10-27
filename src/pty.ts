@@ -5,6 +5,8 @@ export interface SpawnSpec {
   args: string[];
   /** `null` starts in the user's home folder. */
   cwd: string | null;
+  /** The account whose config dir the program runs under; `null` for none. */
+  account: number | null;
 }
 
 export interface ProgramChoice {
@@ -52,8 +54,10 @@ export class PtySession {
       this.#ended = true;
       handlers.exit(event.exitCode);
     });
+    const { account, ...request } = spec;
     this.started = invoke<number>("pty_spawn", {
-      request: { ...spec, ...size },
+      request: { ...request, ...size },
+      account,
       events,
     });
     this.#tail = this.started.catch(() => {
