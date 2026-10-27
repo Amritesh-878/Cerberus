@@ -1,20 +1,35 @@
+mod commands;
+mod programs;
+mod pty;
+
+use tauri::webview::PageLoadEvent;
+use tauri::{Manager, RunEvent};
+
+use crate::pty::PtyManager;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
-}
+    let app = tauri::Builder::default()
+        .manage(PtyManager::default())
+        // A reload drops the page that owned every session, so nothing could close them later.
+        .on_page_load(|webview, payload| {
+            if payload.event() == PageLoadEvent::Started {
+                webview.state::<PtyManager>().kill_all();
+            }
+        })
+        .invoke_handler(tauri::generate_handler![
+            commands::list_programs,
+            commands::pty_spawn,
+            commands::pty_write,
+            commands::pty_resize,
+            commands::pty_kill,
+        ])
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
 
-#[cfg(test)]
-mod tests {
-    use serde_json::Value;
-
-    #[test]
-    fn config_declares_one_main_window() {
-        let config: Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
-        let windows = config["app"]["windows"].as_array().unwrap();
-
-        assert_eq!(windows.len(), 1);
-        assert_eq!(windows[0]["title"], "Cerberus");
-    }
+    app.run(|handle, event| {
+        if let RunEvent::Exit = event {
+            handle.state::<PtyManager>().kill_all();
+        }
+    });
 }

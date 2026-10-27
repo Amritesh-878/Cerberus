@@ -1,0 +1,373 @@
+mod coalesce;
+
+use std::collections::HashMap;
+use std::fmt::Display;
+use std::io::{ErrorKind, Read, Write};
+use std::path::Path;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::mpsc::{self, Sender};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::thread;
+use std::time::Duration;
+
+use portable_pty::{ChildKiller, CommandBuilder, MasterPty, PtySize, native_pty_system};
+use serde::{Deserialize, Serialize, Serializer};
+
+use crate::programs::Finder;
+use crate::pty::coalesce::Batching;
+
+pub type SessionId = u32;
+
+const BATCHING: Batching = Batching {
+    window: Duration::from_millis(4),
+    max: 256 * 1024,
+};
+
+#[derive(Debug, thiserror::Error)]
+pub enum PtyError {
+    #[error("program not found: {0}")]
+    NotFound(String),
+    #[error("folder not found: {0}")]
+    NoSuchDir(String),
+    #[error("could not start {program}: {reason}")]
+    Spawn { program: String, reason: String },
+    #[error("pseudo-terminal failed: {0}")]
+    Pty(String),
+    #[error("no terminal session {0}")]
+    NoSession(SessionId),
+    #[error("terminal input failed: {0}")]
+    Io(#[from] std::io::Error),
+}
+
+impl Serialize for PtyError {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SpawnRequest {
+    pub program: String,
+    pub args: Vec<String>,
+    pub cwd: Option<String>,
+    pub cols: u16,
+    pub rows: u16,
+}
+
+struct Session {
+    master: Mutex<Box<dyn MasterPty + Send>>,
+    writer: Mutex<Box<dyn Write + Send>>,
+    killer: Mutex<Box<dyn ChildKiller + Send + Sync>>,
+}
+
+type Sessions = Arc<Mutex<HashMap<SessionId, Arc<Session>>>>;
+
+#[derive(Default)]
+pub struct PtyManager {
+    sessions: Sessions,
+    next_id: AtomicU32,
+}
+
+// A panicked holder leaves the map or handle usable, so poisoning is not a reason to fail.
+fn lock<T: ?Sized>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+fn size(cols: u16, rows: u16) -> PtySize {
+    PtySize {
+        rows,
+        cols,
+        pixel_width: 0,
+        pixel_height: 0,
+    }
+}
+
+impl PtyManager {
+    /// Starts `request.program`; output goes to `on_output`, then `on_exit` once with the exit code.
+    pub fn spawn(
+        &self,
+        request: &SpawnRequest,
+        on_output: impl FnMut(Vec<u8>) + Send + 'static,
+        on_exit: impl FnOnce(Option<u32>) + Send + 'static,
+    ) -> Result<SessionId, PtyError> {
+        let program = Finder::from_env()
+            .find(&request.program)
+            .ok_or_else(|| PtyError::NotFound(request.program.clone()))?;
+        let mut command = CommandBuilder::new(&program);
+        command.args(&request.args);
+        if let Some(cwd) = &request.cwd {
+            if !Path::new(cwd).is_dir() {
+                return Err(PtyError::NoSuchDir(cwd.clone()));
+            }
+            command.cwd(cwd);
+        }
+        command.env("TERM", "xterm-256color");
+        command.env("COLORTERM", "truecolor");
+
+        let pair = native_pty_system()
+            .openpty(size(request.cols, request.rows))
+            .map_err(pty_failed)?;
+        let mut child = pair
+            .slave
+            .spawn_command(command)
+            .map_err(|e| PtyError::Spawn {
+                program: request.program.clone(),
+                reason: e.to_string(),
+            })?;
+        // The pseudo-console closes only when every handle to it is gone, so keep just the master's.
+        drop(pair.slave);
+        let reader = pair.master.try_clone_reader().map_err(pty_failed)?;
+        let writer = pair.master.take_writer().map_err(pty_failed)?;
+
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        let session = Session {
+            master: Mutex::new(pair.master),
+            writer: Mutex::new(writer),
+            killer: Mutex::new(child.clone_killer()),
+        };
+        // Registered before the waiter starts, or a fast exit would find nothing to close.
+        lock(&self.sessions).insert(id, Arc::new(session));
+
+        let (tx, rx) = mpsc::channel();
+        thread::spawn(move || read_into(reader, &tx));
+        let pump = thread::spawn(move || coalesce::pump(&rx, &BATCHING, on_output));
+        let sessions = Arc::clone(&self.sessions);
+        thread::spawn(move || {
+            let code = child.wait().ok().map(|status| status.exit_code());
+            // Closing the pseudo-console ends the reader, so all output is sent before the exit.
+            let closed = lock(&sessions).remove(&id);
+            drop(closed);
+            if pump.join().is_ok() {
+                on_exit(code);
+            }
+        });
+        Ok(id)
+    }
+
+    pub fn write(&self, id: SessionId, data: &[u8]) -> Result<(), PtyError> {
+        let session = self.session(id)?;
+        let mut writer = lock(&session.writer);
+        writer.write_all(data)?;
+        writer.flush()?;
+        Ok(())
+    }
+
+    pub fn resize(&self, id: SessionId, cols: u16, rows: u16) -> Result<(), PtyError> {
+        lock(&self.session(id)?.master)
+            .resize(size(cols, rows))
+            .map_err(pty_failed)
+    }
+
+    /// Ends the program and closes its pseudo-console, which ends anything else attached to it.
+    pub fn kill(&self, id: SessionId) {
+        let session = lock(&self.sessions).remove(&id);
+        if let Some(session) = session {
+            end(&session);
+        }
+    }
+
+    pub fn kill_all(&self) {
+        let sessions: Vec<_> = lock(&self.sessions).drain().map(|(_, s)| s).collect();
+        sessions.iter().for_each(|session| end(session));
+    }
+
+    fn session(&self, id: SessionId) -> Result<Arc<Session>, PtyError> {
+        lock(&self.sessions)
+            .get(&id)
+            .cloned()
+            .ok_or(PtyError::NoSession(id))
+    }
+}
+
+fn pty_failed(error: impl Display) -> PtyError {
+    PtyError::Pty(error.to_string())
+}
+
+fn end(session: &Session) {
+    // Fails only when the process already exited, which is the outcome wanted.
+    let _ = lock(&session.killer).kill();
+}
+
+fn read_into(mut reader: Box<dyn Read + Send>, tx: &Sender<Vec<u8>>) {
+    let mut buf = vec![0; 64 * 1024];
+    loop {
+        match reader.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => {
+                if tx.send(buf[..n].to_vec()).is_err() {
+                    break;
+                }
+            }
+            Err(e) if e.kind() == ErrorKind::Interrupted => {}
+            // A closed pseudo-console reads as a broken pipe: the normal end of output.
+            Err(_) => break,
+        }
+    }
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use std::sync::mpsc::Receiver;
+    use std::time::Instant;
+
+    use super::*;
+
+    const TIMEOUT: Duration = Duration::from_secs(20);
+
+    enum Event {
+        Output(Vec<u8>),
+        Exit(Option<u32>),
+    }
+
+    fn start(manager: &PtyManager, program: &str, args: &[&str]) -> (SessionId, Receiver<Event>) {
+        let (tx, rx) = mpsc::channel();
+        let exit_tx = tx.clone();
+        let request = SpawnRequest {
+            program: program.to_owned(),
+            args: args.iter().map(|a| (*a).to_owned()).collect(),
+            cwd: None,
+            cols: 80,
+            rows: 24,
+        };
+        let id = manager
+            .spawn(
+                &request,
+                move |bytes| {
+                    let _ = tx.send(Event::Output(bytes));
+                },
+                move |code| {
+                    let _ = exit_tx.send(Event::Exit(code));
+                },
+            )
+            .unwrap();
+        (id, rx)
+    }
+
+    /// Collects output until `done` holds or the program exits, answering ConPTY's cursor query.
+    fn collect(
+        manager: &PtyManager,
+        id: SessionId,
+        rx: &Receiver<Event>,
+        done: impl Fn(&str) -> bool,
+    ) -> (String, Option<Option<u32>>) {
+        let deadline = Instant::now() + TIMEOUT;
+        let mut text = String::new();
+        while Instant::now() < deadline {
+            match rx.recv_timeout(deadline - Instant::now()) {
+                Ok(Event::Output(bytes)) => {
+                    let chunk = String::from_utf8_lossy(&bytes);
+                    for _ in chunk.matches("[6n") {
+                        let _ = manager.write(id, b"[1;1R");
+                    }
+                    text.push_str(&chunk);
+                    if done(&text) {
+                        return (text, None);
+                    }
+                }
+                Ok(Event::Exit(code)) => return (text, Some(code)),
+                Err(_) => break,
+            }
+        }
+        (text, None)
+    }
+
+    #[test]
+    fn output_streams_and_the_exit_code_follows() {
+        let manager = PtyManager::default();
+        let (id, rx) = start(&manager, "cmd", &["/c", "echo", "hello-pty"]);
+
+        let (text, exit) = collect(&manager, id, &rx, |_| false);
+
+        assert!(text.contains("hello-pty"), "output was {text:?}");
+        assert_eq!(exit, Some(Some(0)));
+        assert!(lock(&manager.sessions).is_empty());
+    }
+
+    #[test]
+    fn input_reaches_the_program() {
+        let manager = PtyManager::default();
+        let (id, rx) = start(&manager, "cmd", &["/q", "/k"]);
+
+        manager.write(id, b"echo typed-%OS%\r").unwrap();
+        let (text, _) = collect(&manager, id, &rx, |t| t.contains("typed-Windows_NT"));
+
+        assert!(text.contains("typed-Windows_NT"), "output was {text:?}");
+        manager.kill(id);
+    }
+
+    #[test]
+    fn resize_reaches_a_live_session() {
+        let manager = PtyManager::default();
+        let (id, rx) = start(&manager, "cmd", &["/q", "/k"]);
+
+        manager.resize(id, 101, 33).unwrap();
+        manager.write(id, b"mode con\r").unwrap();
+        let (text, _) = collect(&manager, id, &rx, |t| t.contains("101") && t.contains("33"));
+
+        assert!(
+            text.contains("101") && text.contains("33"),
+            "output was {text:?}"
+        );
+        manager.kill(id);
+    }
+
+    #[test]
+    fn kill_ends_the_child() {
+        let manager = PtyManager::default();
+        let (id, rx) = start(&manager, "cmd", &["/q", "/k"]);
+
+        manager.kill(id);
+        let (_, exit) = collect(&manager, id, &rx, |_| false);
+
+        assert!(exit.is_some(), "no exit after kill");
+        assert!(matches!(
+            manager.write(id, b"x"),
+            Err(PtyError::NoSession(_))
+        ));
+        manager.kill(id);
+    }
+
+    #[test]
+    fn kill_all_ends_every_session() {
+        let manager = PtyManager::default();
+        let (first_id, first) = start(&manager, "cmd", &["/q", "/k"]);
+        let (second_id, second) = start(&manager, "cmd", &["/q", "/k"]);
+
+        manager.kill_all();
+
+        assert!(collect(&manager, first_id, &first, |_| false).1.is_some());
+        assert!(collect(&manager, second_id, &second, |_| false).1.is_some());
+    }
+
+    #[test]
+    fn a_missing_program_is_an_error() {
+        let manager = PtyManager::default();
+        let request = SpawnRequest {
+            program: "no-such-program-cerberus".to_owned(),
+            args: Vec::new(),
+            cwd: None,
+            cols: 80,
+            rows: 24,
+        };
+
+        let result = manager.spawn(&request, |_| {}, |_| {});
+
+        assert!(matches!(result, Err(PtyError::NotFound(_))));
+    }
+
+    #[test]
+    fn a_missing_folder_is_an_error() {
+        let manager = PtyManager::default();
+        let request = SpawnRequest {
+            program: "cmd".to_owned(),
+            args: Vec::new(),
+            cwd: Some(r"C:\no\such\folder\cerberus".to_owned()),
+            cols: 80,
+            rows: 24,
+        };
+
+        let result = manager.spawn(&request, |_| {}, |_| {});
+
+        assert!(matches!(result, Err(PtyError::NoSuchDir(_))));
+    }
+}
