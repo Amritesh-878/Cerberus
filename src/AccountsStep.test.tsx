@@ -25,6 +25,12 @@ function settled(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
+function nameIn(args: unknown): string {
+  return typeof args === "object" && args !== null && "name" in args
+    ? String(args.name)
+    : "";
+}
+
 function type(input: HTMLInputElement, value: string): void {
   input.value = value;
   input.dispatchEvent(new Event("input", { bubbles: true }));
@@ -40,7 +46,7 @@ async function renderStep(): Promise<{
   mockIPC((cmd, args) => {
     switch (cmd) {
       case "suggest_config_dir":
-        return String.raw`C:\h\.claude-suggested`;
+        return String.raw`C:\h\.claude-` + nameIn(args);
       case "add_account":
         added.push(args);
         return EMPTY;
@@ -78,7 +84,7 @@ test("the folder follows the name until it is typed by hand", async () => {
 
   type(name, "work");
   await settled();
-  expect(folder.value).toBe(String.raw`C:\h\.claude-suggested`);
+  expect(folder.value).toBe(String.raw`C:\h\.claude-work`);
 
   type(folder, String.raw`D:\mine`);
   type(name, "work two");
@@ -95,6 +101,22 @@ test("submitting before the suggestion arrives still adds with a folder", async 
   await settled();
 
   expect(added).toEqual([
-    { name: "work", configDir: String.raw`C:\h\.claude-suggested` },
+    { name: "work", configDir: String.raw`C:\h\.claude-work` },
+  ]);
+});
+
+test("renaming before a new suggestion arrives never adds the old folder", async () => {
+  const { name, folder, form, added } = await renderStep();
+  type(name, "work");
+  await settled();
+
+  type(name, "personal");
+  expect(folder.value).toBe("");
+  form.requestSubmit();
+  await settled();
+  await settled();
+
+  expect(added).toEqual([
+    { name: "personal", configDir: String.raw`C:\h\.claude-personal` },
   ]);
 });

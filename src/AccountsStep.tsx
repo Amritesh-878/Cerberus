@@ -177,6 +177,8 @@ export function AccountsStep(props: {
           onInput={(event) => {
             const name = event.currentTarget.value;
             setNewName(name);
+            // A folder suggested for the old name must not be submitted with the new one.
+            if (!dirTyped()) setNewDir("");
             suggestConfigDir(name)
               .then((dir) => {
                 if (newName() === name && !dirTyped()) setNewDir(dir);

@@ -86,11 +86,26 @@ fn run(mut command: Command, timeout: Duration) -> Result<Vec<u8>, RunError> {
         Ok(read) => read.map_err(RunError::Read),
         Err(_) => Err(RunError::TimedOut(timeout)),
     };
-    if result.is_err() || !exits_by(&mut child, deadline) {
+    let result = finished(result, || exits_by(&mut child, deadline), timeout);
+    if result.is_err() {
         kill_tree(&mut child);
     }
     let _ = child.wait();
     result
+}
+
+// Output from a program that then misses the deadline is not trusted, however complete it looks.
+fn finished(
+    read: Result<Vec<u8>, RunError>,
+    exits: impl FnOnce() -> bool,
+    timeout: Duration,
+) -> Result<Vec<u8>, RunError> {
+    let stdout = read?;
+    if exits() {
+        Ok(stdout)
+    } else {
+        Err(RunError::TimedOut(timeout))
+    }
 }
 
 // A program can close its output and still not exit, so the wait shares the read's deadline.
@@ -258,6 +273,20 @@ mod tests {
         let stdout = run(command, Duration::from_secs(20)).unwrap();
 
         assert_eq!(parse(&stdout).state, AuthState::LoggedOut);
+    }
+
+    #[test]
+    fn output_from_a_program_that_never_exits_is_a_timeout() {
+        let second = Duration::from_secs(1);
+        let status = br#"{"loggedIn":true}"#.to_vec();
+
+        let hung = finished(Ok(status.clone()), || false, second);
+        let done = finished(Ok(status.clone()), || true, second);
+        let unread = finished(Err(RunError::TimedOut(second)), || true, second);
+
+        assert!(matches!(hung, Err(RunError::TimedOut(_))));
+        assert_eq!(done.unwrap(), status);
+        assert!(matches!(unread, Err(RunError::TimedOut(_))));
     }
 
     #[cfg(windows)]
