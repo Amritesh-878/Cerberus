@@ -20,13 +20,13 @@ The app opens on a launcher listing the programs it found:
 |---|---|
 | Claude Code | `claude` from `PATH` |
 | PowerShell | `pwsh` from `PATH`, else Windows PowerShell (`powershell.exe`) |
-| Git Bash | `binash.exe` under Git's install folder, found from `git` on `PATH` |
+| Git Bash | `bin\bash.exe` under Git's install folder, found from `git` on `PATH` |
 
 Pick one to open it in a tab, starting in your home folder. A program that is not installed is
-greyed out. Selecting text copies it; Ctrl+V pastes text. In Claude Code, Alt+V pastes an image
-from the clipboard. When the program exits the tab stays open with its exit code; the × closes the
-tab, ends the program and anything it started, and returns to the launcher. Closing the window
-ends every program the app started.
+greyed out. Selecting text copies it; Ctrl+V pastes text. In Claude Code, Alt+V or Ctrl+V pastes
+an image from the clipboard. When the program exits the tab stays open with its exit code; the ×
+closes the tab, ends the program and anything it started, and returns to the launcher. Closing the
+window ends every program the app started.
 
 ## Stack
 
