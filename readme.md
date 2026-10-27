@@ -7,8 +7,7 @@ and a saved session, so a crash or a closed window never loses a chat.
 Each tab runs the official `claude` CLI under its account's `CLAUDE_CONFIG_DIR`, so three accounts
 run side by side and a chat can continue on another account. Claude Code is the only AI in it.
 
-Built by Amritesh with Claude (Anthropic) as co-author: commits Claude helped write carry a
-`Co-Authored-By: Claude` trailer.
+Built with Claude Code.
 
 **Status:** early. The app runs one terminal tab at a time; the project tree and accounts come next.
 
