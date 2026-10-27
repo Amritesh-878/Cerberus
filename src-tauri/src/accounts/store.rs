@@ -93,7 +93,10 @@ impl Store {
             profiles,
         };
         let bytes = serde_json::to_vec_pretty(&saving).map_err(io::Error::other)?;
-        let temp = self.path.with_extension("json.tmp");
+        // Named per process, so two app instances never write into one temp file.
+        let temp = self
+            .path
+            .with_extension(format!("json.{}.tmp", std::process::id()));
         let mut file = File::create(&temp)?;
         file.write_all(&bytes)?;
         file.sync_all()?;
@@ -174,7 +177,7 @@ mod tests {
         let store = store_in(&dir);
         let app = dir.path().join("app");
         add(&store, "one", r"C:\h\.claude-one");
-        fs::write(app.join("profiles.json.tmp"), b"half a write").unwrap();
+        fs::write(app.join("profiles.json.1.tmp"), b"a crashed write").unwrap();
 
         add(&store, "two", r"C:\h\.claude-two");
 
@@ -182,7 +185,7 @@ mod tests {
             .unwrap()
             .map(|e| e.unwrap().file_name())
             .collect();
-        assert_eq!(files, ["profiles.json"]);
+        assert_eq!(files, ["profiles.json", "profiles.json.1.tmp"]);
         assert_eq!(store.load().unwrap().accounts.len(), 2);
     }
 

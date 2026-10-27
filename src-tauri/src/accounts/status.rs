@@ -3,7 +3,7 @@ use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
@@ -44,8 +44,8 @@ enum RunError {
 
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+const EXIT_POLL: Duration = Duration::from_millis(10);
 
-/// Runs `claude auth status` under `config_dir`; a missing or failing `claude` reads as unknown.
 pub fn read(claude: Option<&Path>, config_dir: Option<&Path>, timeout: Duration) -> AuthStatus {
     let Some(claude) = claude else {
         return unknown("Claude Code is not installed");
@@ -74,6 +74,7 @@ fn run(mut command: Command, timeout: Duration) -> Result<Vec<u8>, RunError> {
     let Some(mut stdout) = child.stdout.take() else {
         return Err(RunError::Read(io::Error::other("no output pipe")));
     };
+    let deadline = Instant::now() + timeout;
     let (tx, rx) = mpsc::channel();
     thread::Builder::new()
         .spawn(move || {
@@ -85,11 +86,22 @@ fn run(mut command: Command, timeout: Duration) -> Result<Vec<u8>, RunError> {
         Ok(read) => read.map_err(RunError::Read),
         Err(_) => Err(RunError::TimedOut(timeout)),
     };
-    if result.is_err() {
+    if result.is_err() || !exits_by(&mut child, deadline) {
         kill_tree(&mut child);
     }
     let _ = child.wait();
     result
+}
+
+// A program can close its output and still not exit, so the wait shares the read's deadline.
+fn exits_by(child: &mut Child, deadline: Instant) -> bool {
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => return true,
+            Ok(None) if Instant::now() < deadline => thread::sleep(EXIT_POLL),
+            _ => return false,
+        }
+    }
 }
 
 // A `.cmd` shim's child is cmd.exe, so killing only that would leave Claude Code running.
@@ -246,6 +258,32 @@ mod tests {
         let stdout = run(command, Duration::from_secs(20)).unwrap();
 
         assert_eq!(parse(&stdout).state, AuthState::LoggedOut);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn the_exit_wait_gives_up_at_the_deadline() {
+        let mut hung = Command::new("powershell")
+            .args(["-NoProfile", "-Command", "Start-Sleep -Seconds 30"])
+            .spawn()
+            .unwrap();
+        let mut quick = Command::new("cmd").args(["/c", "exit 0"]).spawn().unwrap();
+        let started = Instant::now();
+
+        let hung_exited = exits_by(&mut hung, started + Duration::from_millis(300));
+        kill_tree(&mut hung);
+        let _ = hung.wait();
+
+        assert!(!hung_exited);
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "{:?}",
+            started.elapsed()
+        );
+        assert!(exits_by(
+            &mut quick,
+            Instant::now() + Duration::from_secs(10)
+        ));
     }
 
     #[cfg(windows)]
