@@ -23,7 +23,7 @@ export function App() {
               ×
             </button>
           </header>
-          <TerminalView spec={open().spec} />
+          <TerminalView spec={open().spec} pastesImages={open().pastesImages} />
         </section>
       )}
     </Show>

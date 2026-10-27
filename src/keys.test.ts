@@ -1,6 +1,11 @@
 import { describe, expect, test } from "vitest";
 
-import { type KeyChord, terminalHandlesKey } from "./keys";
+import {
+  type KeyChord,
+  type PastedData,
+  pasteInput,
+  terminalHandlesKey,
+} from "./keys";
 
 function chord(key: string, mods: Partial<KeyChord> = {}): KeyChord {
   return {
@@ -30,5 +35,35 @@ describe("terminalHandlesKey", () => {
     ["Insert", chord("Insert")],
   ])("passes %s to the program", (_name, key) => {
     expect(terminalHandlesKey(key)).toBe(true);
+  });
+});
+
+function pasted(text: string, itemTypes: string[]): PastedData {
+  return {
+    getData: (format) => (format === "text/plain" ? text : ""),
+    items: itemTypes.map((type) => ({
+      kind: type.includes("/") ? "file" : "string",
+      type,
+    })),
+  };
+}
+
+describe("pasteInput", () => {
+  test("an image with no text sends Alt+V to a program that pastes images", () => {
+    expect(pasteInput(pasted("", ["image/png"]), true)).toBe("v");
+  });
+
+  test.each([
+    [
+      "text, in a program that pastes images",
+      pasted("hello", ["text/plain"]),
+      true,
+    ],
+    ["text beside an image", pasted("hello", ["image/png"]), true],
+    ["an image in a shell", pasted("", ["image/png"]), false],
+    ["a non-image file", pasted("", ["application/pdf"]), true],
+    ["an empty clipboard", pasted("", []), true],
+  ])("leaves %s to xterm", (_name, data, pastesImages) => {
+    expect(pasteInput(data, pastesImages)).toBeUndefined();
   });
 });

@@ -4,10 +4,11 @@ import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { onCleanup, onMount } from "solid-js";
 
-import { terminalHandlesKey } from "./keys";
+import { pasteInput, terminalHandlesKey } from "./keys";
 import { PtySession, type SpawnSpec } from "./pty";
+import { throttle } from "./throttle";
 
-const FIT_DELAY_MS = 50;
+const FIT_INTERVAL_MS = 30;
 
 function useWebgl(term: Terminal): void {
   try {
@@ -30,11 +31,16 @@ function copySelection(term: Terminal): void {
   });
 }
 
-export function TerminalView(props: { spec: SpawnSpec }) {
+export function TerminalView(props: {
+  spec: SpawnSpec;
+  pastesImages: boolean;
+}) {
   let host: HTMLDivElement | undefined;
 
   onMount(() => {
     if (!host) return;
+    const element = host;
+    let disposed = false;
     const term = new Terminal({
       fontFamily: '"Cascadia Mono", Consolas, monospace',
       fontSize: 14,
@@ -44,7 +50,7 @@ export function TerminalView(props: { spec: SpawnSpec }) {
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
-    term.open(host);
+    term.open(element);
     useWebgl(term);
     fit.fit();
     term.attachCustomKeyEventHandler(terminalHandlesKey);
@@ -54,9 +60,13 @@ export function TerminalView(props: { spec: SpawnSpec }) {
       { cols: term.cols, rows: term.rows },
       {
         output: (bytes) => {
-          term.write(bytes);
+          if (disposed) return;
+          term.write(bytes, () => {
+            session.drawn(bytes.length);
+          });
         },
         exit: (code) => {
+          if (disposed) return;
           term.write(
             `\r\n\x1b[2m[exited with code ${code === null ? "unknown" : String(code)}]\x1b[0m\r\n`,
           );
@@ -64,8 +74,20 @@ export function TerminalView(props: { spec: SpawnSpec }) {
       },
     );
     session.started.catch((error: unknown) => {
-      term.write(`\x1b[31m${String(error)}\x1b[0m\r\n`);
+      if (!disposed) term.write(`\x1b[31m${String(error)}\x1b[0m\r\n`);
     });
+
+    const pastesImages = props.pastesImages;
+    // Capture phase, so an image paste never reaches xterm's own text-paste handler.
+    const onPaste = (event: ClipboardEvent) => {
+      const input =
+        event.clipboardData && pasteInput(event.clipboardData, pastesImages);
+      if (!input) return;
+      event.preventDefault();
+      event.stopPropagation();
+      session.write(input);
+    };
+    element.addEventListener("paste", onPaste, true);
 
     const subscriptions = [
       term.onData((data) => {
@@ -78,19 +100,18 @@ export function TerminalView(props: { spec: SpawnSpec }) {
         copySelection(term);
       }),
     ];
-    let fitTimer: ReturnType<typeof setTimeout> | undefined;
-    const observer = new ResizeObserver(() => {
-      clearTimeout(fitTimer);
-      fitTimer = setTimeout(() => {
-        fit.fit();
-      }, FIT_DELAY_MS);
-    });
-    observer.observe(host);
+    const refit = throttle(() => {
+      fit.fit();
+    }, FIT_INTERVAL_MS);
+    const observer = new ResizeObserver(refit.call);
+    observer.observe(element);
     term.focus();
 
     onCleanup(() => {
+      disposed = true;
       observer.disconnect();
-      clearTimeout(fitTimer);
+      refit.cancel();
+      element.removeEventListener("paste", onPaste, true);
       subscriptions.forEach((subscription) => {
         subscription.dispose();
       });

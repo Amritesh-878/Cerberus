@@ -13,6 +13,7 @@ export interface ProgramChoice {
   /** `null` when the program is not installed. */
   program: string | null;
   args: string[];
+  pastesImages: boolean;
 }
 
 export interface Size {
@@ -33,11 +34,14 @@ export function listPrograms(): Promise<ProgramChoice[]> {
   return invoke<ProgramChoice[]>("list_programs");
 }
 
+const ACK_BATCH_BYTES = 64 * 1024;
+
 /** A program in a pseudo-terminal; calls run in order, and those made before it starts wait. */
 export class PtySession {
   readonly started: Promise<number>;
   #tail: Promise<unknown>;
   #ended = false;
+  #drawn = 0;
 
   constructor(spec: SpawnSpec, size: Size, handlers: SessionHandlers) {
     const events = new Channel<ArrayBuffer | Exited>((event) => {
@@ -63,6 +67,20 @@ export class PtySession {
 
   resize(size: Size): void {
     this.#then((id) => invoke("pty_resize", { id, ...size }));
+  }
+
+  /** Reports output the terminal has drawn, so the core keeps sending. */
+  drawn(bytes: number): void {
+    this.#drawn += bytes;
+    if (this.#ended || this.#drawn < ACK_BATCH_BYTES) return;
+    const count = this.#drawn;
+    this.#drawn = 0;
+    // Not queued: a write stuck on a stalled program must not hold back the credit that unstalls it.
+    this.started
+      .then((id) => invoke("pty_ack", { id, bytes: count }))
+      .catch((error: unknown) => {
+        console.error("terminal ack failed:", error);
+      });
   }
 
   kill(): void {

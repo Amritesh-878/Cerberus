@@ -8,6 +8,7 @@ test("an installed program opens a tab in the home folder", () => {
     label: "Git Bash",
     program: String.raw`C:\Git\bin\bash.exe`,
     args: ["--login", "-i"],
+    pastesImages: false,
   });
 
   expect(tab).toEqual({
@@ -17,11 +18,18 @@ test("an installed program opens a tab in the home folder", () => {
       args: ["--login", "-i"],
       cwd: null,
     },
+    pastesImages: false,
   });
 });
 
 test("a missing program opens no tab", () => {
   expect(
-    tabFor({ id: "claude", label: "Claude Code", program: null, args: [] }),
+    tabFor({
+      id: "claude",
+      label: "Claude Code",
+      program: null,
+      args: [],
+      pastesImages: true,
+    }),
   ).toBeUndefined();
 });

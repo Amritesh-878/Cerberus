@@ -91,7 +91,8 @@ body,
   padding: 4px 0 0 8px;
 }
 
-/* xterm.css paints the viewport black whatever the theme says. */
+/* xterm.css paints the viewport black whatever the theme says, and xterm draws its own scrollbar. */
 .terminal .xterm-viewport {
   background-color: #1a1a1a;
+  scrollbar-width: none;
 }

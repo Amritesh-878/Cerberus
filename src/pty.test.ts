@@ -12,8 +12,8 @@ interface Call {
   args: unknown;
 }
 
-/** Mocks the core so `pty_spawn` resolves only when the returned `start` is called. */
-function mockCore(): {
+/** Mocks the core so `pty_spawn` resolves only when `start` is called; `pty_write` can hang. */
+function mockCore(options: { writesHang?: boolean } = {}): {
   calls: Call[];
   start: (result: number | Error) => void;
 } {
@@ -21,6 +21,8 @@ function mockCore(): {
   let settle: (result: number | Error) => void = () => undefined;
   mockIPC((cmd, args) => {
     calls.push({ cmd, args });
+    if (cmd === "pty_write" && options.writesHang)
+      return new Promise(() => undefined);
     if (cmd !== "pty_spawn") return null;
     return new Promise((resolve, reject) => {
       settle = (result) => {
@@ -97,4 +99,37 @@ test("nothing is sent after the program failed to start", async () => {
   await settled();
 
   expect(core.calls.map((c) => c.cmd)).toEqual(["pty_spawn"]);
+});
+
+test("drawn output is acked in batches", async () => {
+  const core = mockCore();
+  const session = new PtySession(SPEC, SIZE, HANDLERS);
+  core.start(4);
+
+  session.drawn(40 * 1024);
+  await settled();
+  expect(core.calls.filter((c) => c.cmd === "pty_ack")).toEqual([]);
+
+  session.drawn(30 * 1024);
+  await settled();
+  expect(core.calls.filter((c) => c.cmd === "pty_ack")).toEqual([
+    { cmd: "pty_ack", args: { id: 4, bytes: 70 * 1024 } },
+  ]);
+});
+
+test("an ack is not held back by a write the program is not reading", async () => {
+  const core = mockCore({ writesHang: true });
+  const session = new PtySession(SPEC, SIZE, HANDLERS);
+  core.start(5);
+
+  session.write("stuck");
+  await settled();
+  session.drawn(64 * 1024);
+  await settled();
+
+  expect(core.calls.map((c) => c.cmd)).toEqual([
+    "pty_spawn",
+    "pty_write",
+    "pty_ack",
+  ]);
 });

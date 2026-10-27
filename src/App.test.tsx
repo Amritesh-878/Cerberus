@@ -6,12 +6,19 @@ import { App } from "./App";
 import type { ProgramChoice } from "./pty";
 
 const CHOICES: ProgramChoice[] = [
-  { id: "claude", label: "Claude Code", program: null, args: [] },
+  {
+    id: "claude",
+    label: "Claude Code",
+    program: null,
+    args: [],
+    pastesImages: true,
+  },
   {
     id: "powershell",
     label: "PowerShell",
     program: String.raw`C:\ps\powershell.exe`,
     args: ["-NoLogo"],
+    pastesImages: false,
   },
 ];
 

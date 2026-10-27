@@ -11,6 +11,8 @@ pub struct ProgramChoice {
     /// Absolute path to run, or `None` when the program is not installed.
     pub program: Option<String>,
     pub args: Vec<String>,
+    /// Whether Ctrl+V with only an image on the clipboard should send the program's image-paste key.
+    pub pastes_images: bool,
 }
 
 pub struct Finder {
@@ -80,18 +82,21 @@ impl Finder {
                 label: "Claude Code",
                 program: shown(self.find("claude")),
                 args: Vec::new(),
+                pastes_images: true,
             },
             ProgramChoice {
                 id: "powershell",
                 label: "PowerShell",
                 program: shown(self.find("pwsh").or_else(|| self.find("powershell"))),
                 args: vec!["-NoLogo".to_owned()],
+                pastes_images: false,
             },
             ProgramChoice {
                 id: "git-bash",
                 label: "Git Bash",
                 program: shown(self.git_bash()),
                 args: vec!["--login".to_owned(), "-i".to_owned()],
+                pastes_images: false,
             },
         ]
     }
@@ -193,5 +198,7 @@ mod tests {
         assert_eq!(choices[0].program, None);
         assert_eq!(choices[1].program.as_deref(), Some(r"C:\w\powershell.exe"));
         assert_eq!(choices[2].program, None);
+        let pastes_images: Vec<_> = choices.iter().map(|c| c.pastes_images).collect();
+        assert_eq!(pastes_images, [true, false, false]);
     }
 }
