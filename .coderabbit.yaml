@@ -1,0 +1,22 @@
+reviews:
+  high_level_summary: false
+  poem: false
+  in_progress_fortune: false
+  suggested_reviewers: false
+  estimate_code_review_effort: false
+  sequence_diagrams: false
+  path_filters:
+    ["!package-lock.json", "!src-tauri/Cargo.lock", "!src-tauri/icons/**"]
+  pre_merge_checks:
+    docstrings: { mode: "off" }
+    title:
+      mode: "warning"
+      requirements: "One lowercase conventional-commit subject, type(scope): description."
+knowledge_base:
+  code_guidelines:
+    filePatterns:
+      - { files: "coding_standards.md", applyTo: "**" }
+      - {
+          files: ".claude/skills/code-commenting-guidelines/SKILL.md",
+          applyTo: "**/*.ts,**/*.tsx,**/*.rs",
+        }
