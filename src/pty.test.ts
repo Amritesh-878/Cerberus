@@ -133,3 +133,20 @@ test("an ack is not held back by a write the program is not reading", async () =
     "pty_ack",
   ]);
 });
+
+test("kill is not held back by a write the program is not reading", async () => {
+  const core = mockCore({ writesHang: true });
+  const session = new PtySession(SPEC, SIZE, HANDLERS);
+  core.start(6);
+
+  session.write("stuck");
+  await settled();
+  session.kill();
+  await settled();
+
+  expect(core.calls.map((c) => c.cmd)).toEqual([
+    "pty_spawn",
+    "pty_write",
+    "pty_kill",
+  ]);
+});

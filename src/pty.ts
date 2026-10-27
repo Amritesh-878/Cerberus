@@ -84,8 +84,17 @@ export class PtySession {
   }
 
   kill(): void {
-    this.#then((id) => invoke("pty_kill", { id }));
+    if (this.#ended) return;
     this.#ended = true;
+    // Not queued: a write stuck on a program that ignores its input must not keep the tab alive.
+    this.started
+      .then(
+        (id) => invoke("pty_kill", { id }),
+        () => undefined,
+      )
+      .catch((error: unknown) => {
+        console.error("terminal kill failed:", error);
+      });
   }
 
   #then(call: (id: number) => Promise<unknown>): void {
