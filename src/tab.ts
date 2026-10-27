@@ -1,10 +1,9 @@
-import type { Account } from "./accounts";
+import type { Account, AccountId } from "./accounts";
 import type { ProgramChoice, SpawnSpec } from "./pty";
 
 export interface TabAccount {
+  id: AccountId;
   name: string;
-  /** Email and plan, shown on hover. */
-  summary: string;
 }
 
 export interface Tab {
@@ -17,7 +16,7 @@ export interface Tab {
 }
 
 export interface TabOptions {
-  account: (Account & { summary: string }) | null;
+  account: Account | null;
   cwd: string | null;
   input?: string;
 }
@@ -37,7 +36,7 @@ export function tabFor(
       account: account?.id ?? null,
     },
     pastesImages: choice.pastesImages,
-    account: account && { name: account.name, summary: account.summary },
+    account: account && { id: account.id, name: account.name },
     input: options.input ?? null,
   };
 }

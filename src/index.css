@@ -123,6 +123,10 @@ body,
   margin-top: 24px;
 }
 
+.step-nav .leave {
+  margin-left: auto;
+}
+
 .hint {
   font-size: 13px;
   color: #8a8a8a;

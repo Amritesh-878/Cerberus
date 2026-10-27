@@ -34,7 +34,6 @@ export function installed(
   return programs.find((p) => p.id === id && p.program !== null);
 }
 
-/** The saved default while it is installed, else Claude Code, else any installed program. */
 export function preselectedProgram(
   profiles: Profiles,
   programs: readonly ProgramChoice[],
@@ -47,7 +46,6 @@ export function preselectedProgram(
   return pick?.id ?? null;
 }
 
-/** Why "Finish" is not allowed yet, or `undefined` when it is. */
 export function finishBlocker(
   profiles: Profiles,
   draft: DefaultsDraft,

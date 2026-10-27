@@ -27,7 +27,7 @@ export function Launcher(props: {
   const launch = (choice: ProgramChoice) => {
     const chosen = account();
     const tab = tabFor(choice, {
-      account: chosen ? { ...chosen, summary: summary() } : null,
+      account: chosen ?? null,
       cwd: props.profiles.defaultCwd,
     });
     if (tab) props.onLaunch(tab);

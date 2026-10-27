@@ -69,7 +69,6 @@ export function accountStatus(id: AccountId): Promise<AuthStatus> {
   return invoke<AuthStatus>("account_status", { id });
 }
 
-/** The saved default, else the first account, so a tab always starts under a real account. */
 export function preselectedAccount(profiles: Profiles): AccountId | null {
   const saved = profiles.accounts.find((a) => a.id === profiles.defaultAccount);
   return (saved ?? profiles.accounts[0])?.id ?? null;

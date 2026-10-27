@@ -16,7 +16,6 @@ test("an installed program opens a tab under its account", () => {
       id: 2,
       name: "work",
       configDir: String.raw`C:\h\.claude-work`,
-      summary: "user@example.com · Team",
     },
     cwd: String.raw`C:\code`,
   });
@@ -30,7 +29,7 @@ test("an installed program opens a tab under its account", () => {
       account: 2,
     },
     pastesImages: false,
-    account: { name: "work", summary: "user@example.com · Team" },
+    account: { id: 2, name: "work" },
     input: null,
   });
 });

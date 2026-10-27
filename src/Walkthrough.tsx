@@ -90,6 +90,18 @@ export function Walkthrough(props: Props) {
             </button>
           )}
         </Show>
+        <Show when={props.profiles.accounts.length > 0}>
+          <button
+            type="button"
+            class="leave"
+            title="Leave without changing the defaults"
+            onClick={() => {
+              props.onFinish();
+            }}
+          >
+            Back to launcher
+          </button>
+        </Show>
       </nav>
     </main>
   );

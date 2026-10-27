@@ -27,6 +27,7 @@ export function AccountsStep(props: {
   const [editing, setEditing] = createSignal<number>();
   const [newName, setNewName] = createSignal("");
   const [newDir, setNewDir] = createSignal("");
+  const [dirTyped, setDirTyped] = createSignal(false);
 
   const change = (
     request: Promise<Profiles>,
@@ -49,9 +50,7 @@ export function AccountsStep(props: {
 
   const logIn = (account: Account) => {
     const claude = installed(props.programs, "claude");
-    const summary = statusText(props.statuses.get(account.id));
-    const tab =
-      claude && tabFor(claude, { account: { ...account, summary }, cwd: null });
+    const tab = claude && tabFor(claude, { account, cwd: null });
     if (tab) props.onOpen(tab);
   };
 
@@ -87,6 +86,14 @@ export function AccountsStep(props: {
                     aria-label="New name"
                   />
                   <button type="submit">Save</button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditing(undefined);
+                    }}
+                  >
+                    Cancel
+                  </button>
                 </form>
               </Show>
               <span class="program">{account.configDir}</span>
@@ -147,11 +154,20 @@ export function AccountsStep(props: {
         class="add-account"
         onSubmit={(event) => {
           event.preventDefault();
-          change(addAccount(newName(), newDir()), (profiles) => {
-            setNewName("");
-            setNewDir("");
-            added(profiles);
-          });
+          const name = newName();
+          const dir = newDir().trim();
+          // Enter can beat the suggestion, so an empty folder asks for it here.
+          const folder =
+            dir === "" ? suggestConfigDir(name) : Promise.resolve(dir);
+          change(
+            folder.then((configDir) => addAccount(name, configDir)),
+            (profiles) => {
+              setNewName("");
+              setNewDir("");
+              setDirTyped(false);
+              added(profiles);
+            },
+          );
         }}
       >
         <input
@@ -163,7 +179,7 @@ export function AccountsStep(props: {
             setNewName(name);
             suggestConfigDir(name)
               .then((dir) => {
-                if (newName() === name) setNewDir(dir);
+                if (newName() === name && !dirTyped()) setNewDir(dir);
               })
               .catch((e: unknown) => {
                 setError(String(e));
@@ -174,7 +190,10 @@ export function AccountsStep(props: {
           placeholder="Folder"
           aria-label="Folder"
           value={newDir()}
-          onInput={(event) => setNewDir(event.currentTarget.value)}
+          onInput={(event) => {
+            setNewDir(event.currentTarget.value);
+            setDirTyped(true);
+          }}
         />
         <button type="submit" disabled={newName().trim() === ""}>
           Add

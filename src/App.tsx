@@ -9,7 +9,12 @@ import {
   untrack,
 } from "solid-js";
 
-import { loadProfiles, type Profiles, resetProfiles } from "./accounts";
+import {
+  loadProfiles,
+  type Profiles,
+  resetProfiles,
+  statusText,
+} from "./accounts";
 import { Launcher } from "./Launcher";
 import { listPrograms } from "./pty";
 import { createStatuses } from "./statuses";
@@ -69,7 +74,9 @@ export function App() {
             <p class="error">{loadError()}</p>
             <p>
               Start fresh to set up your accounts again. The old file is kept
-              beside the new one as <code>profiles.json.bad</code>.
+              beside the new one as <code>profiles.json.bad</code>, or{" "}
+              <code>.bad2</code>, <code>.bad3</code> and so on when that name is
+              taken.
             </p>
             <button type="button" onClick={startFresh}>
               Start fresh
@@ -119,7 +126,10 @@ export function App() {
                 {open().label}
                 <Show when={open().account}>
                   {(account) => (
-                    <span class="tab-account" title={account().summary}>
+                    <span
+                      class="tab-account"
+                      title={statusText(statuses.get(account().id))}
+                    >
                       {" · "}
                       {account().name}
                     </span>

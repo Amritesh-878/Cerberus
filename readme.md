@@ -30,7 +30,8 @@ The first launch opens a short walkthrough:
 **Accounts…** on the launcher reopens it to add, rename or remove accounts. Removing an account
 only forgets it; its folder stays on disk. Accounts and defaults live in `profiles.json` in the
 app's config folder (`%APPDATA%\com.cerberus.terminal`). If that file cannot be read, the app
-offers to start fresh and keeps the old file as `profiles.json.bad`.
+offers to start fresh and keeps the old file as `profiles.json.bad` (`.bad2`, `.bad3` and so on
+when that name is taken).
 
 ### Tabs
 
