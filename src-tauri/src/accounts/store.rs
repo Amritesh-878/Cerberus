@@ -66,7 +66,16 @@ impl Store {
     /// Keeps the old file beside the new start, in case its accounts are worth recovering by hand.
     pub fn reset(&self) -> Result<Profiles, AccountsError> {
         let _writing = self.writing.lock().unwrap_or_else(PoisonError::into_inner);
-        match fs::rename(&self.path, self.path.with_extension("json.bad")) {
+        let unused = (1..)
+            .map(|n| match n {
+                1 => self.path.with_extension("json.bad"),
+                n => self.path.with_extension(format!("json.bad{n}")),
+            })
+            .find(|backup| !backup.exists());
+        let Some(backup) = unused else {
+            return Err(io::Error::other("no free backup name").into());
+        };
+        match fs::rename(&self.path, backup) {
             Ok(()) => Ok(Profiles::default()),
             Err(e) if e.kind() == ErrorKind::NotFound => Ok(Profiles::default()),
             Err(e) => Err(e.into()),
@@ -235,5 +244,19 @@ mod tests {
 
         assert_eq!(store.load().unwrap(), Profiles::default());
         assert!(Path::new(&dir.path().join("profiles.json.bad")).is_file());
+    }
+
+    #[test]
+    fn a_second_reset_keeps_the_first_backup() {
+        let dir = TestDir::new();
+        let store = write_raw(&dir, "first");
+        store.reset().unwrap();
+        fs::write(dir.path().join("profiles.json"), "second").unwrap();
+
+        store.reset().unwrap();
+
+        let read = |name: &str| fs::read_to_string(dir.path().join(name)).unwrap();
+        assert_eq!(read("profiles.json.bad"), "first");
+        assert_eq!(read("profiles.json.bad2"), "second");
     }
 }

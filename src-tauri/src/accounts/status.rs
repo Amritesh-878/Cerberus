@@ -1,6 +1,6 @@
 use std::io::{self, Read};
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
@@ -86,10 +86,28 @@ fn run(mut command: Command, timeout: Duration) -> Result<Vec<u8>, RunError> {
         Err(_) => Err(RunError::TimedOut(timeout)),
     };
     if result.is_err() {
-        let _ = child.kill();
+        kill_tree(&mut child);
     }
     let _ = child.wait();
     result
+}
+
+// A `.cmd` shim's child is cmd.exe, so killing only that would leave Claude Code running.
+fn kill_tree(child: &mut Child) {
+    #[cfg(windows)]
+    {
+        let mut taskkill = Command::new("taskkill");
+        taskkill
+            .args(["/PID", &child.id().to_string(), "/T", "/F"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        std::os::windows::process::CommandExt::creation_flags(&mut taskkill, CREATE_NO_WINDOW);
+        if taskkill.status().is_ok_and(|status| status.success()) {
+            return;
+        }
+    }
+    let _ = child.kill();
 }
 
 /// Never echoes the output on failure, since it may hold the account's email.
@@ -239,5 +257,34 @@ mod tests {
         let result = run(command, Duration::from_millis(300));
 
         assert!(matches!(result, Err(RunError::TimedOut(_))));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_timeout_ends_what_a_wrapper_started() {
+        let dir = crate::accounts::testdir::TestDir::new();
+        let pid_file = dir.path().join("pid.txt");
+        let mut command = Command::new("cmd");
+        command.args([
+            "/c",
+            "powershell",
+            "-NoProfile",
+            "-Command",
+            &format!(
+                "$PID | Set-Content '{}'; Start-Sleep -Seconds 30",
+                pid_file.display()
+            ),
+        ]);
+
+        let result = run(command, Duration::from_secs(5));
+
+        assert!(matches!(result, Err(RunError::TimedOut(_))));
+        let pid = std::fs::read_to_string(&pid_file).unwrap();
+        let listed = Command::new("tasklist")
+            .args(["/FI", &format!("PID eq {}", pid.trim()), "/NH"])
+            .output()
+            .unwrap();
+        let listed = String::from_utf8_lossy(&listed.stdout);
+        assert!(!listed.contains(pid.trim()), "still running: {listed}");
     }
 }

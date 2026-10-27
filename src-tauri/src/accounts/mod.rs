@@ -210,9 +210,11 @@ impl Accounts {
 
     /// Creates the account's folder when it is new, so `claude` starts there on first login.
     pub fn add(&self, name: &str, config_dir: PathBuf) -> Result<Profiles, AccountsError> {
-        let profiles = self.update(|p| p.add(name, config_dir.clone()).map(drop))?;
-        fs::create_dir_all(&config_dir)?;
-        Ok(profiles)
+        self.update(|p| {
+            p.add(name, config_dir.clone())?;
+            fs::create_dir_all(&config_dir)?;
+            Ok(())
+        })
     }
 
     pub fn set_defaults(&self, defaults: Defaults) -> Result<Profiles, AccountsError> {
@@ -487,6 +489,19 @@ mod tests {
             .unwrap();
 
         assert!(home.path().join(".claude-fresh").is_dir());
+    }
+
+    #[test]
+    fn a_folder_that_cannot_be_created_saves_no_account() {
+        let home = TestDir::new();
+        let accounts = Accounts::new(&home.path().join("app"), home.path().to_path_buf());
+        let file = home.path().join("taken");
+        fs::write(&file, "").unwrap();
+
+        let result = accounts.add("blocked", file.join("inside"));
+
+        assert!(matches!(result, Err(AccountsError::Io(_))));
+        assert!(accounts.load().unwrap().accounts.is_empty());
     }
 
     #[test]
