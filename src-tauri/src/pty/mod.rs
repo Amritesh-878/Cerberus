@@ -26,6 +26,7 @@ const BATCHING: Batching = Batching {
 };
 // Unread output the reader may queue before it stops reading and the program blocks on its writes.
 const QUEUED_READS: usize = 16;
+const READ_CHUNK: usize = 64 * 1024;
 const UNACKED_HIGH: usize = 1024 * 1024;
 const UNACKED_LOW: usize = 256 * 1024;
 
@@ -245,7 +246,7 @@ fn end(session: &Session) {
 }
 
 fn read_into(mut reader: Box<dyn Read + Send>, tx: &SyncSender<Vec<u8>>) {
-    let mut buf = vec![0; 64 * 1024];
+    let mut buf = vec![0; READ_CHUNK];
     loop {
         match reader.read(&mut buf) {
             Ok(0) => break,
@@ -349,8 +350,10 @@ mod tests {
         let (_, exit) = collect(&manager, id, &rx, |_| false);
         std::fs::remove_file(&file).unwrap();
 
+        // The gate admits one more batch below the high mark, and a batch can pass `max` by a chunk.
+        let most = UNACKED_HIGH - 1 + BATCHING.max - 1 + READ_CHUNK;
         assert!(
-            (UNACKED_HIGH..UNACKED_HIGH + BATCHING.max).contains(&received),
+            (UNACKED_HIGH..=most).contains(&received),
             "received {received} bytes with nothing acked"
         );
         assert!(exit.is_some(), "no exit after kill");
