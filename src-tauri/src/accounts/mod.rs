@@ -4,7 +4,7 @@ mod store;
 
 use std::fs;
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize, Serializer};
@@ -230,7 +230,6 @@ impl Accounts {
         self.update(|p| p.set_defaults(defaults))
     }
 
-    /// Config dirs found in the home folder that no saved account uses yet.
     pub fn candidates(&self) -> Result<Vec<Candidate>, AccountsError> {
         let profiles = self.load()?;
         let mut found = detect::candidates(&self.home);
@@ -262,7 +261,6 @@ impl Accounts {
         ))
     }
 
-    /// The `CLAUDE_CONFIG_DIR` a tab under `account` needs, or `None` for the default folder.
     pub fn claude_config_dir(
         &self,
         account: Option<AccountId>,
@@ -290,15 +288,44 @@ fn env_dir(home: &Path, dir: PathBuf) -> Option<PathBuf> {
     (!same_dir(&dir, &home.join(".claude"))).then_some(dir)
 }
 
-// Windows paths ignore case and accept either slash.
 fn same_dir(a: &Path, b: &Path) -> bool {
-    let key = |p: &Path| {
-        p.to_string_lossy()
-            .replace('/', "\\")
-            .trim_end_matches('\\')
-            .to_lowercase()
-    };
-    key(a) == key(b)
+    dir_key(a) == dir_key(b)
+}
+
+// Windows paths ignore case, accept either slash, and reach one folder through `..` or a short name.
+fn dir_key(path: &Path) -> String {
+    let resolved = fs::canonicalize(path).map_or_else(|_| lexical(path), without_verbatim);
+    resolved
+        .to_string_lossy()
+        .replace('/', "\\")
+        .trim_end_matches('\\')
+        .to_lowercase()
+}
+
+fn lexical(path: &Path) -> PathBuf {
+    let mut resolved = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                resolved.pop();
+            }
+            other => resolved.push(other),
+        }
+    }
+    resolved
+}
+
+// `canonicalize` returns `\\?\C:\...`, which never equals a path the user typed.
+fn without_verbatim(path: PathBuf) -> PathBuf {
+    let text = path.to_string_lossy();
+    if let Some(share) = text.strip_prefix(r"\\?\UNC\") {
+        PathBuf::from(format!(r"\\{share}"))
+    } else if let Some(local) = text.strip_prefix(r"\\?\") {
+        PathBuf::from(local)
+    } else {
+        path
+    }
 }
 
 fn shown(path: &Path) -> String {
@@ -459,6 +486,42 @@ mod tests {
     }
 
     #[test]
+    fn dots_and_parents_reach_the_same_folder() {
+        let home = dir(r"C:\Users\u");
+        let mut profiles = two_accounts();
+
+        assert_eq!(env_dir(&home, dir(r"C:\Users\u\.claude\.")), None);
+        assert_eq!(
+            env_dir(&home, dir(r"C:\Users\u\.claude-x\..\.claude")),
+            None
+        );
+        assert!(matches!(
+            profiles.add("again", dir(r"C:\h\.claude\..\.claude-work")),
+            Err(AccountsError::DuplicateDir(_))
+        ));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_short_name_reaches_the_same_folder() {
+        let home = TestDir::new();
+        let long = home.path().join(".claude-a-rather-long-folder-name");
+        fs::create_dir_all(&long).unwrap();
+        let script = format!(
+            "(New-Object -ComObject Scripting.FileSystemObject).GetFolder('{}').ShortPath",
+            long.display()
+        );
+        let output = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-Command", &script])
+            .output()
+            .unwrap();
+        let short = PathBuf::from(String::from_utf8_lossy(&output.stdout).trim());
+
+        assert!(short.is_dir(), "no short path: {short:?}");
+        assert!(same_dir(&short, &long), "{short:?} vs {long:?}");
+    }
+
+    #[test]
     fn a_tab_under_an_account_gets_its_config_dir() {
         let home = TestDir::new();
         let accounts = Accounts::new(&home.path().join("app"), home.path().to_path_buf());
@@ -529,8 +592,8 @@ mod tests {
         let accounts = Accounts::new(&dir(r"C:\app"), dir(r"C:\Users\u"));
 
         assert_eq!(
-            accounts.suggested_dir(" ISL Team "),
-            dir(r"C:\Users\u\.claude-isl-team")
+            accounts.suggested_dir(" Work Team "),
+            dir(r"C:\Users\u\.claude-work-team")
         );
         assert_eq!(accounts.suggested_dir("!!"), dir(r"C:\Users\u\.claude-new"));
     }
