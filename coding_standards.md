@@ -108,15 +108,14 @@ review.
 ## 7. Git and commits
 
 - **One line:** `type(scope): description`, imperative, lower case, about 72 characters at most.
-  When Claude wrote any of it, add a blank line and `Co-Authored-By: Claude <noreply@anthropic.com>`;
-  nothing else goes in the body. Context goes in the PR or the handoff.
+  No body and no Co-Authored-By trailer. Context goes in the PR or the handoff.
 - **Types:** `feat`, `fix`, `refactor`, `perf`, `test`, `docs`, `build`, `ci`, `chore`, `style`,
   `revert`.
 - **Atomic:** one logical change per commit, each one building and passing. Run `git status` and
   commit only the change, never planning files.
 - **`git mv`** for moves and renames. Delete files outright; history is the recovery path.
 - **Merging:** one PR per task or feature, squash-merged by the planner after the audit passes and
-  the user says merge. The squash commit is the PR title plus the Claude trailer.
+  the user says merge. The squash commit is the PR title with a blank body.
 - Never force-push a shared branch or `main`. Never commit secrets, `.env`, build output or caches.
 
 ## 8. Pull requests
