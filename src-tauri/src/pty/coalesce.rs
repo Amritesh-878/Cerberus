@@ -52,7 +52,6 @@ mod tests {
         out
     }
 
-    /// Sends each chunk after a pause and returns the batches emitted.
     fn run_paused(chunks: &[&[u8]], batching: &Batching) -> Vec<Vec<u8>> {
         let (tx, rx) = mpsc::channel();
         let chunks: Vec<Vec<u8>> = chunks.iter().map(|c| c.to_vec()).collect();
@@ -114,5 +113,27 @@ mod tests {
         let out = run_paused(&[b"ab", b"cd", b"ef"], &batching);
 
         assert_eq!(out, [b"ab".to_vec(), b"cdef".to_vec()]);
+    }
+
+    #[test]
+    fn a_full_batch_goes_out_while_output_still_streams() {
+        let batching = Batching {
+            window: Duration::from_secs(60),
+            max: 4,
+        };
+        let (tx, rx) = mpsc::channel();
+        let (emitted_tx, emitted) = mpsc::channel();
+        let pump =
+            thread::spawn(move || pump(&rx, &batching, |batch| emitted_tx.send(batch).unwrap()));
+        let next = || emitted.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        tx.send(b"abcd".to_vec()).unwrap();
+        assert_eq!(next(), b"abcd");
+        tx.send(b"ef".to_vec()).unwrap();
+        tx.send(b"gh".to_vec()).unwrap();
+        assert_eq!(next(), b"efgh");
+
+        drop(tx);
+        pump.join().unwrap();
     }
 }

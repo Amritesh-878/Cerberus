@@ -1,20 +1,22 @@
 mod coalesce;
+mod flow;
 
 use std::collections::HashMap;
 use std::fmt::Display;
-use std::io::{ErrorKind, Read, Write};
+use std::io::{self, ErrorKind, Read, Write};
 use std::path::Path;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::mpsc::{self, Sender};
+use std::sync::mpsc::{self, SyncSender};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::thread;
 use std::time::Duration;
 
-use portable_pty::{ChildKiller, CommandBuilder, MasterPty, PtySize, native_pty_system};
+use portable_pty::{Child, ChildKiller, CommandBuilder, MasterPty, PtySize, native_pty_system};
 use serde::{Deserialize, Serialize, Serializer};
 
 use crate::programs::Finder;
 use crate::pty::coalesce::Batching;
+use crate::pty::flow::FlowGate;
 
 pub type SessionId = u32;
 
@@ -22,6 +24,10 @@ const BATCHING: Batching = Batching {
     window: Duration::from_millis(4),
     max: 256 * 1024,
 };
+// Unread output the reader may queue before it stops reading and the program blocks on its writes.
+const QUEUED_READS: usize = 16;
+const UNACKED_HIGH: usize = 1024 * 1024;
+const UNACKED_LOW: usize = 256 * 1024;
 
 #[derive(Debug, thiserror::Error)]
 pub enum PtyError {
@@ -33,10 +39,12 @@ pub enum PtyError {
     Spawn { program: String, reason: String },
     #[error("pseudo-terminal failed: {0}")]
     Pty(String),
+    #[error("could not start a terminal thread: {0}")]
+    Thread(io::Error),
     #[error("no terminal session {0}")]
     NoSession(SessionId),
     #[error("terminal input failed: {0}")]
-    Io(#[from] std::io::Error),
+    Io(#[from] io::Error),
 }
 
 impl Serialize for PtyError {
@@ -58,6 +66,7 @@ struct Session {
     master: Mutex<Box<dyn MasterPty + Send>>,
     writer: Mutex<Box<dyn Write + Send>>,
     killer: Mutex<Box<dyn ChildKiller + Send + Sync>>,
+    flow: Arc<FlowGate>,
 }
 
 type Sessions = Arc<Mutex<HashMap<SessionId, Arc<Session>>>>;
@@ -90,20 +99,7 @@ impl PtyManager {
         on_output: impl FnMut(Vec<u8>) + Send + 'static,
         on_exit: impl FnOnce(Option<u32>) + Send + 'static,
     ) -> Result<SessionId, PtyError> {
-        let program = Finder::from_env()
-            .find(&request.program)
-            .ok_or_else(|| PtyError::NotFound(request.program.clone()))?;
-        let mut command = CommandBuilder::new(&program);
-        command.args(&request.args);
-        if let Some(cwd) = &request.cwd {
-            if !Path::new(cwd).is_dir() {
-                return Err(PtyError::NoSuchDir(cwd.clone()));
-            }
-            command.cwd(cwd);
-        }
-        command.env("TERM", "xterm-256color");
-        command.env("COLORTERM", "truecolor");
-
+        let command = command_for(request)?;
         let pair = native_pty_system()
             .openpty(size(request.cols, request.rows))
             .map_err(pty_failed)?;
@@ -116,32 +112,67 @@ impl PtyManager {
             })?;
         // The pseudo-console closes only when every handle to it is gone, so keep just the master's.
         drop(pair.slave);
-        let reader = pair.master.try_clone_reader().map_err(pty_failed)?;
-        let writer = pair.master.take_writer().map_err(pty_failed)?;
+        let handles = pair
+            .master
+            .try_clone_reader()
+            .and_then(|reader| Ok((reader, pair.master.take_writer()?)));
+        let (reader, writer) = match handles {
+            Ok(handles) => handles,
+            Err(e) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(pty_failed(e));
+            }
+        };
 
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        let flow = Arc::new(FlowGate::new(UNACKED_HIGH, UNACKED_LOW));
+        let gate = Arc::clone(&flow);
+        let mut on_output = on_output;
+        let on_output = move |bytes: Vec<u8>| {
+            gate.reserve(bytes.len());
+            on_output(bytes);
+        };
         let session = Session {
             master: Mutex::new(pair.master),
             writer: Mutex::new(writer),
             killer: Mutex::new(child.clone_killer()),
+            flow,
         };
         // Registered before the waiter starts, or a fast exit would find nothing to close.
         lock(&self.sessions).insert(id, Arc::new(session));
+        if let Err(e) = self.start_threads(id, reader, child, on_output, on_exit) {
+            self.kill(id);
+            return Err(PtyError::Thread(e));
+        }
+        Ok(id)
+    }
 
-        let (tx, rx) = mpsc::channel();
-        thread::spawn(move || read_into(reader, &tx));
-        let pump = thread::spawn(move || coalesce::pump(&rx, &BATCHING, on_output));
+    fn start_threads(
+        &self,
+        id: SessionId,
+        reader: Box<dyn Read + Send>,
+        mut child: Box<dyn Child + Send + Sync>,
+        on_output: impl FnMut(Vec<u8>) + Send + 'static,
+        on_exit: impl FnOnce(Option<u32>) + Send + 'static,
+    ) -> io::Result<()> {
+        let (tx, rx) = mpsc::sync_channel(QUEUED_READS);
+        thread::Builder::new().spawn(move || read_into(reader, &tx))?;
+        let pump =
+            thread::Builder::new().spawn(move || coalesce::pump(&rx, &BATCHING, on_output))?;
         let sessions = Arc::clone(&self.sessions);
-        thread::spawn(move || {
+        thread::Builder::new().spawn(move || {
             let code = child.wait().ok().map(|status| status.exit_code());
             // Closing the pseudo-console ends the reader, so all output is sent before the exit.
             let closed = lock(&sessions).remove(&id);
-            drop(closed);
-            if pump.join().is_ok() {
-                on_exit(code);
+            if let Some(session) = closed {
+                end(&session);
             }
-        });
-        Ok(id)
+            // A panicked pump lost only output; the tab still needs its exit.
+            let _ = pump.join();
+            on_exit(code);
+        })?;
+        Ok(())
     }
 
     pub fn write(&self, id: SessionId, data: &[u8]) -> Result<(), PtyError> {
@@ -156,6 +187,13 @@ impl PtyManager {
         lock(&self.session(id)?.master)
             .resize(size(cols, rows))
             .map_err(pty_failed)
+    }
+
+    /// Returns output credit once the webview has drawn `bytes` of it.
+    pub fn ack(&self, id: SessionId, bytes: usize) {
+        if let Ok(session) = self.session(id) {
+            session.flow.ack(bytes);
+        }
     }
 
     /// Ends the program and closes its pseudo-console, which ends anything else attached to it.
@@ -179,16 +217,34 @@ impl PtyManager {
     }
 }
 
+fn command_for(request: &SpawnRequest) -> Result<CommandBuilder, PtyError> {
+    let program = Finder::from_env()
+        .find(&request.program)
+        .ok_or_else(|| PtyError::NotFound(request.program.clone()))?;
+    let mut command = CommandBuilder::new(&program);
+    command.args(&request.args);
+    if let Some(cwd) = &request.cwd {
+        if !Path::new(cwd).is_dir() {
+            return Err(PtyError::NoSuchDir(cwd.clone()));
+        }
+        command.cwd(cwd);
+    }
+    command.env("TERM", "xterm-256color");
+    command.env("COLORTERM", "truecolor");
+    Ok(command)
+}
+
 fn pty_failed(error: impl Display) -> PtyError {
     PtyError::Pty(error.to_string())
 }
 
 fn end(session: &Session) {
+    session.flow.close();
     // Fails only when the process already exited, which is the outcome wanted.
     let _ = lock(&session.killer).kill();
 }
 
-fn read_into(mut reader: Box<dyn Read + Send>, tx: &Sender<Vec<u8>>) {
+fn read_into(mut reader: Box<dyn Read + Send>, tx: &SyncSender<Vec<u8>>) {
     let mut buf = vec![0; 64 * 1024];
     loop {
         match reader.read(&mut buf) {
@@ -269,6 +325,35 @@ mod tests {
             }
         }
         (text, None)
+    }
+
+    #[test]
+    fn unacked_output_stalls_at_the_high_mark_and_kill_still_ends_it() {
+        let file = std::env::temp_dir().join(format!("cerberus-flood-{}.txt", std::process::id()));
+        std::fs::write(
+            &file,
+            "0123456789abcdefghijklmnopqrstuvwxyz\r\n".repeat(200_000),
+        )
+        .unwrap();
+        let manager = PtyManager::default();
+        let (id, rx) = start(&manager, "cmd", &["/c", "type", file.to_str().unwrap()]);
+
+        let mut received = 0;
+        while let Ok(Event::Output(bytes)) = rx.recv_timeout(Duration::from_secs(1)) {
+            if bytes.windows(4).any(|w| w == b"\x1b[6n") {
+                let _ = manager.write(id, b"\x1b[1;1R");
+            }
+            received += bytes.len();
+        }
+        manager.kill(id);
+        let (_, exit) = collect(&manager, id, &rx, |_| false);
+        std::fs::remove_file(&file).unwrap();
+
+        assert!(
+            (UNACKED_HIGH..UNACKED_HIGH + BATCHING.max).contains(&received),
+            "received {received} bytes with nothing acked"
+        );
+        assert!(exit.is_some(), "no exit after kill");
     }
 
     #[test]

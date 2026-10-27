@@ -22,6 +22,7 @@ pub fn run() {
             commands::pty_spawn,
             commands::pty_write,
             commands::pty_resize,
+            commands::pty_ack,
             commands::pty_kill,
         ])
         .build(tauri::generate_context!())

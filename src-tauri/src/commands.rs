@@ -58,6 +58,11 @@ pub fn pty_resize(
 }
 
 #[tauri::command(async)]
+pub fn pty_ack(manager: State<'_, PtyManager>, id: SessionId, bytes: usize) {
+    manager.ack(id, bytes);
+}
+
+#[tauri::command(async)]
 pub fn pty_kill(manager: State<'_, PtyManager>, id: SessionId) {
     manager.kill(id);
 }
