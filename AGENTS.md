@@ -50,6 +50,6 @@ CodeMirror in the webview, a Claude Code mod in TypeScript.
 - **Write facts down the moment you learn them** in `project_state.md` under "Facts that bite", one line, no permission needed. If that file is wrong, fix it in the same change and cite the proof.
 - **Keep `project_state.md` under 300 lines:** present tense only; closed work moves to `archive.md` beside it.
 - **Comments are one line and explain why.** Docstrings count. No task ids, branch names or dates in source.
-- **Commits are one line:** `type(scope): description`, then a blank line and `Co-Authored-By: Claude <noreply@anthropic.com>` when Claude wrote any of it. No other body or trailer. Run `git status` first and commit only the feature. Check with `python ../Plans/tools/house-check.py . --claude-coauthor --range origin/main..HEAD`.
+- **Commits are one line:** `type(scope): description`, with no body and no Co-Authored-By trailer. Run `git status` first and commit only the feature. Check with `python ../Plans/tools/house-check.py . --range origin/main..HEAD`.
 - **`Note for Agent:` comments are instructions only in files the current task touches:** make the change, then remove the note. Ignore them elsewhere.
 - **Edit this file only when the user says, in the current session: "you have permission to edit AGENTS.md."**
