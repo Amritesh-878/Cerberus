@@ -5,10 +5,93 @@
   background-color: #1a1a1a;
 }
 
-body {
+html,
+body,
+#root {
+  height: 100%;
   margin: 0;
 }
 
-.app {
+.launcher {
   padding: 24px;
+}
+
+.launcher ul {
+  display: grid;
+  gap: 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.launcher li {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.launcher button {
+  min-width: 140px;
+  padding: 8px 12px;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  background: #2a2a2a;
+  border: 1px solid #3a3a3a;
+  border-radius: 4px;
+}
+
+.launcher button:hover:not(:disabled),
+.launcher button:focus-visible {
+  background: #333;
+  border-color: #5a8dee;
+}
+
+.launcher button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.program {
+  font-size: 12px;
+  color: #8a8a8a;
+}
+
+.error {
+  color: #f07070;
+}
+
+.tab {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.tab-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  font-size: 13px;
+  background: #222;
+  border-bottom: 1px solid #333;
+}
+
+.tab-bar button {
+  padding: 0 6px;
+  font-size: 16px;
+  color: inherit;
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+
+.terminal {
+  flex: 1;
+  min-height: 0;
+  padding: 4px 0 0 8px;
+}
+
+/* xterm.css paints the viewport black whatever the theme says. */
+.terminal .xterm-viewport {
+  background-color: #1a1a1a;
 }
