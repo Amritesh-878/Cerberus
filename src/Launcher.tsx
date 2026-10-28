@@ -1,4 +1,12 @@
-import { createEffect, createSignal, For, on, Show, untrack } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  on,
+  Show,
+  untrack,
+} from "solid-js";
 
 import {
   preselectedAccount,
@@ -22,13 +30,12 @@ export function Launcher(props: {
   const [accountId, setAccountId] = createSignal(
     untrack(() => preselectedAccount(props.profiles)),
   );
-  // A default saved after the accounts screen closed still has to reach the picker.
+  // A late-saved default must reach the picker; the memo keeps other saves from resetting it.
+  const savedDefault = createMemo(() => props.profiles.defaultAccount);
   createEffect(
-    on(
-      () => props.profiles.defaultAccount,
-      () => setAccountId(preselectedAccount(props.profiles)),
-      { defer: true },
-    ),
+    on(savedDefault, () => setAccountId(preselectedAccount(props.profiles)), {
+      defer: true,
+    }),
   );
   const account = () =>
     props.profiles.accounts.find((a) => a.id === accountId());

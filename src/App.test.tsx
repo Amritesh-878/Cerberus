@@ -157,6 +157,24 @@ test("a default account saved after leaving the accounts screen reaches the laun
   ).toBe("0");
 });
 
+test("opening a program keeps the account picked in the launcher", async () => {
+  const root = await renderApp(() => SAVED, {
+    remember_program: () => ({ ...SAVED, lastProgram: "powershell" }),
+  });
+  const picker = root.querySelector<HTMLSelectElement>(
+    ".account-picker select",
+  );
+  if (!picker) throw new Error("no account picker");
+  picker.value = "0";
+  picker.dispatchEvent(new Event("change", { bubbles: true }));
+
+  click(root, "PowerShell");
+  await settled();
+  await settled();
+
+  expect(picker.value).toBe("0");
+});
+
 test("saved accounts open the launcher with each program from the core", async () => {
   const root = await renderApp(() => SAVED);
 
