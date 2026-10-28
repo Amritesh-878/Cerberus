@@ -1,4 +1,4 @@
-import { createSignal, For, Show, untrack } from "solid-js";
+import { createEffect, createSignal, For, on, Show, untrack } from "solid-js";
 
 import {
   preselectedAccount,
@@ -19,9 +19,16 @@ export function Launcher(props: {
   onLaunch: (tab: Tab) => void;
   onAccounts: () => void;
 }) {
-  // The launcher remounts after the accounts screen, so reading the profiles once is enough.
   const [accountId, setAccountId] = createSignal(
     untrack(() => preselectedAccount(props.profiles)),
+  );
+  // A default saved after the accounts screen closed still has to reach the picker.
+  createEffect(
+    on(
+      () => props.profiles.defaultAccount,
+      () => setAccountId(preselectedAccount(props.profiles)),
+      { defer: true },
+    ),
   );
   const account = () =>
     props.profiles.accounts.find((a) => a.id === accountId());

@@ -129,6 +129,34 @@ test("the accounts screen sets the start folder, Home by default", async () => {
   );
 });
 
+test("a default account saved after leaving the accounts screen reaches the launcher", async () => {
+  let finishSave: (() => void) | undefined;
+  const root = await renderApp(() => SAVED, {
+    set_default_account: () =>
+      new Promise<Profiles>((resolve) => {
+        finishSave = () => {
+          resolve({ ...SAVED, defaultAccount: 0 });
+        };
+      }),
+  });
+  click(root, "Accounts…");
+  await settled();
+
+  const picker = root.querySelector<HTMLSelectElement>(".defaults select");
+  if (!picker) throw new Error("no account picker");
+  picker.value = "0";
+  picker.dispatchEvent(new Event("change", { bubbles: true }));
+  click(root, "Back to launcher");
+  await settled();
+  finishSave?.();
+  await settled();
+  await settled();
+
+  expect(
+    root.querySelector<HTMLSelectElement>(".account-picker select")?.value,
+  ).toBe("0");
+});
+
 test("saved accounts open the launcher with each program from the core", async () => {
   const root = await renderApp(() => SAVED);
 
