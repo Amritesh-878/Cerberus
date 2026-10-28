@@ -10,6 +10,7 @@ import {
 } from "solid-js";
 
 import {
+  isNewer,
   loadProfiles,
   type Profiles,
   resetProfiles,
@@ -34,6 +35,9 @@ export function App() {
     if (fresh.accounts.length === 0) setScreen("walkthrough");
     setLoadError(undefined);
     setProfiles(fresh);
+  };
+  const changed = (fresh: Profiles) => {
+    if (isNewer(fresh, untrack(profiles))) setProfiles(fresh);
   };
   const fail = (error: unknown) => {
     setLoadError(String(error));
@@ -96,7 +100,7 @@ export function App() {
                     programs={programs.latest}
                     programsError={programsError()}
                     statuses={statuses}
-                    onProfiles={setProfiles}
+                    onProfiles={changed}
                     onLaunch={setTab}
                     onAccounts={() => setScreen("accounts")}
                   />
@@ -107,7 +111,7 @@ export function App() {
                     profiles={loaded()}
                     programs={programs.latest ?? []}
                     statuses={statuses}
-                    onProfiles={setProfiles}
+                    onProfiles={changed}
                     onOpen={setTab}
                     onRecheckPrograms={() => void recheckPrograms()}
                     onFinish={toLauncher}
@@ -118,7 +122,7 @@ export function App() {
                     profiles={loaded()}
                     programs={programs.latest ?? []}
                     statuses={statuses}
-                    onProfiles={setProfiles}
+                    onProfiles={changed}
                     onOpen={setTab}
                     onClose={toLauncher}
                   />

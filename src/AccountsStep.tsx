@@ -25,6 +25,8 @@ export function AccountsStep(props: {
   const [error, setError] = createSignal<string>();
   const [detected] = createResource(() => props.profiles, detectAccounts);
   const [editing, setEditing] = createSignal<number>();
+  // Held apart from the account, since every saved change brings new account objects.
+  const [draft, setDraft] = createSignal("");
   const [newName, setNewName] = createSignal("");
   const [newDir, setNewDir] = createSignal("");
   const [dirPicked, setDirPicked] = createSignal(false);
@@ -90,18 +92,15 @@ export function AccountsStep(props: {
                 <form
                   onSubmit={(event) => {
                     event.preventDefault();
-                    const field =
-                      event.currentTarget.elements.namedItem("name");
-                    if (field instanceof HTMLInputElement) {
-                      change(renameAccount(account.id, field.value), () => {
-                        setEditing(undefined);
-                      });
-                    }
+                    change(renameAccount(account.id, draft()), () => {
+                      setEditing(undefined);
+                    });
                   }}
                 >
                   <input
                     name="name"
-                    value={account.name}
+                    value={draft()}
+                    onInput={(event) => setDraft(event.currentTarget.value)}
                     aria-label="New name"
                   />
                   <button type="submit">Save</button>
@@ -117,35 +116,43 @@ export function AccountsStep(props: {
               </Show>
               <span class="program">{account.configDir}</span>
               <span>{statusText(props.statuses.get(account.id))}</span>
-              <span class="actions">
-                <Show
-                  when={
-                    props.statuses.get(account.id)?.state === "loggedOut" &&
-                    installed(props.programs, "claude")
-                  }
-                >
+              <Show when={editing() !== account.id}>
+                <span class="actions">
+                  <Show
+                    when={
+                      props.statuses.get(account.id)?.state === "loggedOut" &&
+                      installed(props.programs, "claude")
+                    }
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        signIn(account);
+                      }}
+                    >
+                      Sign in
+                    </button>
+                  </Show>
                   <button
                     type="button"
                     onClick={() => {
-                      signIn(account);
+                      setDraft(account.name);
+                      setEditing(account.id);
                     }}
                   >
-                    Sign in
+                    Rename
                   </button>
-                </Show>
-                <button type="button" onClick={() => setEditing(account.id)}>
-                  Rename
-                </button>
-                <button
-                  type="button"
-                  title="Cerberus forgets this account. Its folder stays on disk."
-                  onClick={() => {
-                    change(removeAccount(account.id));
-                  }}
-                >
-                  Remove
-                </button>
-              </span>
+                  <button
+                    type="button"
+                    title="Cerberus forgets this account. Its folder stays on disk."
+                    onClick={() => {
+                      change(removeAccount(account.id));
+                    }}
+                  >
+                    Remove
+                  </button>
+                </span>
+              </Show>
             </li>
           )}
         </For>

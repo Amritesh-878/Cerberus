@@ -60,6 +60,7 @@ impl Store {
         let _writing = self.writing.lock().unwrap_or_else(PoisonError::into_inner);
         let mut profiles = self.load()?;
         change(&mut profiles)?;
+        profiles.revision += 1;
         self.save(&profiles)?;
         Ok(profiles)
     }
@@ -206,6 +207,18 @@ mod tests {
     }
 
     #[test]
+    fn every_save_raises_the_revision() {
+        let dir = TestDir::new();
+        let store = store_in(&dir);
+
+        let first = add(&store, "one", r"C:\h\.claude-one");
+        let second = add(&store, "two", r"C:\h\.claude-two");
+
+        assert_eq!((first.revision, second.revision), (1, 2));
+        assert_eq!(store_in(&dir).load().unwrap().revision, 2);
+    }
+
+    #[test]
     fn a_failed_change_writes_nothing() {
         let dir = TestDir::new();
         let store = store_in(&dir);
@@ -267,7 +280,14 @@ mod tests {
 
         assert_eq!(loaded.last_program.as_deref(), Some("powershell"));
         assert_eq!(loaded.start_folder, Some(PathBuf::from(r"C:\code")));
-        assert_eq!(saved, loaded);
+        assert_eq!(saved.revision, loaded.revision + 1);
+        assert_eq!(
+            Profiles {
+                revision: 0,
+                ..saved
+            },
+            loaded
+        );
         let raw = fs::read_to_string(dir.path().join("profiles.json")).unwrap();
         assert!(raw.contains(r#""version": 2"#) && !raw.contains("defaultCwd"));
     }

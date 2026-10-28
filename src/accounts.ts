@@ -16,6 +16,15 @@ export interface Profiles {
   lastProgram: string | null;
   /** `null` starts tabs in the user's home folder. */
   startFolder: string | null;
+  revision: number;
+}
+
+/** `false` when `fresh` was saved before `current`, so a late reply cannot undo a newer change. */
+export function isNewer(
+  fresh: Profiles,
+  current: Profiles | undefined,
+): boolean {
+  return current === undefined || fresh.revision >= current.revision;
 }
 
 export interface Candidate {

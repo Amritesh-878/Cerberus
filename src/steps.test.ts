@@ -8,6 +8,7 @@ const PROFILES: Profiles = {
   defaultAccount: 0,
   lastProgram: null,
   startFolder: null,
+  revision: 0,
 };
 
 test("steps run install, accounts, defaults", () => {

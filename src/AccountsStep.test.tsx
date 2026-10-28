@@ -13,6 +13,7 @@ const EMPTY: Profiles = {
   defaultAccount: null,
   lastProgram: null,
   startFolder: null,
+  revision: 0,
 };
 
 const CLAUDE: ProgramChoice = {
@@ -220,4 +221,18 @@ test("sign in is offered only to a signed-out account", async () => {
   button(signedOut.root, "Sign in").click();
 
   expect(signedOut.opened[0]?.signIn).toBe(true);
+});
+
+test("a row being renamed shows only Save and Cancel", async () => {
+  const { root } = await renderStep({ profiles: ONE });
+  const row = root.querySelector(".accounts li");
+  if (!(row instanceof HTMLElement)) throw new Error("no account row");
+  const labels = () =>
+    [...row.querySelectorAll("button")].map((b) => b.textContent);
+
+  button(row, "Rename").click();
+  expect(labels()).toEqual(["Save", "Cancel"]);
+
+  button(row, "Cancel").click();
+  expect(labels()).toEqual(["Rename", "Remove"]);
 });

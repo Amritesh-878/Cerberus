@@ -2,7 +2,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { render } from "solid-js/web";
 import { afterEach, expect, test } from "vitest";
 
-import type { Profiles } from "./accounts";
+import type { Account, Profiles } from "./accounts";
 import { App } from "./App";
 import type { ProgramChoice } from "./pty";
 
@@ -28,6 +28,7 @@ const EMPTY: Profiles = {
   defaultAccount: null,
   lastProgram: null,
   startFolder: null,
+  revision: 0,
 };
 
 const SAVED: Profiles = {
@@ -38,6 +39,7 @@ const SAVED: Profiles = {
   defaultAccount: 1,
   lastProgram: "powershell",
   startFolder: null,
+  revision: 0,
 };
 
 let dispose: (() => void) | undefined;
@@ -54,10 +56,10 @@ async function settled(): Promise<void> {
 
 async function renderApp(
   profiles: () => Profiles,
-  core: Record<string, () => unknown> = {},
+  core: Record<string, (args: unknown) => unknown> = {},
 ): Promise<HTMLElement> {
-  mockIPC((cmd) => {
-    if (cmd in core) return core[cmd]?.();
+  mockIPC((cmd, args) => {
+    if (cmd in core) return core[cmd]?.(args);
     switch (cmd) {
       case "list_programs":
         return CHOICES;
@@ -173,6 +175,122 @@ test("opening a program keeps the account picked in the launcher", async () => {
   await settled();
 
   expect(picker.value).toBe("0");
+});
+
+function field(args: unknown, key: string): unknown {
+  if (typeof args !== "object" || args === null) return undefined;
+  return Object.entries(args).find(([k]) => k === key)?.[1];
+}
+
+// A core that keeps one list, raises the revision on every save and can hold an import's reply.
+function accountsCore(start: Profiles) {
+  let saved = start;
+  let holdNextAdd = false;
+  const held: (() => void)[] = [];
+  const save = (accounts: Account[]) => {
+    saved = { ...saved, accounts, revision: saved.revision + 1 };
+    // Replies cross IPC as JSON, so every reply holds new objects.
+    return structuredClone(saved);
+  };
+  return {
+    profiles: () => saved,
+    holdNextAdd: () => {
+      holdNextAdd = true;
+    },
+    release: () => {
+      held.splice(0).forEach((reply) => {
+        reply();
+      });
+    },
+    core: {
+      detect_accounts: () =>
+        saved.accounts.some((a) => a.id === 7)
+          ? []
+          : [{ name: "acc2", configDir: String.raw`C:\h\.claude-acc2` }],
+      rename_account: (args: unknown) =>
+        save(
+          saved.accounts.map((a) =>
+            a.id === field(args, "id")
+              ? { ...a, name: String(field(args, "name")) }
+              : a,
+          ),
+        ),
+      add_account: (args: unknown) => {
+        const reply = save([
+          ...saved.accounts,
+          {
+            id: 7,
+            name: String(field(args, "name")),
+            configDir: String(field(args, "configDir")),
+          },
+        ]);
+        if (!holdNextAdd) return reply;
+        holdNextAdd = false;
+        return new Promise<Profiles>((resolve) => {
+          held.push(() => {
+            resolve(reply);
+          });
+        });
+      },
+    },
+  };
+}
+
+const ONE_SAVED: Profiles = { ...SAVED, accounts: SAVED.accounts.slice(0, 1) };
+
+function renameField(root: HTMLElement): HTMLInputElement {
+  const input = root.querySelector<HTMLInputElement>(
+    '.accounts input[name="name"]',
+  );
+  if (!input) throw new Error("no rename field");
+  return input;
+}
+
+function type(input: HTMLInputElement, value: string): void {
+  input.value = value;
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+function accountNames(root: HTMLElement): (string | null)[] {
+  return [...root.querySelectorAll(".accounts li strong")].map(
+    (s) => s.textContent,
+  );
+}
+
+test("an import's late reply never undoes a rename saved after it", async () => {
+  const fake = accountsCore(ONE_SAVED);
+  const root = await renderApp(fake.profiles, fake.core);
+  click(root, "Accounts…");
+  await settled();
+  fake.holdNextAdd();
+
+  click(root, "Import");
+  await settled();
+  click(root, "Rename");
+  type(renameField(root), "Main Acc");
+  renameField(root).closest("form")?.requestSubmit();
+  await settled();
+  await settled();
+  fake.release();
+  await settled();
+  await settled();
+
+  expect(accountNames(root)).toEqual(["Main Acc", "acc2"]);
+});
+
+test("an open rename keeps what was typed when an import lands", async () => {
+  const fake = accountsCore(ONE_SAVED);
+  const root = await renderApp(fake.profiles, fake.core);
+  click(root, "Accounts…");
+  await settled();
+
+  click(root, "Rename");
+  type(renameField(root), "Main Acc");
+  click(root, "Import");
+  await settled();
+  await settled();
+
+  expect(renameField(root).value).toBe("Main Acc");
 });
 
 test("saved accounts open the launcher with each program from the core", async () => {

@@ -75,6 +75,7 @@ const PROFILES: Profiles = {
   defaultAccount: null,
   lastProgram: null,
   startFolder: null,
+  revision: 0,
 };
 
 test("the launcher focuses the last program, then Claude Code, then any installed one", () => {

@@ -63,6 +63,9 @@ pub struct Profiles {
     pub default_account: Option<AccountId>,
     pub last_program: Option<String>,
     pub start_folder: Option<PathBuf>,
+    // Raised on every save, so the webview can drop a reply that a newer one already replaced.
+    #[serde(default)]
+    pub revision: u64,
     // Ids are never reused, so something saved under a removed account cannot land on a new one.
     #[serde(skip)]
     next_id: AccountId,

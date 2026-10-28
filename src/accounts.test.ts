@@ -10,6 +10,7 @@ const PROFILES: Profiles = {
   defaultAccount: 4,
   lastProgram: null,
   startFolder: null,
+  revision: 0,
 };
 
 test("the launcher preselects the default account", () => {
