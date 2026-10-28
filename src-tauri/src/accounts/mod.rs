@@ -207,7 +207,8 @@ impl Accounts {
         self.update(|p| {
             p.add(name, config_dir.clone())?;
             fs::create_dir_all(&config_dir)?;
-            Ok(())
+            // A missing folder compares by its text, so a link in its path is only seen once it exists.
+            p.validate()
         })
     }
 
@@ -597,6 +598,32 @@ mod tests {
 
         assert!(matches!(result, Err(AccountsError::Io(_))));
         assert!(accounts.load().unwrap().accounts.is_empty());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_folder_reached_through_a_junction_is_a_duplicate() {
+        let home = TestDir::new();
+        let real = home.path().join("real");
+        let link = home.path().join("link");
+        fs::create_dir_all(&real).unwrap();
+        let made = std::process::Command::new("cmd")
+            .arg("/c")
+            .arg("mklink")
+            .arg("/J")
+            .arg(&link)
+            .arg(&real)
+            .output()
+            .unwrap();
+        assert!(made.status.success(), "no junction: {made:?}");
+        let accounts = Accounts::new(&home.path().join("app"), home.path().to_path_buf());
+        accounts.add("one", real.join(".claude-x")).unwrap();
+        fs::remove_dir(real.join(".claude-x")).unwrap();
+
+        let result = accounts.add("two", link.join(".claude-x"));
+
+        assert!(matches!(result, Err(AccountsError::DuplicateDir(_))));
+        assert_eq!(accounts.load().unwrap().accounts.len(), 1);
     }
 
     #[test]
