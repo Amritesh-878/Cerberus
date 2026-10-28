@@ -1,8 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
-  <rect x="64" y="64" width="896" height="896" rx="200" fill="#f3ece3"/>
-  <g fill="none" stroke-linecap="round" stroke-linejoin="miter" stroke-width="120">
-    <path d="M300 300 L500 512 L300 724" stroke="#4a2418"/>
-    <path d="M420 300 L620 512 L420 724" stroke="#8e4a33"/>
-    <path d="M540 300 L740 512 L540 724" stroke="#e0835e"/>
+  <rect x="64" y="64" width="896" height="896" rx="200" fill="#1f1f23"/>
+  <g transform="translate(0 14)">
+    <rect x="248" y="246" width="164" height="96" rx="28" fill="#f0a07c"/>
+    <rect x="430" y="246" width="164" height="96" rx="28" fill="#e0835e"/>
+    <rect x="612" y="246" width="164" height="96" rx="28" fill="#c4623d"/>
+    <rect x="200" y="310" width="624" height="440" rx="56" fill="#f3ece3"/>
+    <g transform="translate(33 0)">
+      <path d="M320 440 L430 530 L320 620" fill="none" stroke="#1f1f23" stroke-width="64" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="480" y="590" width="190" height="60" rx="30" fill="#e0835e"/>
+    </g>
   </g>
 </svg>
