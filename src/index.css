@@ -12,8 +12,156 @@ body,
   margin: 0;
 }
 
-.launcher {
+.launcher,
+.walkthrough {
+  max-width: 880px;
   padding: 24px;
+}
+
+.home[hidden] {
+  display: none;
+}
+
+.launcher button,
+.walkthrough button,
+.walkthrough input,
+.walkthrough select,
+.account-picker select {
+  padding: 6px 10px;
+  font: inherit;
+  color: inherit;
+  background: #2a2a2a;
+  border: 1px solid #3a3a3a;
+  border-radius: 4px;
+}
+
+.walkthrough button {
+  cursor: pointer;
+}
+
+.walkthrough button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.walkthrough button:hover:not(:disabled),
+.walkthrough :is(button, input, select):focus-visible,
+.account-picker select:focus-visible {
+  border-color: #5a8dee;
+  outline: none;
+}
+
+.steps {
+  display: flex;
+  gap: 24px;
+  padding: 0;
+  color: #8a8a8a;
+  list-style: none;
+  counter-reset: step;
+}
+
+.steps li::before {
+  content: counter(step) ". ";
+  counter-increment: step;
+}
+
+.steps .current {
+  color: inherit;
+  font-weight: 600;
+}
+
+.accounts {
+  display: grid;
+  gap: 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.accounts li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  align-items: baseline;
+  padding: 8px 12px;
+  background: #222;
+  border: 1px solid #2e2e2e;
+  border-radius: 4px;
+}
+
+.accounts .actions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.add-account,
+.accounts form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.add-account input {
+  flex: 1;
+  min-width: 240px;
+}
+
+.folder,
+.start-folder {
+  font-size: 13px;
+}
+
+.defaults {
+  display: grid;
+  gap: 12px;
+  max-width: 480px;
+}
+
+.defaults label {
+  display: grid;
+  gap: 4px;
+}
+
+.step-nav {
+  display: flex;
+  gap: 8px;
+  margin-top: 24px;
+}
+
+.step-nav .leave {
+  margin-left: auto;
+}
+
+.hint {
+  font-size: 13px;
+  color: #8a8a8a;
+}
+
+pre,
+code {
+  font-family: "Cascadia Mono", Consolas, monospace;
+}
+
+pre {
+  padding: 8px 12px;
+  background: #111;
+  border-radius: 4px;
+}
+
+.account-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.launcher .account-picker button.link {
+  min-width: 0;
+  margin-left: auto;
+}
+
+.tab-account {
+  color: #8a8a8a;
 }
 
 .launcher ul {
@@ -52,8 +200,10 @@ body,
 }
 
 .program {
+  min-width: 0;
   font-size: 12px;
   color: #8a8a8a;
+  overflow-wrap: anywhere;
 }
 
 .error {
@@ -73,6 +223,18 @@ body,
   padding: 4px 8px;
   font-size: 13px;
   background: #222;
+  border-bottom: 1px solid #333;
+}
+
+.sign-in-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  font-size: 13px;
+  background: #2b2720;
   border-bottom: 1px solid #333;
 }
 
