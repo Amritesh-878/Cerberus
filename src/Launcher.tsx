@@ -1,15 +1,21 @@
 import { createSignal, For, Show, untrack } from "solid-js";
 
-import { preselectedAccount, type Profiles, statusText } from "./accounts";
+import {
+  preselectedAccount,
+  type Profiles,
+  rememberProgram,
+  statusText,
+} from "./accounts";
 import type { ProgramChoice } from "./pty";
 import type { Statuses } from "./statuses";
-import { type Tab, tabFor } from "./tab";
+import { preselectedProgram, type Tab, tabFor } from "./tab";
 
 export function Launcher(props: {
   profiles: Profiles;
   programs: ProgramChoice[] | undefined;
   programsError: unknown;
   statuses: Statuses;
+  onProfiles: (profiles: Profiles) => void;
   onLaunch: (tab: Tab) => void;
   onAccounts: () => void;
 }) {
@@ -28,9 +34,13 @@ export function Launcher(props: {
     const chosen = account();
     const tab = tabFor(choice, {
       account: chosen ?? null,
-      cwd: props.profiles.defaultCwd,
+      cwd: props.profiles.startFolder,
     });
-    if (tab) props.onLaunch(tab);
+    if (!tab) return;
+    props.onLaunch(tab);
+    rememberProgram(choice.id).then(props.onProfiles, (error: unknown) => {
+      console.error("could not save the last program:", error);
+    });
   };
 
   return (
@@ -77,7 +87,11 @@ export function Launcher(props: {
                 type="button"
                 disabled={choice.program === null}
                 ref={(el) => {
-                  if (choice.id === props.profiles.defaultProgram) {
+                  const focused = preselectedProgram(
+                    props.profiles,
+                    props.programs ?? [],
+                  );
+                  if (choice.id === focused) {
                     queueMicrotask(() => {
                       el.focus();
                     });

@@ -1,6 +1,8 @@
 import { expect, test } from "vitest";
 
-import { tabFor } from "./tab";
+import type { Profiles } from "./accounts";
+import type { ProgramChoice } from "./pty";
+import { preselectedProgram, tabFor } from "./tab";
 
 const GIT_BASH = {
   id: "git-bash",
@@ -31,6 +33,7 @@ test("an installed program opens a tab under its account", () => {
     pastesImages: false,
     account: { id: 2, name: "work" },
     input: null,
+    signIn: false,
   });
 });
 
@@ -55,4 +58,32 @@ test("a missing program opens no tab", () => {
       { account: null, cwd: null },
     ),
   ).toBeUndefined();
+});
+
+function program(id: string, path: string | null): ProgramChoice {
+  return { id, label: id, program: path, args: [], pastesImages: false };
+}
+
+const PROGRAMS = [
+  program("claude", String.raw`C:\bin\claude.exe`),
+  program("powershell", String.raw`C:\ps\powershell.exe`),
+  program("git-bash", null),
+];
+
+const PROFILES: Profiles = {
+  accounts: [],
+  defaultAccount: null,
+  lastProgram: null,
+  startFolder: null,
+};
+
+test("the launcher focuses the last program, then Claude Code, then any installed one", () => {
+  const last = { ...PROFILES, lastProgram: "powershell" };
+  const lastButGone = { ...PROFILES, lastProgram: "git-bash" };
+  const noClaude = [program("claude", null), ...PROGRAMS.slice(1)];
+
+  expect(preselectedProgram(last, PROGRAMS)).toBe("powershell");
+  expect(preselectedProgram(lastButGone, PROGRAMS)).toBe("claude");
+  expect(preselectedProgram(PROFILES, noClaude)).toBe("powershell");
+  expect(preselectedProgram(PROFILES, [program("claude", null)])).toBeNull();
 });

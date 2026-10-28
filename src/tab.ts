@@ -1,4 +1,4 @@
-import type { Account, AccountId } from "./accounts";
+import type { Account, AccountId, Profiles } from "./accounts";
 import type { ProgramChoice, SpawnSpec } from "./pty";
 
 export interface TabAccount {
@@ -13,12 +13,15 @@ export interface Tab {
   account: TabAccount | null;
   /** Typed into the program once it starts, never followed by Enter. */
   input: string | null;
+  /** Opened to sign the account in, so the tab shows how to finish. */
+  signIn: boolean;
 }
 
 export interface TabOptions {
   account: Account | null;
   cwd: string | null;
   input?: string;
+  signIn?: boolean;
 }
 
 export function tabFor(
@@ -38,5 +41,25 @@ export function tabFor(
     pastesImages: choice.pastesImages,
     account: account && { id: account.id, name: account.name },
     input: options.input ?? null,
+    signIn: options.signIn ?? false,
   };
+}
+
+export function installed(
+  programs: readonly ProgramChoice[],
+  id: string,
+): ProgramChoice | undefined {
+  return programs.find((p) => p.id === id && p.program !== null);
+}
+
+export function preselectedProgram(
+  profiles: Profiles,
+  programs: readonly ProgramChoice[],
+): string | null {
+  const last = profiles.lastProgram;
+  const pick =
+    (last === null ? undefined : installed(programs, last)) ??
+    installed(programs, "claude") ??
+    programs.find((p) => p.program !== null);
+  return pick?.id ?? null;
 }

@@ -12,7 +12,7 @@ function settled(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-const LOGGED_OUT: AuthStatus = { state: "loggedOut", summary: "not logged in" };
+const LOGGED_OUT: AuthStatus = { state: "loggedOut", summary: "signed out" };
 const LOGGED_IN: AuthStatus = {
   state: "loggedIn",
   summary: "user@example.com · Pro",

@@ -4,10 +4,11 @@ use std::path::PathBuf;
 use std::sync::{Mutex, PoisonError};
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::accounts::{AccountId, AccountsError, Profiles};
 
-const VERSION: u32 = 1;
+const VERSION: u32 = 2;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -108,13 +109,16 @@ impl Store {
 fn parse(bytes: &[u8]) -> Result<Profiles, AccountsError> {
     let corrupt = |e: serde_json::Error| AccountsError::Corrupt(e.to_string());
     let Versioned { version } = serde_json::from_slice(bytes).map_err(corrupt)?;
-    if version != VERSION {
-        return Err(AccountsError::UnknownVersion(version));
+    let mut saved: Value = serde_json::from_slice(bytes).map_err(corrupt)?;
+    match version {
+        1 => upgrade_from_v1(&mut saved),
+        VERSION => {}
+        other => return Err(AccountsError::UnknownVersion(other)),
     }
     let Saved {
         next_id,
         mut profiles,
-    } = serde_json::from_slice(bytes).map_err(corrupt)?;
+    } = serde_json::from_value(saved).map_err(corrupt)?;
     profiles.next_id = next_id;
     profiles.validate().map_err(|e| match e {
         AccountsError::Corrupt(_) => e,
@@ -123,12 +127,26 @@ fn parse(bytes: &[u8]) -> Result<Profiles, AccountsError> {
     Ok(profiles)
 }
 
+// Version 1 had a default program and folder picked in the walkthrough; they keep their values.
+fn upgrade_from_v1(saved: &mut Value) {
+    let Some(fields) = saved.as_object_mut() else {
+        return;
+    };
+    for (old, new) in [
+        ("defaultProgram", "lastProgram"),
+        ("defaultCwd", "startFolder"),
+    ] {
+        if let Some(value) = fields.remove(old) {
+            fields.insert(new.to_owned(), value);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::Path;
 
     use super::*;
-    use crate::accounts::Defaults;
     use crate::accounts::testdir::TestDir;
 
     fn store_in(dir: &TestDir) -> Store {
@@ -156,11 +174,9 @@ mod tests {
         add(&store, "work", r"C:\h\.claude-work");
         let saved = store
             .update(|p| {
-                p.set_defaults(Defaults {
-                    account: Some(1),
-                    program: Some("claude".to_owned()),
-                    cwd: Some(PathBuf::from(r"C:\code")),
-                })
+                p.set_default_account(1)?;
+                p.last_program = Some("claude".to_owned());
+                p.set_start_folder(Some(PathBuf::from(r"C:\code")))
             })
             .unwrap();
 
@@ -168,7 +184,7 @@ mod tests {
 
         assert_eq!(loaded, saved);
         assert_eq!(loaded.next_id, 2);
-        assert_eq!(loaded.default_program.as_deref(), Some("claude"));
+        assert_eq!(loaded.last_program.as_deref(), Some("claude"));
     }
 
     #[test]
@@ -219,10 +235,10 @@ mod tests {
     #[test]
     fn a_file_that_breaks_the_rules_is_corrupt() {
         let dir = TestDir::new();
-        let text = r#"{"version":1,"nextId":2,"accounts":[
+        let text = r#"{"version":2,"nextId":2,"accounts":[
             {"id":0,"name":"a","configDir":"C:\\h\\.claude"},
             {"id":1,"name":"A","configDir":"C:\\h\\.claude-2"}
-        ],"defaultAccount":0,"defaultProgram":null,"defaultCwd":null}"#;
+        ],"defaultAccount":0,"lastProgram":null,"startFolder":null}"#;
 
         let result = write_raw(&dir, text).load();
 
@@ -236,6 +252,24 @@ mod tests {
         let result = write_raw(&dir, r#"{"version":9,"accounts":"anything"}"#).load();
 
         assert!(matches!(result, Err(AccountsError::UnknownVersion(9))));
+    }
+
+    #[test]
+    fn a_version_1_file_keeps_its_program_and_folder() {
+        let dir = TestDir::new();
+        let text = r#"{"version":1,"nextId":1,"accounts":[
+            {"id":0,"name":"a","configDir":"C:\\h\\.claude"}
+        ],"defaultAccount":0,"defaultProgram":"powershell","defaultCwd":"C:\\code"}"#;
+        let store = write_raw(&dir, text);
+
+        let loaded = store.load().unwrap();
+        let saved = store.update(|_| Ok(())).unwrap();
+
+        assert_eq!(loaded.last_program.as_deref(), Some("powershell"));
+        assert_eq!(loaded.start_folder, Some(PathBuf::from(r"C:\code")));
+        assert_eq!(saved, loaded);
+        let raw = fs::read_to_string(dir.path().join("profiles.json")).unwrap();
+        assert!(raw.contains(r#""version": 2"#) && !raw.contains("defaultCwd"));
     }
 
     #[test]

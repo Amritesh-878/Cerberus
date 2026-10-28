@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 
 export type AccountId = number;
 
@@ -12,9 +13,9 @@ export interface Profiles {
   accounts: Account[];
   defaultAccount: AccountId | null;
   /** A program id from `listPrograms`. */
-  defaultProgram: string | null;
+  lastProgram: string | null;
   /** `null` starts tabs in the user's home folder. */
-  defaultCwd: string | null;
+  startFolder: string | null;
 }
 
 export interface Candidate {
@@ -25,12 +26,6 @@ export interface Candidate {
 export interface AuthStatus {
   state: "loggedIn" | "loggedOut" | "unknown";
   summary: string;
-}
-
-export interface Defaults {
-  account: AccountId | null;
-  program: string | null;
-  cwd: string | null;
 }
 
 export function loadProfiles(): Promise<Profiles> {
@@ -61,8 +56,21 @@ export function removeAccount(id: AccountId): Promise<Profiles> {
   return invoke<Profiles>("remove_account", { id });
 }
 
-export function setDefaults(defaults: Defaults): Promise<Profiles> {
-  return invoke<Profiles>("set_defaults", { defaults });
+export function setDefaultAccount(id: AccountId): Promise<Profiles> {
+  return invoke<Profiles>("set_default_account", { id });
+}
+
+export function setStartFolder(folder: string | null): Promise<Profiles> {
+  return invoke<Profiles>("set_start_folder", { folder });
+}
+
+export function rememberProgram(program: string): Promise<Profiles> {
+  return invoke<Profiles>("remember_program", { program });
+}
+
+/** Resolves to `null` when the user cancels. */
+export function pickFolder(): Promise<string | null> {
+  return open({ directory: true });
 }
 
 export function accountStatus(id: AccountId): Promise<AuthStatus> {

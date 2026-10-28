@@ -101,9 +101,14 @@ body,
   gap: 8px;
 }
 
-.add-account input:last-of-type {
+.add-account input {
   flex: 1;
   min-width: 240px;
+}
+
+.folder,
+.start-folder {
+  font-size: 13px;
 }
 
 .defaults {
@@ -218,6 +223,18 @@ pre {
   padding: 4px 8px;
   font-size: 13px;
   background: #222;
+  border-bottom: 1px solid #333;
+}
+
+.sign-in-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  font-size: 13px;
+  background: #2b2720;
   border-bottom: 1px solid #333;
 }
 

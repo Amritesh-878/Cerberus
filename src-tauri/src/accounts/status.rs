@@ -145,7 +145,7 @@ fn parse(stdout: &[u8]) -> AuthStatus {
     if !reported.logged_in {
         return AuthStatus {
             state: AuthState::LoggedOut,
-            summary: "not logged in".to_owned(),
+            summary: "signed out".to_owned(),
         };
     }
     let plan = reported.subscription_type.as_deref().map(capitalized);
@@ -160,7 +160,7 @@ fn parse(stdout: &[u8]) -> AuthStatus {
     AuthStatus {
         state: AuthState::LoggedIn,
         summary: if parts.is_empty() {
-            "logged in".to_owned()
+            "signed in".to_owned()
         } else {
             parts.join(" · ")
         },
@@ -214,7 +214,7 @@ mod tests {
         let status = parse(br#"{"loggedIn":true}"#);
 
         assert_eq!(status.state, AuthState::LoggedIn);
-        assert_eq!(status.summary, "logged in");
+        assert_eq!(status.summary, "signed in");
     }
 
     #[test]
@@ -222,7 +222,7 @@ mod tests {
         let status = parse(br#"{"loggedIn":false,"authMethod":"none"}"#);
 
         assert_eq!(status.state, AuthState::LoggedOut);
-        assert_eq!(status.summary, "not logged in");
+        assert_eq!(status.summary, "signed out");
     }
 
     #[test]

@@ -12,6 +12,7 @@ use crate::pty::PtyManager;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .manage(PtyManager::default())
         .setup(|app| {
             let paths = app.path();
@@ -38,7 +39,9 @@ pub fn run() {
             commands::add_account,
             commands::rename_account,
             commands::remove_account,
-            commands::set_defaults,
+            commands::set_default_account,
+            commands::set_start_folder,
+            commands::remember_program,
             commands::account_status,
         ])
         .build(tauri::generate_context!())

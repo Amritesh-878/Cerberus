@@ -18,20 +18,24 @@ tree comes next.
 
 The first launch opens a short walkthrough:
 
-1. **Claude Code.** Checks that `claude` is installed. If not, it shows Anthropic's install
+1. **Install.** Checks that `claude` is installed. If not, it shows Anthropic's install
    command and can open it in a PowerShell tab, typed but not run; press Enter to install.
-2. **Accounts.** An account is a name for a Claude Code config folder, which holds its own login,
-   settings and chats. `~/.claude` (the default) and any `~/.claude-<name>` folder Claude Code
-   has used are offered for import. A new account gets a folder, `~/.claude-<name>` unless you
-   pick another. **Log in** opens Claude Code under that account, where `/login` signs it in.
-   Each account shows its email and plan, read from `claude auth status`.
-3. **Defaults.** The account, program and start folder the launcher picks first.
+2. **Accounts.** Each account keeps its own sign-in, settings and chats, in its own folder.
+   `~/.claude` (the default) and any `~/.claude-<name>` folder Claude Code has used are offered
+   for import. A new account needs only a name; its folder is `~/.claude-<name>` unless you
+   pick another with **Change…**. **Add** opens Claude Code under the new account, and its own
+   first run signs it in; close the tab (or press **Done**) once you're signed in. An account
+   that is signed out shows **Sign in**. Each account shows its email and plan, read from
+   `claude auth status`.
+3. **New tabs.** Which account new tabs use.
 
-**Accounts…** on the launcher reopens it to add, rename or remove accounts. Removing an account
-only forgets it; its folder stays on disk. Accounts and defaults live in `profiles.json` in the
-app's config folder (`%APPDATA%\com.cerberus.terminal`). If that file cannot be read, the app
-offers to start fresh and keeps the old file as `profiles.json.bad` (`.bad2`, `.bad3` and so on
-when that name is taken).
+**Accounts…** on the launcher adds, renames or removes accounts, picks the account new tabs use,
+and sets the start folder (your home folder unless you pick one). Removing an account only
+forgets it; its folder stays on disk. The launcher remembers the last program you opened.
+Accounts and settings live in `profiles.json` in the app's config folder
+(`%APPDATA%\com.cerberus.terminal`). If that file cannot be read, the app offers to start fresh
+and keeps the old file as `profiles.json.bad` (`.bad2`, `.bad3` and so on when that name is
+taken).
 
 ### Tabs
 
@@ -48,7 +52,7 @@ The launcher lists the programs it found:
 | PowerShell | `pwsh` from `PATH`, else Windows PowerShell (`powershell.exe`) |
 | Git Bash | `bin\bash.exe` under Git's install folder, found from `git` on `PATH` |
 
-Pick one to open it in a tab under the chosen account, starting in the default folder (your
+Pick one to open it in a tab under the chosen account, starting in the start folder (your
 home folder unless set). A program that is not installed is
 greyed out. Selecting text copies it; Ctrl+V pastes text. In Claude Code, Alt+V or Ctrl+V pastes
 an image from the clipboard. When the program exits the tab stays open with its exit code; the ×

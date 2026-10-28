@@ -8,8 +8,8 @@ const PROFILES: Profiles = {
     { id: 4, name: "work", configDir: String.raw`C:\h\.claude-work` },
   ],
   defaultAccount: 4,
-  defaultProgram: null,
-  defaultCwd: null,
+  lastProgram: null,
+  startFolder: null,
 };
 
 test("the launcher preselects the default account", () => {

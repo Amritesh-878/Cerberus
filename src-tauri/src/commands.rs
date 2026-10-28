@@ -4,9 +4,7 @@ use serde::Serialize;
 use tauri::State;
 use tauri::ipc::{Channel, InvokeResponseBody, IpcResponse};
 
-use crate::accounts::{
-    AccountId, Accounts, AccountsError, AuthStatus, Candidate, Defaults, Profiles,
-};
+use crate::accounts::{AccountId, Accounts, AccountsError, AuthStatus, Candidate, Profiles};
 use crate::programs::{Finder, ProgramChoice};
 use crate::pty::{PtyError, PtyManager, SessionId, SpawnRequest};
 
@@ -137,11 +135,27 @@ pub fn remove_account(
 }
 
 #[tauri::command(async)]
-pub fn set_defaults(
+pub fn set_default_account(
     accounts: State<'_, Accounts>,
-    defaults: Defaults,
+    id: AccountId,
 ) -> Result<Profiles, AccountsError> {
-    accounts.set_defaults(defaults)
+    accounts.update(|p| p.set_default_account(id))
+}
+
+#[tauri::command(async)]
+pub fn set_start_folder(
+    accounts: State<'_, Accounts>,
+    folder: Option<PathBuf>,
+) -> Result<Profiles, AccountsError> {
+    accounts.set_start_folder(folder)
+}
+
+#[tauri::command(async)]
+pub fn remember_program(
+    accounts: State<'_, Accounts>,
+    program: String,
+) -> Result<Profiles, AccountsError> {
+    accounts.remember_program(program)
 }
 
 #[tauri::command(async)]

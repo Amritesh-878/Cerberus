@@ -1,24 +1,15 @@
-import {
-  createMemo,
-  createSignal,
-  For,
-  Match,
-  Show,
-  Switch,
-  untrack,
-} from "solid-js";
+import { createSignal, For, Match, Show, Switch } from "solid-js";
 
+import { DefaultAccountPicker } from "./AccountsScreen";
 import { AccountsStep } from "./AccountsStep";
-import { preselectedAccount, type Profiles, setDefaults } from "./accounts";
+import type { Profiles } from "./accounts";
 import type { ProgramChoice } from "./pty";
 import type { Statuses } from "./statuses";
-import { type Tab, tabFor } from "./tab";
+import { installed, type Tab, tabFor } from "./tab";
 import {
   finishBlocker,
   INSTALL_COMMAND,
-  installed,
   nextStep,
-  preselectedProgram,
   previousStep,
   type Step,
   STEP_TITLES,
@@ -26,7 +17,6 @@ import {
 } from "./steps";
 
 interface Props {
-  start: Step;
   profiles: Profiles;
   programs: ProgramChoice[];
   statuses: Statuses;
@@ -37,7 +27,7 @@ interface Props {
 }
 
 export function Walkthrough(props: Props) {
-  const [step, setStep] = createSignal(untrack(() => props.start));
+  const [step, setStep] = createSignal<Step>("install");
 
   return (
     <main class="walkthrough">
@@ -69,7 +59,6 @@ export function Walkthrough(props: Props) {
         <Match when={step() === "defaults"}>
           <DefaultsStep
             profiles={props.profiles}
-            programs={props.programs}
             onProfiles={props.onProfiles}
             onFinish={props.onFinish}
           />
@@ -90,11 +79,10 @@ export function Walkthrough(props: Props) {
             </button>
           )}
         </Show>
-        <Show when={props.profiles.accounts.length > 0}>
+        <Show when={props.profiles.accounts.length > 0 && nextStep(step())}>
           <button
             type="button"
             class="leave"
-            title="Leave without changing the defaults"
             onClick={() => {
               props.onFinish();
             }}
@@ -128,7 +116,8 @@ function InstallStep(props: {
         fallback={
           <>
             <p>
-              Claude Code is not installed. Install it from PowerShell with:
+              Claude Code isn't installed yet. To install it, run this in
+              PowerShell:
             </p>
             <pre>{INSTALL_COMMAND}</pre>
             <p>
@@ -149,9 +138,9 @@ function InstallStep(props: {
               </button>
             </p>
             <p class="hint">
-              The command is typed for you; press Enter to run it, then close
-              the tab. If Claude Code still shows as missing, restart Cerberus
-              so it sees the new PATH.
+              Cerberus types the command for you. Press Enter to run it, then
+              close the tab. If Claude Code still shows as missing, restart
+              Cerberus.
             </p>
           </>
         }
@@ -168,93 +157,27 @@ function InstallStep(props: {
 
 function DefaultsStep(props: {
   profiles: Profiles;
-  programs: ProgramChoice[];
   onProfiles: (profiles: Profiles) => void;
   onFinish: () => void;
 }) {
-  const [account, setAccount] = createSignal(
-    untrack(() => preselectedAccount(props.profiles)),
-  );
-  const [program, setProgram] = createSignal(
-    untrack(() => preselectedProgram(props.profiles, props.programs)),
-  );
-  const [cwd, setCwd] = createSignal(
-    untrack(() => props.profiles.defaultCwd ?? ""),
-  );
-  const [error, setError] = createSignal<string>();
-  const blocker = createMemo(() =>
-    finishBlocker(
-      props.profiles,
-      { account: account(), program: program(), cwd: cwd() },
-      props.programs,
-    ),
-  );
-
-  const finish = () => {
-    const folder = cwd().trim();
-    setDefaults({
-      account: account(),
-      program: program(),
-      cwd: folder === "" ? null : folder,
-    })
-      .then((profiles) => {
-        props.onProfiles(profiles);
-        props.onFinish();
-      })
-      .catch((e: unknown) => {
-        setError(String(e));
-      });
-  };
-
   return (
     <section class="defaults">
-      <label>
-        Default account
-        <select
-          onChange={(event) => setAccount(Number(event.currentTarget.value))}
-        >
-          <For each={props.profiles.accounts}>
-            {(a) => (
-              <option value={a.id} selected={a.id === account()}>
-                {a.name}
-              </option>
-            )}
-          </For>
-        </select>
-      </label>
-      <label>
-        Default program
-        <select onChange={(event) => setProgram(event.currentTarget.value)}>
-          <For each={props.programs.filter((p) => p.program !== null)}>
-            {(p) => (
-              <option value={p.id} selected={p.id === program()}>
-                {p.label}
-              </option>
-            )}
-          </For>
-        </select>
-      </label>
-      <label>
-        Start folder
-        <input
-          placeholder="your home folder"
-          value={cwd()}
-          onInput={(event) => setCwd(event.currentTarget.value)}
-        />
-      </label>
+      <DefaultAccountPicker
+        profiles={props.profiles}
+        onProfiles={props.onProfiles}
+      />
       <p>
         <button
           type="button"
-          disabled={blocker() !== undefined}
-          onClick={finish}
+          disabled={finishBlocker(props.profiles) !== undefined}
+          onClick={() => {
+            props.onFinish();
+          }}
         >
           Finish
         </button>{" "}
-        <span class="hint">{blocker()}</span>
+        <span class="hint">{finishBlocker(props.profiles)}</span>
       </p>
-      <Show when={error()}>
-        <p class="error">{error()}</p>
-      </Show>
     </section>
   );
 }

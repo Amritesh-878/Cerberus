@@ -4,6 +4,7 @@ import {
   type Account,
   addAccount,
   detectAccounts,
+  pickFolder,
   type Profiles,
   removeAccount,
   renameAccount,
@@ -12,8 +13,7 @@ import {
 } from "./accounts";
 import type { ProgramChoice } from "./pty";
 import type { Statuses } from "./statuses";
-import { type Tab, tabFor } from "./tab";
-import { installed } from "./steps";
+import { installed, type Tab, tabFor } from "./tab";
 
 export function AccountsStep(props: {
   profiles: Profiles;
@@ -27,7 +27,7 @@ export function AccountsStep(props: {
   const [editing, setEditing] = createSignal<number>();
   const [newName, setNewName] = createSignal("");
   const [newDir, setNewDir] = createSignal("");
-  const [dirTyped, setDirTyped] = createSignal(false);
+  const [dirPicked, setDirPicked] = createSignal(false);
 
   const change = (
     request: Promise<Profiles>,
@@ -48,18 +48,37 @@ export function AccountsStep(props: {
     props.statuses.refresh(profiles.accounts.map((a) => a.id));
   };
 
-  const logIn = (account: Account) => {
+  const signIn = (account: Account) => {
     const claude = installed(props.programs, "claude");
-    const tab = claude && tabFor(claude, { account, cwd: null });
+    const tab = claude && tabFor(claude, { account, cwd: null, signIn: true });
     if (tab) props.onOpen(tab);
+  };
+
+  const suggest = (name: string) => {
+    suggestConfigDir(name)
+      .then((dir) => {
+        if (newName() === name && !dirPicked()) setNewDir(dir);
+      })
+      .catch((e: unknown) => {
+        setError(String(e));
+      });
+  };
+
+  const pick = () => {
+    pickFolder()
+      .then((dir) => {
+        if (dir === null) return;
+        setNewDir(dir);
+        setDirPicked(true);
+      })
+      .catch((e: unknown) => {
+        setError(String(e));
+      });
   };
 
   return (
     <section>
-      <p>
-        Each account is a Claude Code config folder with its own login, settings
-        and chats.
-      </p>
+      <p>Each account keeps its own sign-in, settings and chats.</p>
       <ul class="accounts">
         <For each={props.profiles.accounts}>
           {(account) => (
@@ -99,21 +118,27 @@ export function AccountsStep(props: {
               <span class="program">{account.configDir}</span>
               <span>{statusText(props.statuses.get(account.id))}</span>
               <span class="actions">
-                <button
-                  type="button"
-                  disabled={!installed(props.programs, "claude")}
-                  onClick={() => {
-                    logIn(account);
-                  }}
+                <Show
+                  when={
+                    props.statuses.get(account.id)?.state === "loggedOut" &&
+                    installed(props.programs, "claude")
+                  }
                 >
-                  Log in
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      signIn(account);
+                    }}
+                  >
+                    Sign in
+                  </button>
+                </Show>
                 <button type="button" onClick={() => setEditing(account.id)}>
                   Rename
                 </button>
                 <button
                   type="button"
-                  title="Forget this account; its folder stays on disk"
+                  title="Cerberus forgets this account. Its folder stays on disk."
                   onClick={() => {
                     change(removeAccount(account.id));
                   }}
@@ -155,7 +180,8 @@ export function AccountsStep(props: {
         onSubmit={(event) => {
           event.preventDefault();
           const name = newName();
-          const dir = newDir().trim();
+          const dir = newDir();
+          const before = new Set(props.profiles.accounts.map((a) => a.id));
           // Enter can beat the suggestion, so an empty folder asks for it here.
           const folder =
             dir === "" ? suggestConfigDir(name) : Promise.resolve(dir);
@@ -164,8 +190,10 @@ export function AccountsStep(props: {
             (profiles) => {
               setNewName("");
               setNewDir("");
-              setDirTyped(false);
+              setDirPicked(false);
               added(profiles);
+              const fresh = profiles.accounts.find((a) => !before.has(a.id));
+              if (fresh) signIn(fresh);
             },
           );
         }}
@@ -178,32 +206,27 @@ export function AccountsStep(props: {
             const name = event.currentTarget.value;
             setNewName(name);
             // A folder suggested for the old name must not be submitted with the new one.
-            if (!dirTyped()) setNewDir("");
-            suggestConfigDir(name)
-              .then((dir) => {
-                if (newName() === name && !dirTyped()) setNewDir(dir);
-              })
-              .catch((e: unknown) => {
-                setError(String(e));
-              });
-          }}
-        />
-        <input
-          placeholder="Folder"
-          aria-label="Folder"
-          value={newDir()}
-          onInput={(event) => {
-            setNewDir(event.currentTarget.value);
-            setDirTyped(true);
+            if (!dirPicked()) setNewDir("");
+            if (name.trim() !== "") suggest(name);
           }}
         />
         <button type="submit" disabled={newName().trim() === ""}>
           Add
         </button>
       </form>
+      <Show when={newDir()}>
+        {(dir) => (
+          <p class="folder">
+            Saved in <span class="program">{dir()}</span>{" "}
+            <button type="button" onClick={pick}>
+              Change…
+            </button>
+          </p>
+        )}
+      </Show>
       <p class="hint">
-        After adding, press Log in: Claude Code opens under that account; run
-        /login there, then close the tab.
+        Add opens Claude Code to sign this account in. Close the tab once you're
+        signed in.
       </p>
       <Show when={error()}>
         <p class="error">{error()}</p>

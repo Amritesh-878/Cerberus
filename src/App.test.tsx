@@ -26,8 +26,8 @@ const CHOICES: ProgramChoice[] = [
 const EMPTY: Profiles = {
   accounts: [],
   defaultAccount: null,
-  defaultProgram: null,
-  defaultCwd: null,
+  lastProgram: null,
+  startFolder: null,
 };
 
 const SAVED: Profiles = {
@@ -36,8 +36,8 @@ const SAVED: Profiles = {
     { id: 1, name: "work", configDir: String.raw`C:\h\.claude-work` },
   ],
   defaultAccount: 1,
-  defaultProgram: "powershell",
-  defaultCwd: null,
+  lastProgram: "powershell",
+  startFolder: null,
 };
 
 let dispose: (() => void) | undefined;
@@ -83,7 +83,50 @@ test("a first run with no accounts opens the walkthrough", async () => {
   const root = await renderApp(() => EMPTY);
 
   expect(root.querySelector("h1")?.textContent).toBe("Set up Cerberus");
-  expect(root.textContent).toContain("Claude Code is not installed");
+  expect(root.textContent).toContain("Claude Code isn't installed yet");
+});
+
+function click(root: HTMLElement, text: string): void {
+  const found = [...root.querySelectorAll("button")].find(
+    (b) => b.textContent === text,
+  );
+  if (!found) throw new Error(`no ${text} button`);
+  found.click();
+}
+
+test("the walkthrough's last step asks only which account new tabs use", async () => {
+  const root = await renderApp(() => EMPTY);
+
+  click(root, "Next");
+  click(root, "Next");
+  await settled();
+
+  const section = root.querySelector(".defaults");
+  expect(section?.textContent).toContain("Which account should new tabs use?");
+  expect(section?.querySelectorAll("select, input")).toHaveLength(1);
+});
+
+test("the accounts screen sets the start folder, Home by default", async () => {
+  let saved: Profiles = SAVED;
+  const root = await renderApp(() => saved, {
+    "plugin:dialog|open": () => String.raw`C:\code`,
+    set_start_folder: () => {
+      saved = { ...SAVED, startFolder: String.raw`C:\code` };
+      return saved;
+    },
+  });
+
+  click(root, "Accounts…");
+  await settled();
+  expect(root.querySelector(".start-folder")?.textContent).toContain("Home");
+
+  root.querySelector<HTMLButtonElement>(".start-folder button")?.click();
+  await settled();
+  await settled();
+
+  expect(root.querySelector(".start-folder")?.textContent).toContain(
+    String.raw`C:\code`,
+  );
 });
 
 test("saved accounts open the launcher with each program from the core", async () => {

@@ -15,21 +15,23 @@ import {
   resetProfiles,
   statusText,
 } from "./accounts";
+import { AccountsScreen } from "./AccountsScreen";
 import { Launcher } from "./Launcher";
 import { listPrograms } from "./pty";
 import { createStatuses } from "./statuses";
 import type { Tab } from "./tab";
 import { TerminalView } from "./Terminal";
 import { Walkthrough } from "./Walkthrough";
-import type { Step } from "./steps";
+
+type Screen = "walkthrough" | "accounts";
 
 export function App() {
-  const [setup, setSetup] = createSignal<Step>();
+  const [screen, setScreen] = createSignal<Screen>();
   // Signals, not a resource: an errored resource keeps throwing after a fresh value is set.
   const [profiles, setProfiles] = createSignal<Profiles>();
   const [loadError, setLoadError] = createSignal<string>();
   const loaded = (fresh: Profiles) => {
-    if (fresh.accounts.length === 0) setSetup("install");
+    if (fresh.accounts.length === 0) setScreen("walkthrough");
     setLoadError(undefined);
     setProfiles(fresh);
   };
@@ -46,17 +48,18 @@ export function App() {
 
   // Details refresh when the accounts or launcher screen opens and after a tab closes.
   createEffect(
-    on(
-      [() => profiles() === undefined, () => setup() === undefined, tabsClosed],
-      () => {
-        const ids = untrack(profiles)?.accounts.map((a) => a.id) ?? [];
-        statuses.refresh(ids);
-      },
-    ),
+    on([() => profiles() === undefined, screen, tabsClosed], () => {
+      const ids = untrack(profiles)?.accounts.map((a) => a.id) ?? [];
+      statuses.refresh(ids);
+    }),
   );
 
   const startFresh = () => {
     resetProfiles().then(loaded, fail);
+  };
+
+  const toLauncher = () => {
+    setScreen(undefined);
   };
 
   const closeTab = () => {
@@ -86,34 +89,41 @@ export function App() {
         <Match when={profiles()}>
           {(loaded) => (
             <div class="home" hidden={tab() !== undefined}>
-              <Show
-                when={setup()}
+              <Switch
                 fallback={
                   <Launcher
                     profiles={loaded()}
                     programs={programs.latest}
                     programsError={programsError()}
                     statuses={statuses}
+                    onProfiles={setProfiles}
                     onLaunch={setTab}
-                    onAccounts={() => setSetup("accounts")}
+                    onAccounts={() => setScreen("accounts")}
                   />
                 }
               >
-                {(start) => (
+                <Match when={screen() === "walkthrough"}>
                   <Walkthrough
-                    start={start()}
                     profiles={loaded()}
                     programs={programs.latest ?? []}
                     statuses={statuses}
                     onProfiles={setProfiles}
                     onOpen={setTab}
                     onRecheckPrograms={() => void recheckPrograms()}
-                    onFinish={() => {
-                      setSetup(undefined);
-                    }}
+                    onFinish={toLauncher}
                   />
-                )}
-              </Show>
+                </Match>
+                <Match when={screen() === "accounts"}>
+                  <AccountsScreen
+                    profiles={loaded()}
+                    programs={programs.latest ?? []}
+                    statuses={statuses}
+                    onProfiles={setProfiles}
+                    onOpen={setTab}
+                    onClose={toLauncher}
+                  />
+                </Match>
+              </Switch>
             </div>
           )}
         </Match>
@@ -140,6 +150,19 @@ export function App() {
                 ×
               </button>
             </header>
+            <Show when={open().signIn && open().account}>
+              {(account) => (
+                <div class="sign-in-bar">
+                  <span>
+                    Signing in {account().name}. Close this tab when you're
+                    done.
+                  </span>
+                  <button type="button" onClick={closeTab}>
+                    Done
+                  </button>
+                </div>
+              )}
+            </Show>
             <TerminalView
               spec={open().spec}
               pastesImages={open().pastesImages}

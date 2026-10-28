@@ -61,18 +61,11 @@ pub struct Account {
 pub struct Profiles {
     pub accounts: Vec<Account>,
     pub default_account: Option<AccountId>,
-    pub default_program: Option<String>,
-    pub default_cwd: Option<PathBuf>,
+    pub last_program: Option<String>,
+    pub start_folder: Option<PathBuf>,
     // Ids are never reused, so something saved under a removed account cannot land on a new one.
     #[serde(skip)]
     next_id: AccountId,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct Defaults {
-    pub account: Option<AccountId>,
-    pub program: Option<String>,
-    pub cwd: Option<PathBuf>,
 }
 
 impl Profiles {
@@ -120,16 +113,18 @@ impl Profiles {
         Ok(())
     }
 
-    pub fn set_defaults(&mut self, defaults: Defaults) -> Result<(), AccountsError> {
-        if let Some(id) = defaults.account {
-            self.account(id)?;
+    pub fn set_default_account(&mut self, id: AccountId) -> Result<(), AccountsError> {
+        self.account(id)?;
+        self.default_account = Some(id);
+        Ok(())
+    }
+
+    /// `None` starts tabs in the home folder.
+    pub fn set_start_folder(&mut self, folder: Option<PathBuf>) -> Result<(), AccountsError> {
+        if let Some(folder) = folder.as_deref().filter(|f| !f.is_absolute()) {
+            return Err(AccountsError::RelativeDir(shown(folder)));
         }
-        if let Some(cwd) = defaults.cwd.as_deref().filter(|cwd| !cwd.is_absolute()) {
-            return Err(AccountsError::RelativeDir(shown(cwd)));
-        }
-        self.default_account = defaults.account;
-        self.default_program = defaults.program;
-        self.default_cwd = defaults.cwd;
+        self.start_folder = folder;
         Ok(())
     }
 
@@ -172,11 +167,10 @@ impl Profiles {
             replay.next_id = account.id;
             replay.add(&account.name, account.config_dir.clone())?;
         }
-        replay.set_defaults(Defaults {
-            account: self.default_account,
-            program: self.default_program.clone(),
-            cwd: self.default_cwd.clone(),
-        })
+        if let Some(id) = self.default_account {
+            replay.set_default_account(id)?;
+        }
+        replay.set_start_folder(self.start_folder.clone())
     }
 }
 
@@ -217,17 +211,21 @@ impl Accounts {
         })
     }
 
-    pub fn set_defaults(&self, defaults: Defaults) -> Result<Profiles, AccountsError> {
-        if let Some(program) = &defaults.program {
-            let known = Finder::from_env().choices().iter().any(|c| c.id == program);
-            if !known {
-                return Err(AccountsError::UnknownProgram(program.clone()));
-            }
+    pub fn remember_program(&self, program: String) -> Result<Profiles, AccountsError> {
+        if !Finder::from_env().choices().iter().any(|c| c.id == program) {
+            return Err(AccountsError::UnknownProgram(program));
         }
-        if let Some(cwd) = defaults.cwd.as_deref().filter(|cwd| !cwd.is_dir()) {
-            return Err(AccountsError::NoSuchDir(shown(cwd)));
+        self.update(|p| {
+            p.last_program = Some(program);
+            Ok(())
+        })
+    }
+
+    pub fn set_start_folder(&self, folder: Option<PathBuf>) -> Result<Profiles, AccountsError> {
+        if let Some(folder) = folder.as_deref().filter(|f| !f.is_dir()) {
+            return Err(AccountsError::NoSuchDir(shown(folder)));
         }
-        self.update(|p| p.set_defaults(defaults))
+        self.update(|p| p.set_start_folder(folder))
     }
 
     pub fn candidates(&self) -> Result<Vec<Candidate>, AccountsError> {
@@ -452,25 +450,59 @@ mod tests {
     }
 
     #[test]
-    fn defaults_must_name_a_saved_account_and_a_full_path() {
+    fn the_default_account_must_be_saved() {
         let mut profiles = two_accounts();
-        let defaults = |account, cwd: &str| Defaults {
-            account: Some(account),
-            program: Some("claude".to_owned()),
-            cwd: Some(dir(cwd)),
-        };
 
         assert!(matches!(
-            profiles.set_defaults(defaults(9, r"C:\code")),
+            profiles.set_default_account(9),
             Err(AccountsError::NoAccount(9))
         ));
+        profiles.set_default_account(1).unwrap();
+        assert_eq!(profiles.default_account, Some(1));
+    }
+
+    #[test]
+    fn the_start_folder_is_a_full_path_or_home() {
+        let mut profiles = two_accounts();
+
         assert!(matches!(
-            profiles.set_defaults(defaults(1, "code")),
+            profiles.set_start_folder(Some(dir("code"))),
             Err(AccountsError::RelativeDir(_))
         ));
-        profiles.set_defaults(defaults(1, r"C:\code")).unwrap();
-        assert_eq!(profiles.default_account, Some(1));
-        assert_eq!(profiles.default_cwd, Some(dir(r"C:\code")));
+        profiles.set_start_folder(Some(dir(r"C:\code"))).unwrap();
+        assert_eq!(profiles.start_folder, Some(dir(r"C:\code")));
+        profiles.set_start_folder(None).unwrap();
+        assert_eq!(profiles.start_folder, None);
+    }
+
+    #[test]
+    fn a_missing_start_folder_is_refused() {
+        let home = TestDir::new();
+        let accounts = Accounts::new(&home.path().join("app"), home.path().to_path_buf());
+
+        let result = accounts.set_start_folder(Some(home.path().join("gone")));
+
+        assert!(matches!(result, Err(AccountsError::NoSuchDir(_))));
+        accounts
+            .set_start_folder(Some(home.path().to_path_buf()))
+            .unwrap();
+        assert_eq!(
+            accounts.load().unwrap().start_folder.as_deref(),
+            Some(home.path())
+        );
+    }
+
+    #[test]
+    fn only_a_known_program_is_remembered() {
+        let home = TestDir::new();
+        let accounts = Accounts::new(&home.path().join("app"), home.path().to_path_buf());
+
+        assert!(matches!(
+            accounts.remember_program("notepad".to_owned()),
+            Err(AccountsError::UnknownProgram(_))
+        ));
+        let saved = accounts.remember_program("powershell".to_owned()).unwrap();
+        assert_eq!(saved.last_program.as_deref(), Some("powershell"));
     }
 
     #[test]

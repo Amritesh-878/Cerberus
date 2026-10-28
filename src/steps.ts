@@ -1,23 +1,16 @@
-import type { AccountId, Profiles } from "./accounts";
-import type { ProgramChoice } from "./pty";
+import type { Profiles } from "./accounts";
 
 export type Step = "install" | "accounts" | "defaults";
 
 export const STEPS: readonly Step[] = ["install", "accounts", "defaults"];
 
 export const STEP_TITLES: Record<Step, string> = {
-  install: "Claude Code",
+  install: "Install",
   accounts: "Accounts",
-  defaults: "Defaults",
+  defaults: "New tabs",
 };
 
 export const INSTALL_COMMAND = "irm https://claude.ai/install.ps1 | iex";
-
-export interface DefaultsDraft {
-  account: AccountId | null;
-  program: string | null;
-  cwd: string;
-}
 
 export function nextStep(step: Step): Step | undefined {
   return STEPS[STEPS.indexOf(step) + 1];
@@ -27,36 +20,6 @@ export function previousStep(step: Step): Step | undefined {
   return STEPS[STEPS.indexOf(step) - 1];
 }
 
-export function installed(
-  programs: readonly ProgramChoice[],
-  id: string,
-): ProgramChoice | undefined {
-  return programs.find((p) => p.id === id && p.program !== null);
-}
-
-export function preselectedProgram(
-  profiles: Profiles,
-  programs: readonly ProgramChoice[],
-): string | null {
-  const saved = profiles.defaultProgram;
-  const pick =
-    (saved === null ? undefined : installed(programs, saved)) ??
-    installed(programs, "claude") ??
-    programs.find((p) => p.program !== null);
-  return pick?.id ?? null;
-}
-
-export function finishBlocker(
-  profiles: Profiles,
-  draft: DefaultsDraft,
-  programs: readonly ProgramChoice[],
-): string | undefined {
-  if (profiles.accounts.length === 0) return "Add at least one account.";
-  if (!profiles.accounts.some((a) => a.id === draft.account)) {
-    return "Pick a default account.";
-  }
-  if (draft.program === null || !installed(programs, draft.program)) {
-    return "Pick a default program.";
-  }
-  return undefined;
+export function finishBlocker(profiles: Profiles): string | undefined {
+  return profiles.accounts.length === 0 ? "Add an account first." : undefined;
 }
