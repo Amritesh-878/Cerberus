@@ -70,7 +70,8 @@ export class PtySession {
       if (event instanceof ArrayBuffer) {
         handlers.output(new Uint8Array(event));
       } else if ("state" in event) {
-        handlers.state?.(event);
+        // The session-file watcher can report once more after the exit; an ended tab stays done.
+        if (!this.#ended) handlers.state?.(event);
       } else {
         this.#ended = true;
         handlers.exit(event.exitCode);

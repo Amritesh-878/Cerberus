@@ -121,14 +121,25 @@ export function App() {
       },
     );
   });
+  const [saveError, setSaveError] = createSignal<string>();
+  // One call at a time, so an older tree can never reach the core after a newer one.
+  let saving: Promise<void> = Promise.resolve();
   createEffect(
     on(
       tree,
       (current) => {
         if (!restored() || treeError() !== undefined) return;
-        saveTree(toSaved(current)).catch((error: unknown) => {
-          console.error("could not save tabs:", error);
-        });
+        const next = toSaved(current);
+        saving = saving
+          .then(() => saveTree(next))
+          .then(
+            () => {
+              setSaveError(undefined);
+            },
+            (error: unknown) => {
+              setSaveError(String(error));
+            },
+          );
       },
       { defer: true },
     ),
@@ -371,6 +382,13 @@ export function App() {
                   )}
                 </Show>
                 <span class="spacer" />
+                <Show when={saveError()}>
+                  {(error) => (
+                    <span class="save-error" role="status" title={error()}>
+                      Tabs not saved
+                    </span>
+                  )}
+                </Show>
                 <Show when={shownTab()?.launch.account}>
                   {(account) => (
                     <span
@@ -537,8 +555,7 @@ function Home(props: {
       <Show when={props.treeError}>
         {(error) => (
           <p class="error">
-            {error()}. Tabs opened now will not be saved; close Cerberus and
-            move the file aside to start a new one.
+            {error()}. Tabs opened in this window will not be saved.
           </p>
         )}
       </Show>

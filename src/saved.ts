@@ -29,7 +29,7 @@ export function saveTree(tree: SavedTree): Promise<void> {
   return invoke("tree_save", { tree });
 }
 
-/** Setup tabs, such as signing an account in, are left out: they belong to that moment only. */
+/** Setup tabs, such as signing an account in, are left out because they belong to that moment only. */
 export function toSaved(tree: Tree): SavedTree {
   const tabs = tree.tabs.flatMap((tab): SavedTab[] =>
     tab.projectId === null
@@ -49,7 +49,7 @@ export function toSaved(tree: Tree): SavedTree {
   return { projects: tree.projects, tabs, nextId: tree.nextId };
 }
 
-/** The program is looked up again, so an updated install is used; a missing one fails visibly in its tab. */
+// Looked up again so an updated install is used, and a missing program fails visibly in its tab.
 function launchOf(
   saved: SavedTab,
   profiles: Profiles,

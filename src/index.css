@@ -502,6 +502,11 @@ button {
   visibility: visible;
 }
 
+.save-error {
+  font-size: 12px;
+  color: var(--accent);
+}
+
 .terminal-notice {
   position: absolute;
   top: 8px;

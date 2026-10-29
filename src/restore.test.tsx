@@ -12,6 +12,7 @@ import {
   settle,
   sidebarTitles,
 } from "./harness";
+import { resetText } from "./board";
 import type { SavedTab, SavedTree } from "./saved";
 
 afterEach(cleanup);
@@ -177,6 +178,52 @@ test("nothing is saved over a tree that failed to load", async () => {
   expect(restore.saves).toEqual([]);
 });
 
+test("a failed save shows in the bar until a save goes through", async () => {
+  const restore = restoring();
+  let failing = true;
+  const root = await renderApp(() => SAVED, {
+    ...restore.core,
+    tree_save: () => {
+      if (failing)
+        throw new Error("recent tab changes are not saved yet: fake");
+    },
+  });
+
+  click(row(root, "server"), "Close server");
+  await settle();
+  expect(root.querySelector(".save-error")?.textContent).toBe("Tabs not saved");
+
+  failing = false;
+  click(row(root, "shell"), "Close shell");
+  await settle();
+  expect(root.querySelector(".save-error")).toBeNull();
+});
+
+test("saves reach the core one at a time, in order", async () => {
+  const restore = restoring();
+  const order: number[] = [];
+  let release: () => void = () => undefined;
+  const root = await renderApp(() => SAVED, {
+    ...restore.core,
+    tree_save: (args: unknown) => {
+      const tabs = (field(args, "tree") as SavedTree).tabs.length;
+      order.push(tabs);
+      if (tabs === 4) return new Promise<void>((done) => (release = done));
+      return undefined;
+    },
+  });
+
+  click(row(root, "server"), "Close server");
+  await settle();
+  click(row(root, "shell"), "Close shell");
+  await settle();
+  expect(order).toEqual([4]);
+
+  release();
+  await settle();
+  expect(order).toEqual([4, 3]);
+});
+
 test("a turn that ends in another tab waits on you until you open it", async () => {
   const restore = restoring();
   const root = await renderApp(() => SAVED, restore.core);
@@ -217,8 +264,10 @@ test("a limit shows a clock with its reset time, and an exit dims the row", asyn
   emit(restore.pty.spawned, 0, { state: "limited", resetsAt });
   await settle();
   const mark = row(root, "site").querySelector(".mark.limited");
-  expect(mark?.textContent).toMatch(/5:50/);
-  expect(mark?.getAttribute("title")).toMatch(/^Usage limit, resets 5:50/);
+  expect(mark?.textContent).toBe(resetText(resetsAt));
+  expect(mark?.getAttribute("title")).toBe(
+    `Usage limit, resets ${resetText(resetsAt)}`,
+  );
 
   emit(restore.pty.spawned, 0, { exitCode: 0 });
   await settle();
