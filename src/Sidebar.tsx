@@ -146,11 +146,6 @@ export function Sidebar(props: {
         <Show when={search().trim() !== "" && listed().length === 0}>
           <p class="hint tree-empty">No tabs match.</p>
         </Show>
-        <Show when={search().trim() === "" && listed().length === 0}>
-          <p class="hint tree-empty">
-            Add a project to start. A project is a folder; its tabs start there.
-          </p>
-        </Show>
       </nav>
       <footer class="sidebar-foot">
         <button
@@ -190,14 +185,6 @@ function TabRow(props: {
   onRenamed: (title: string | undefined) => void;
 }) {
   const tab = () => props.row.tab;
-  const subLine = () => {
-    const parts = [props.account?.name];
-    const coders = props.row.coders;
-    if (coders > 0)
-      parts.push(`${String(coders)} coder${coders > 1 ? "s" : ""}`);
-    return parts.filter((p) => p !== undefined).join(" · ");
-  };
-
   const icon = () => (
     <Show
       when={!props.row.sub}
@@ -205,16 +192,6 @@ function TabRow(props: {
     >
       <span class="badge">
         <ProgramIcon program={tab().launch.program} size={15} />
-      </span>
-    </Show>
-  );
-  const sub = () => (
-    <Show when={!props.row.sub && subLine()}>
-      <span class="tab-sub">
-        <Show when={props.account}>
-          {(account) => <AccountDot id={account().id} />}
-        </Show>
-        {subLine()}
       </span>
     </Show>
   );
@@ -249,9 +226,8 @@ function TabRow(props: {
             {icon()}
             <span class="tab-text">
               <span class="tab-title">{tab().title}</span>
-              {sub()}
             </span>
-            <Show when={props.row.sub && props.account}>
+            <Show when={props.account}>
               {(account) => (
                 <span
                   title={`${account().name} · ${props.status(account().id)}`}
@@ -267,7 +243,6 @@ function TabRow(props: {
           {icon()}
           <span class="tab-text">
             <RenameField title={tab().title} onDone={props.onRenamed} />
-            {sub()}
           </span>
         </div>
       </Show>

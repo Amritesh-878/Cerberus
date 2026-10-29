@@ -274,9 +274,9 @@ test("a coder sub-tab lists under its planner", async () => {
     "Claude Code · work",
     "  Claude Code · work",
   ]);
-  expect(root.querySelector(".tab-row:not(.sub) .tab-sub")?.textContent).toBe(
-    "work · 1 coder",
-  );
+  expect(
+    root.querySelector(".tab-row:not(.sub) [title^='work']")?.innerHTML,
+  ).toContain('class="dot"');
 });
 
 test("switching tabs keeps every terminal mounted", async () => {

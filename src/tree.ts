@@ -30,7 +30,6 @@ export interface Row {
   sub: boolean;
   /** The last sub-tab under its planner, where the tree line stops. */
   last: boolean;
-  coders: number;
 }
 
 export interface Group {
@@ -147,13 +146,12 @@ function rowsOf(tabs: TreeTab[], matches: (tab: TreeTab) => boolean): Row[] {
     const kids = tabs.filter((t) => t.parentId === top.id);
     const shown = kids.filter(matches);
     if (!matches(top) && shown.length === 0) continue;
-    rows.push({ tab: top, sub: false, last: false, coders: kids.length });
+    rows.push({ tab: top, sub: false, last: false });
     shown.forEach((kid, i) => {
       rows.push({
         tab: kid,
         sub: true,
         last: i === shown.length - 1,
-        coders: 0,
       });
     });
   }

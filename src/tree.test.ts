@@ -164,14 +164,14 @@ test("setup tabs list first, outside any project", () => {
   expect(listed[0]?.rows.map((r) => [r.tab.id, r.sub])).toEqual([[8, false]]);
 });
 
-test("a planner row counts all its sub-tabs", () => {
+test("the tree line stops at a planner's last sub-tab", () => {
   const rows = groups(sample(), "", () => "")[0]?.rows ?? [];
 
-  expect(rows.map((r) => [r.tab.id, r.coders, r.last])).toEqual([
-    [2, 2, false],
-    [3, 0, false],
-    [4, 0, true],
-    [5, 0, false],
+  expect(rows.map((r) => [r.tab.id, r.last])).toEqual([
+    [2, false],
+    [3, false],
+    [4, true],
+    [5, false],
   ]);
 });
 
