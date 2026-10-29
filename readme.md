@@ -66,9 +66,11 @@ These miss Claude Code's own keys (Ctrl+T, Ctrl+C, Ctrl+V, Alt+V, Shift+Tab).
 
 A tab under an account other than the default gets `CLAUDE_CONFIG_DIR` set to its folder, so
 `claude` there, or typed in a shell tab, runs on that account. The default account leaves the
-variable unset, as Claude Code expects. Variables a parent Claude Code session sets
-(`CLAUDECODE`, `CLAUDE_CODE_*`, `NO_COLOR` and the like) are removed, so a tab runs the same
-whether Cerberus started from the Start menu or from a Claude Code chat. The bar above the
+variable unset, as Claude Code expects. The variables a Claude Code session sets for its own
+shells (`CLAUDECODE`, `CLAUDE_CODE_SESSION_ID` and the like, and the `NO_COLOR` that comes with
+them) are removed, so a tab runs the same whether Cerberus started from the Start menu or from
+a Claude Code chat. Settings such as `CLAUDE_CODE_USE_BEDROCK`, and a `NO_COLOR` of your own,
+stay. The bar above the
 terminal shows the account; hover it for the email and plan.
 
 The programs a tab can run:
