@@ -70,4 +70,10 @@ Describe 'sample.ps1' {
         { & (Join-Path $PSScriptRoot 'sample.ps1') -Name 'no-such-process-for-bench' -Seconds 1 -Csv $csv -Quiet } | Should Throw
         Test-Path $csv | Should Be $false
     }
+
+    It 'refuses an existing csv whose name has wildcard characters' {
+        $csv = Join-Path $TestDrive 'run[1].csv'
+        Set-Content -LiteralPath $csv -Value 'kept'
+        { & (Join-Path $PSScriptRoot 'sample.ps1') -Name 'no-such-process-for-bench' -Seconds 1 -Csv $csv -Quiet } | Should Throw 'exists'
+    }
 }

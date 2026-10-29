@@ -26,7 +26,7 @@ $Cores = [Environment]::ProcessorCount
 . (Join-Path $PSScriptRoot 'core.ps1')
 
 if ($PSCmdlet.ParameterSetName -eq 'Summary') {
-    $rows = @(Import-Csv $FromCsv)
+    $rows = @(Import-Csv -LiteralPath $FromCsv)
     if ($rows.Count -eq 0) { throw "No rows in $FromCsv" }
     # The file does not store the recording machine's core count, so name the basis without guessing it.
     Write-Summary $rows "the recording machine's logical cores"
@@ -36,7 +36,7 @@ if ($PSCmdlet.ParameterSetName -eq 'Summary') {
 if ($Seconds -lt $Interval) { throw "-Seconds ($Seconds) must be at least -Interval ($Interval)" }
 $skip = @($Exclude) + @($PID)
 if ($Csv) {
-    if (Test-Path $Csv) { throw "$Csv exists; record each run to a new file so runs are never mixed" }
+    if (Test-Path -LiteralPath $Csv) { throw "$Csv exists; record each run to a new file so runs are never mixed" }
     $dir = Split-Path -Parent $Csv
     if ($dir -and -not (Test-Path $dir)) { [void](New-Item -ItemType Directory -Path $dir) }
 }
@@ -98,7 +98,7 @@ for ($i = 0; $i -le $samples; $i++) {
         $sampleRows = @($sampleRows)
         foreach ($r in $sampleRows) { [void]$all.Add($r) }
         # The header goes in with the first rows, so a run that fails before sampling leaves no file to block a rerun.
-        if ($Csv) { $sampleRows | ConvertTo-Csv -NoTypeInformation | Select-Object -Skip ([int](Test-Path $Csv)) | Add-Content -Path $Csv -Encoding UTF8 }
+        if ($Csv) { $sampleRows | ConvertTo-Csv -NoTypeInformation | Select-Object -Skip ([int](Test-Path -LiteralPath $Csv)) | Add-Content -LiteralPath $Csv -Encoding UTF8 }
 
         if (-not $Quiet) { Format-SampleLine -Rows $sampleRows -Clock $stamp -ProcessCount $tree.Count }
     }
