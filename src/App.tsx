@@ -54,11 +54,17 @@ interface Opening {
 
 export function App() {
   const [page, setPage] = createSignal<Page>();
+  // A setup tab opened from a page shows over it, so the page keeps its place underneath.
+  const [overPage, setOverPage] = createSignal(false);
+  const showPage = (next: Page | undefined) => {
+    setPage(next);
+    setOverPage(false);
+  };
   // Signals, not a resource: an errored resource keeps throwing after a fresh value is set.
   const [profiles, setProfiles] = createSignal<Profiles>();
   const [loadError, setLoadError] = createSignal<string>();
   const loaded = (fresh: Profiles) => {
-    if (fresh.accounts.length === 0) setPage("walkthrough");
+    if (fresh.accounts.length === 0) showPage("walkthrough");
     setLoadError(undefined);
     setProfiles(fresh);
   };
@@ -76,8 +82,6 @@ export function App() {
 
   const [tree, setTree] = createSignal<Tree>(emptyTree());
   const [active, setActive] = createSignal<TabId>();
-  // The page a setup tab was opened from, shown again when that tab closes.
-  const [returnPage, setReturnPage] = createSignal<Page>();
   const [opening, setOpening] = createSignal<Opening>();
   const [panelOpen, setPanelOpen] = createSignal(false);
   const [drawer, setDrawer] = createSignal(false);
@@ -101,7 +105,8 @@ export function App() {
 
   const tabIds = createMemo(() => tree().tabs.map((t) => t.id));
   const tabById = (id: TabId) => tree().tabs.find((t) => t.id === id);
-  const shown = () => (page() === undefined ? active() : undefined);
+  const shown = () =>
+    page() === undefined || overPage() ? active() : undefined;
   const shownTab = () => {
     const id = shown();
     return id === undefined ? undefined : tabById(id);
@@ -109,7 +114,7 @@ export function App() {
 
   const select = (id: TabId) => {
     setActive(id);
-    setPage(undefined);
+    showPage(undefined);
     setDrawer(false);
   };
 
@@ -120,8 +125,9 @@ export function App() {
       launch,
     );
     setTree(next);
-    setReturnPage(page());
-    select(id);
+    setActive(id);
+    setOverPage(page() !== undefined);
+    setDrawer(false);
   };
 
   const launch = (projectId: ProjectId, chosen: Launch) => {
@@ -149,7 +155,7 @@ export function App() {
     setTree(closeTab(tree(), id));
     if (active() === id) {
       setActive(after);
-      if (setup) setPage(returnPage());
+      if (setup) setOverPage(false);
     }
     setTabsClosed((n) => n + 1);
     void recheckPrograms();
@@ -169,7 +175,7 @@ export function App() {
         if (folder === null) return;
         const [next, id] = addProject(tree(), folder);
         setTree(next);
-        setPage(undefined);
+        showPage(undefined);
         setOpening({ projectId: id, anchor: undefined });
       },
       (error: unknown) => {
@@ -244,7 +250,7 @@ export function App() {
               }}
               onNewProject={newProject}
               onAccounts={() => {
-                setPage("accounts");
+                showPage("accounts");
                 setDrawer(false);
               }}
             />
@@ -349,8 +355,8 @@ export function App() {
                     </Show>
                   )}
                 </For>
-                <Show when={shown() === undefined}>
-                  <div class="page">
+                <Show when={page() !== undefined || shown() === undefined}>
+                  <div class="page" hidden={shown() !== undefined}>
                     <Switch
                       fallback={
                         <Home
@@ -368,7 +374,7 @@ export function App() {
                           onOpen={openSetupTab}
                           onRecheckPrograms={() => void recheckPrograms()}
                           onFinish={() => {
-                            setPage(undefined);
+                            showPage(undefined);
                           }}
                         />
                       </Match>
@@ -380,7 +386,7 @@ export function App() {
                           onProfiles={changed}
                           onOpen={openSetupTab}
                           onClose={() => {
-                            setPage(undefined);
+                            showPage(undefined);
                           }}
                         />
                       </Match>

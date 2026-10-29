@@ -504,6 +504,27 @@ test("Claude Code cannot be opened when it is not installed", async () => {
   expect(newTabBox(root).textContent).toContain("Claude Code isn't installed.");
 });
 
+test("signing in from the walkthrough returns to the same step", async () => {
+  const fake = accountsCore(EMPTY);
+  const root = await renderApp(fake.profiles, {
+    ...fake.core,
+    ...ptyCore().core,
+    account_status: () => ({ state: "loggedOut", summary: "signed out" }),
+  });
+  click(root, "Next");
+  await settle();
+  click(root, "Import");
+  await settle();
+
+  click(root, "Sign in");
+  await settle();
+  expect(root.querySelector(".sign-in-bar")).not.toBeNull();
+  click(root, "Done");
+  await settle();
+
+  expect(root.querySelector(".steps .current")?.textContent).toBe("Accounts");
+});
+
 test("an unreadable accounts file offers to start fresh", async () => {
   const root = await renderApp(
     () => {
