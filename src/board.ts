@@ -1,6 +1,5 @@
 import type { TabId } from "./tree";
 
-/** A Claude tab's chat, as the core reports it from the session file and transcript. */
 export type LiveState =
   | { state: "working" }
   | { state: "idle" }
@@ -86,7 +85,6 @@ export function startedTabs(
   return new Set(adding ? [...kept, shown] : kept);
 }
 
-/** A reset time as the clock on the wall shows it, such as "5:50am". */
 export function resetText(resetsAt: number, locale?: string): string {
   return new Date(resetsAt * 1000)
     .toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit" })
