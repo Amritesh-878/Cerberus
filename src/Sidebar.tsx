@@ -1,4 +1,4 @@
-import { createMemo, createSignal, For, Show } from "solid-js";
+import { createMemo, createSignal, For, Index, Show } from "solid-js";
 
 import { accountColor, type Profiles, statusText } from "./accounts";
 import {
@@ -15,6 +15,7 @@ import {
   groups,
   type Group,
   type ProjectId,
+  reuseRows,
   type Row,
   type TabId,
   type Tree,
@@ -50,8 +51,14 @@ export function Sidebar(props: {
       props.profiles.accounts.find((a) => a.id === launched.id) ?? launched
     );
   };
-  const listed = createMemo(() =>
-    groups(props.tree, search(), (tab) => accountOf(tab)?.name ?? ""),
+  // Rows kept across rebuilds, so a late save or a search does not reset a rename in progress.
+  const listed = createMemo<Group[]>(
+    (previous) =>
+      reuseRows(
+        previous,
+        groups(props.tree, search(), (tab) => accountOf(tab)?.name ?? ""),
+      ),
+    [],
   );
   const isFolded = (group: Group) =>
     group.project !== null &&
@@ -78,24 +85,25 @@ export function Sidebar(props: {
         </label>
       </div>
       <nav class="tree" aria-label="Tabs">
-        <For each={listed()}>
+        <Index each={listed()}>
           {(group) => (
             <section>
               <div class="project">
                 <button
                   type="button"
                   class="project-name"
-                  classList={{ folded: isFolded(group) }}
-                  aria-expanded={!isFolded(group)}
-                  title={group.project?.folder}
+                  classList={{ folded: isFolded(group()) }}
+                  aria-expanded={!isFolded(group())}
+                  title={group().project?.folder}
                   onClick={() => {
-                    if (group.project) toggle(group.project.id);
+                    const project = group().project;
+                    if (project) toggle(project.id);
                   }}
                 >
                   <ChevronIcon />
-                  <span>{group.project?.name ?? "Setup"}</span>
+                  <span>{group().project?.name ?? "Setup"}</span>
                 </button>
-                <Show when={group.project}>
+                <Show when={group().project}>
                   {(project) => (
                     <button
                       type="button"
@@ -115,8 +123,8 @@ export function Sidebar(props: {
                   )}
                 </Show>
               </div>
-              <Show when={!isFolded(group)}>
-                <For each={group.rows}>
+              <Show when={!isFolded(group())}>
+                <For each={group().rows}>
                   {(row) => (
                     <TabRow
                       row={row}
@@ -142,7 +150,7 @@ export function Sidebar(props: {
               </Show>
             </section>
           )}
-        </For>
+        </Index>
         <Show when={search().trim() !== "" && listed().length === 0}>
           <p class="hint tree-empty">No tabs match.</p>
         </Show>

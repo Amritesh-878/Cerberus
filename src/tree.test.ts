@@ -13,6 +13,7 @@ import {
   neighbour,
   planners,
   renameTab,
+  reuseRows,
   stepTab,
   type Tree,
 } from "./tree";
@@ -191,4 +192,36 @@ test("stepping through tabs follows the sidebar and wraps", () => {
   expect(stepTab(tree, 2, -1)).toBe(7);
   expect(stepTab(tree, undefined, 1)).toBe(2);
   expect(stepTab(emptyTree(), undefined, 1)).toBeUndefined();
+});
+
+test("a rebuild keeps every row whose tab did not change", () => {
+  const tree = sample();
+  const before = groups(tree, "", () => "");
+  const renamed = renameTab(tree, 3, "Login form");
+
+  const after = reuseRows(
+    before,
+    groups(renamed, "", () => ""),
+  );
+
+  const alpha = after[0]?.rows ?? [];
+  expect(alpha.map((r) => r === before[0]?.rows[alpha.indexOf(r)])).toEqual([
+    true,
+    false,
+    true,
+    true,
+  ]);
+  expect(after[1]).toBe(before[1]);
+});
+
+test("a rebuild with nothing changed returns the same groups", () => {
+  const tree = sample();
+  const before = groups(tree, "", () => "");
+
+  const after = reuseRows(
+    before,
+    groups(tree, "", () => "x"),
+  );
+
+  expect(after.every((g, i) => g === before[i])).toBe(true);
 });

@@ -212,3 +212,21 @@ export function stepTab(
   if (at === -1) return step === 1 ? order[0] : order.at(-1);
   return order[(at + step + order.length) % order.length];
 }
+
+/** `next` with each row that did not change taken from `previous`, so a keyed list keeps its DOM. */
+export function reuseRows(previous: readonly Group[], next: Group[]): Group[] {
+  return next.map((group) => {
+    const old = previous.find((g) => g.project === group.project);
+    if (!old) return group;
+    const rows = group.rows.map(
+      (row) =>
+        old.rows.find(
+          (r) => r.tab === row.tab && r.sub === row.sub && r.last === row.last,
+        ) ?? row,
+    );
+    const same =
+      rows.length === old.rows.length &&
+      rows.every((r, i) => r === old.rows[i]);
+    return same ? old : { ...group, rows };
+  });
+}
