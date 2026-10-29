@@ -71,6 +71,7 @@ struct Session {
     writer: Mutex<Box<dyn Write + Send>>,
     killer: Mutex<Box<dyn ChildKiller + Send + Sync>>,
     flow: Arc<FlowGate>,
+    pid: Option<u32>,
 }
 
 type Sessions = Arc<Mutex<HashMap<SessionId, Arc<Session>>>>;
@@ -142,6 +143,7 @@ impl PtyManager {
             writer: Mutex::new(writer),
             killer: Mutex::new(child.clone_killer()),
             flow,
+            pid: child.process_id(),
         };
         // Registered before the waiter starts, or a fast exit would find nothing to close.
         lock(&self.sessions).insert(id, Arc::new(session));
@@ -206,6 +208,11 @@ impl PtyManager {
         if let Some(session) = session {
             end(&session);
         }
+    }
+
+    /// The program's process id, while it runs.
+    pub fn pid(&self, id: SessionId) -> Option<u32> {
+        self.session(id).ok()?.pid
     }
 
     pub fn kill_all(&self) {
