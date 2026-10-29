@@ -58,9 +58,10 @@ touched.
 
 Every tab keeps running while another shows, with its scrollback. Closing a tab (its ×, or
 Ctrl+Shift+W) ends that tab's program and anything it started, and no other tab's. Closing the
-window ends every program the app started, and so does a crash or a forced kill: Cerberus runs
-in a Windows job that ends with it. That includes windows started from a tab, such as an editor
-opened with `code .` in a shell tab.
+window ends every tab's program. A window started from a tab, such as an editor opened with
+`code .` in a shell tab, stays open, as in Windows Terminal. A crash or a forced kill ends
+everything the app started, those windows included: Cerberus runs in a Windows job that ends with
+it, and lets go of that job only on a normal close.
 
 | Keys | Does |
 |---|---|
@@ -88,6 +89,8 @@ as signing an account in, are not saved.
 
 If a save fails, the bar shows "Tabs not saved" and Cerberus retries every two seconds. Only one
 Cerberus at a time saves tabs: a second copy opened alongside runs with saving off and says so.
+A `tree.db` that cannot be read is renamed to `tree.db.bad` (or `.bad2` and so on), and Cerberus
+starts with no saved tabs and says where the old file went.
 
 ### The session board
 
