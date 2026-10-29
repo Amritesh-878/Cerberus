@@ -220,7 +220,7 @@ impl Accounts {
         if !Finder::from_env()
             .choices()
             .iter()
-            .any(|c| c.id == shell && c.is_shell())
+            .any(|c| c.id == shell && c.is_shell)
         {
             return Err(AccountsError::UnknownShell(shell));
         }

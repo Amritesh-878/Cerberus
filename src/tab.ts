@@ -55,12 +55,11 @@ export function installed(
   return programs.find((p) => p.id === id && p.program !== null);
 }
 
-/** The shell the Shell button opens: the saved choice, else the first one installed. */
 export function shellChoice(
   profiles: Profiles,
   programs: readonly ProgramChoice[],
 ): ProgramChoice | undefined {
   const saved =
     profiles.shell === null ? undefined : installed(programs, profiles.shell);
-  return saved ?? programs.find((p) => p.id !== "claude" && p.program !== null);
+  return saved ?? programs.find((p) => p.isShell && p.program !== null);
 }

@@ -13,6 +13,7 @@ const CHOICES: ProgramChoice[] = [
     program: String.raw`C:\bin\claude.exe`,
     args: [],
     pastesImages: true,
+    isShell: false,
   },
   {
     id: "powershell",
@@ -20,6 +21,7 @@ const CHOICES: ProgramChoice[] = [
     program: String.raw`C:\ps\powershell.exe`,
     args: ["-NoLogo"],
     pastesImages: false,
+    isShell: true,
   },
 ];
 

@@ -10,6 +10,7 @@ const GIT_BASH = {
   program: String.raw`C:\Git\bin\bash.exe`,
   args: ["--login", "-i"],
   pastesImages: false,
+  isShell: true,
 };
 
 test("an installed program opens a tab under its account", () => {
@@ -55,6 +56,7 @@ test("a missing program opens no tab", () => {
         program: null,
         args: [],
         pastesImages: true,
+        isShell: false,
       },
       { account: null, cwd: null },
     ),
@@ -62,7 +64,14 @@ test("a missing program opens no tab", () => {
 });
 
 function program(id: string, path: string | null): ProgramChoice {
-  return { id, label: id, program: path, args: [], pastesImages: false };
+  return {
+    id,
+    label: id,
+    program: path,
+    args: [],
+    pastesImages: false,
+    isShell: id !== "claude",
+  };
 }
 
 const PROGRAMS = [

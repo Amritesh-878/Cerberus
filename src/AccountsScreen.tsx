@@ -109,7 +109,7 @@ function ShellSetting(props: {
 }) {
   const [error, setError] = createSignal<string>();
   const shells = () =>
-    props.programs.filter((p) => p.id !== "claude" && p.program !== null);
+    props.programs.filter((p) => p.isShell && p.program !== null);
 
   return (
     <>

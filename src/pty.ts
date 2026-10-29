@@ -15,6 +15,8 @@ export interface ProgramChoice {
   program: string | null;
   args: string[];
   pastesImages: boolean;
+  /** Whether the Shell button can open it. */
+  isShell: boolean;
 }
 
 export interface Size {

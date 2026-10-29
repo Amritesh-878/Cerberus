@@ -22,6 +22,7 @@ const CLAUDE: ProgramChoice = {
   program: String.raw`C:\bin\claude.exe`,
   args: [],
   pastesImages: true,
+  isShell: false,
 };
 
 let dispose: (() => void) | undefined;
