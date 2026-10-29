@@ -1,5 +1,7 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 
+import type { LiveState } from "./board";
+
 export interface SpawnSpec {
   program: string;
   args: string[];
@@ -27,10 +29,20 @@ export interface Size {
 export interface SessionHandlers {
   output: (bytes: Uint8Array) => void;
   exit: (code: number | null) => void;
+  /** A Claude tab's chat state; other programs report none. */
+  state?: (state: LiveState) => void;
 }
 
 interface Exited {
   exitCode: number | null;
+}
+
+/** `missing`: the tab's saved chat is gone, so a new one started. */
+export type Resume = "new" | "resuming" | "missing";
+
+interface Spawned {
+  id: number;
+  resume: Resume;
 }
 
 export function listPrograms(): Promise<ProgramChoice[]> {
@@ -42,25 +54,41 @@ const ACK_BATCH_BYTES = 64 * 1024;
 /** A program in a pseudo-terminal; calls run in order, and those made before it starts wait. */
 export class PtySession {
   readonly started: Promise<number>;
+  readonly resume: Promise<Resume>;
   #tail: Promise<unknown>;
   #ended = false;
   #drawn = 0;
 
-  constructor(spec: SpawnSpec, size: Size, handlers: SessionHandlers) {
-    const events = new Channel<ArrayBuffer | Exited>((event) => {
+  /** `tab` lets the core save the tab's chat and resume it on the next start. */
+  constructor(
+    spec: SpawnSpec,
+    size: Size,
+    handlers: SessionHandlers,
+    tab: number | null = null,
+  ) {
+    const events = new Channel<ArrayBuffer | Exited | LiveState>((event) => {
       if (event instanceof ArrayBuffer) {
         handlers.output(new Uint8Array(event));
-        return;
+      } else if ("state" in event) {
+        handlers.state?.(event);
+      } else {
+        this.#ended = true;
+        handlers.exit(event.exitCode);
       }
-      this.#ended = true;
-      handlers.exit(event.exitCode);
     });
     const { account, ...request } = spec;
-    this.started = invoke<number>("pty_spawn", {
+    const spawned = invoke<Spawned>("pty_spawn", {
       request: { ...request, ...size },
       account,
+      tab,
       events,
     });
+    this.started = spawned.then((s) => s.id);
+    // A failed start is reported through `started`; nothing was resumed.
+    this.resume = spawned.then(
+      (s) => s.resume,
+      (): Resume => "new",
+    );
     this.#tail = this.started.catch(() => {
       this.#ended = true;
     });

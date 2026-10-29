@@ -27,7 +27,7 @@ function mockCore(options: { writesHang?: boolean } = {}): {
     return new Promise((resolve, reject) => {
       settle = (result) => {
         if (result instanceof Error) reject(result);
-        else resolve(result);
+        else resolve({ id: result, resume: "new" });
       };
     });
   });

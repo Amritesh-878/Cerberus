@@ -2,13 +2,19 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
-import { createEffect, onCleanup, onMount } from "solid-js";
+import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 
+import type { LiveState } from "./board";
 import { pasteInput, terminalHandlesKey } from "./keys";
 import { PtySession, type SpawnSpec } from "./pty";
 import { throttle } from "./throttle";
 
 const FIT_INTERVAL_MS = 30;
+// Long enough for a large chat to load; the first state report usually ends it sooner.
+const RESUMING_NOTICE_MS = 20_000;
+const MISSING_NOTICE_MS = 10_000;
+const RESUMING = "Resuming chat…";
+const MISSING = "The saved chat is gone, so this is a new one.";
 
 function useWebgl(term: Terminal): void {
   try {
@@ -32,12 +38,16 @@ function copySelection(term: Terminal): void {
 }
 
 export function TerminalView(props: {
+  tab: number;
   spec: SpawnSpec;
   pastesImages: boolean;
   input: string | null;
   active: boolean;
+  onState: (state: LiveState) => void;
+  onExit: () => void;
 }) {
   let host: HTMLDivElement | undefined;
+  const [notice, setNotice] = createSignal<string>();
 
   onMount(() => {
     if (!host) return;
@@ -76,11 +86,30 @@ export function TerminalView(props: {
           term.write(
             `\r\n\x1b[2m[exited with code ${code === null ? "unknown" : String(code)}]\x1b[0m\r\n`,
           );
+          props.onExit();
+        },
+        state: (state) => {
+          if (disposed) return;
+          if (notice() === RESUMING) setNotice(undefined);
+          props.onState(state);
         },
       },
+      props.tab,
     );
     session.started.catch((error: unknown) => {
       if (!disposed) term.write(`\x1b[31m${String(error)}\x1b[0m\r\n`);
+    });
+    let noticeTimer: ReturnType<typeof setTimeout> | undefined;
+    void session.resume.then((resume) => {
+      if (disposed || resume === "new") return;
+      const shown = resume === "resuming" ? RESUMING : MISSING;
+      setNotice(shown);
+      noticeTimer = setTimeout(
+        () => {
+          if (notice() === shown) setNotice(undefined);
+        },
+        resume === "resuming" ? RESUMING_NOTICE_MS : MISSING_NOTICE_MS,
+      );
     });
 
     const pastesImages = props.pastesImages;
@@ -117,6 +146,7 @@ export function TerminalView(props: {
 
     onCleanup(() => {
       disposed = true;
+      clearTimeout(noticeTimer);
       observer.disconnect();
       refit.cancel();
       element.removeEventListener("paste", onPaste, true);
@@ -129,11 +159,27 @@ export function TerminalView(props: {
   });
 
   return (
-    <div
-      class="terminal"
-      ref={(el) => {
-        host = el;
-      }}
-    />
+    <>
+      <div
+        class="terminal"
+        ref={(el) => {
+          host = el;
+        }}
+      />
+      <Show when={notice()}>
+        {(text) => (
+          <button
+            type="button"
+            class="terminal-notice"
+            title="Dismiss"
+            onClick={() => {
+              setNotice(undefined);
+            }}
+          >
+            {text()}
+          </button>
+        )}
+      </Show>
+    </>
   );
 }

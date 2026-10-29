@@ -22,10 +22,20 @@ import {
   statusText,
 } from "./accounts";
 import { AccountsScreen } from "./AccountsScreen";
+import {
+  type Board,
+  exited,
+  markOf,
+  nextWaiting,
+  opened,
+  reported,
+  startedTabs,
+} from "./board";
 import { CloseIcon, MenuIcon, PanelIcon } from "./icons";
 import { shortcutFor } from "./keys";
 import { type Launch, NewTab } from "./NewTab";
 import { listPrograms } from "./pty";
+import { fromSaved, loadTree, saveTree, toSaved } from "./saved";
 import { AccountDot, Sidebar } from "./Sidebar";
 import { createStatuses } from "./statuses";
 import { type Tab, tabFor } from "./tab";
@@ -89,6 +99,40 @@ export function App() {
   const [panelOpen, setPanelOpen] = createSignal(false);
   const [drawer, setDrawer] = createSignal(false);
   const [tabsClosed, setTabsClosed] = createSignal(0);
+  const [board, setBoard] = createSignal<Board>(new Map());
+
+  // Nothing is saved until the saved tree is in, or an early save would replace it with an empty one.
+  const [restored, setRestored] = createSignal(false);
+  const [treeError, setTreeError] = createSignal<string>();
+  const savedTree = loadTree();
+  createEffect(() => {
+    const ready = profiles();
+    const choices = programs.state === "errored" ? [] : programs.latest;
+    if (!ready || !choices || untrack(restored)) return;
+    savedTree.then(
+      (saved) => {
+        if (untrack(restored)) return;
+        setTree(fromSaved(saved, ready, choices));
+        setRestored(true);
+      },
+      (error: unknown) => {
+        setTreeError(String(error));
+        setRestored(true);
+      },
+    );
+  });
+  createEffect(
+    on(
+      tree,
+      (current) => {
+        if (!restored() || treeError() !== undefined) return;
+        saveTree(toSaved(current)).catch((error: unknown) => {
+          console.error("could not save tabs:", error);
+        });
+      },
+      { defer: true },
+    ),
+  );
 
   createEffect(
     on(
@@ -113,6 +157,18 @@ export function App() {
     const id = shown();
     return id === undefined ? undefined : tabById(id);
   };
+  const started = createMemo<ReadonlySet<TabId>>(
+    (before) => startedTabs(before, shown(), tabIds()),
+    new Set(),
+  );
+  const startedIds = createMemo(() =>
+    tabIds().filter((id) => started().has(id)),
+  );
+  createEffect(
+    on(shown, (id) => {
+      if (id !== undefined) setBoard((b) => opened(b, id));
+    }),
+  );
 
   const select = (id: TabId) => {
     setActive(id);
@@ -210,6 +266,9 @@ export function App() {
       } else if (shortcut === "closeTab") {
         const id = shown();
         if (id !== undefined) close(id);
+      } else if (shortcut === "nextWaiting") {
+        const id = nextWaiting(board(), tabOrder(tree()), shown());
+        if (id !== undefined) select(id);
       } else {
         const projectId = shownTab()?.projectId ?? tree().projects[0]?.id;
         if (projectId === undefined) newProject();
@@ -243,7 +302,7 @@ export function App() {
           </button>
         </main>
       </Match>
-      <Match when={profiles()}>
+      <Match when={restored() && profiles()}>
         {(loaded) => (
           <div
             class="app"
@@ -254,6 +313,7 @@ export function App() {
               profiles={loaded()}
               statuses={statuses}
               active={shown()}
+              mark={(id) => markOf(board(), id)}
               onSelect={select}
               onClose={close}
               onRename={(id, title) => setTree(renameTab(tree(), id, title))}
@@ -353,7 +413,7 @@ export function App() {
                 )}
               </Show>
               <div class="stage">
-                <For each={tabIds()}>
+                <For each={startedIds()}>
                   {(id) => (
                     <Show when={tabById(id)}>
                       {(tab) => (
@@ -362,10 +422,15 @@ export function App() {
                           classList={{ shown: shown() === id }}
                         >
                           <TerminalView
+                            tab={id}
                             spec={tab().launch.spec}
                             pastesImages={tab().launch.pastesImages}
                             input={tab().launch.input}
                             active={shown() === id}
+                            onState={(state) =>
+                              setBoard((b) => reported(b, id, state, shown()))
+                            }
+                            onExit={() => setBoard((b) => exited(b, id))}
                           />
                         </div>
                       )}
@@ -378,6 +443,7 @@ export function App() {
                       fallback={
                         <Home
                           hasProjects={tree().projects.length > 0}
+                          treeError={treeError()}
                           onNewProject={newProject}
                         />
                       }
@@ -461,9 +527,21 @@ export function App() {
   );
 }
 
-function Home(props: { hasProjects: boolean; onNewProject: () => void }) {
+function Home(props: {
+  hasProjects: boolean;
+  treeError: string | undefined;
+  onNewProject: () => void;
+}) {
   return (
     <main class="home">
+      <Show when={props.treeError}>
+        {(error) => (
+          <p class="error">
+            {error()}. Tabs opened now will not be saved; close Cerberus and
+            move the file aside to start a new one.
+          </p>
+        )}
+      </Show>
       <Show
         when={props.hasProjects}
         fallback={

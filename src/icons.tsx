@@ -88,6 +88,16 @@ export function SearchIcon() {
   );
 }
 
+export function ClockIcon() {
+  return (
+    <Stroke
+      d="M8 4.8V8l2 1.3M8 14A6 6 0 1 1 8 2a6 6 0 0 1 0 12"
+      size={11}
+      width={1.6}
+    />
+  );
+}
+
 export function FolderIcon() {
   return (
     <Stroke

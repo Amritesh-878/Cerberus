@@ -280,6 +280,53 @@ button {
   opacity: 0;
 }
 
+/* A program that exited: the row stays, quieter. */
+.tab-row.done .tab-title {
+  color: var(--faint);
+}
+
+.mark {
+  display: inline-flex;
+  flex: none;
+  gap: 3px;
+  align-items: center;
+}
+
+.mark.working {
+  width: 9px;
+  height: 9px;
+  border: 1.5px solid var(--faint);
+  border-top-color: var(--dim);
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+
+.mark.waiting {
+  width: 6px;
+  height: 6px;
+  background: var(--accent);
+  border-radius: 50%;
+}
+
+.mark.limited {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--dim);
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mark.working {
+    animation: none;
+    border-style: dotted;
+  }
+}
+
 .tab-row:hover .close,
 .tab-row.active .close,
 .tab-row .close:focus-visible {
@@ -447,6 +494,19 @@ button {
 
 .tab-view.shown {
   visibility: visible;
+}
+
+.terminal-notice {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--dim);
+  cursor: pointer;
+  background: var(--bar);
+  border: 1px solid var(--line);
+  border-radius: 6px;
 }
 
 .terminal {

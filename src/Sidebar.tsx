@@ -4,8 +4,10 @@ import {
   createSignal,
   For,
   Index,
+  Match,
   on,
   Show,
+  Switch,
 } from "solid-js";
 
 import {
@@ -14,8 +16,10 @@ import {
   type Profiles,
   statusText,
 } from "./accounts";
+import { type Mark, resetText } from "./board";
 import {
   ChevronIcon,
+  ClockIcon,
   CloseIcon,
   FolderIcon,
   PeopleIcon,
@@ -41,6 +45,7 @@ export function Sidebar(props: {
   profiles: Profiles;
   statuses: Statuses;
   active: TabId | undefined;
+  mark: (id: TabId) => Mark | undefined;
   onSelect: (id: TabId) => void;
   onClose: (id: TabId) => void;
   onRename: (id: TabId, title: string) => void;
@@ -125,6 +130,7 @@ export function Sidebar(props: {
                       account={accountOf(row.tab)}
                       status={(id) => statusText(props.statuses.get(id))}
                       active={props.active === row.tab.id}
+                      mark={props.mark(row.tab.id)}
                       renaming={renaming() === row.tab.id}
                       onSelect={() => {
                         props.onSelect(row.tab.id);
@@ -180,6 +186,7 @@ function TabRow(props: {
   account: TabAccount | null;
   status: (id: AccountId) => string;
   active: boolean;
+  mark: Mark | undefined;
   renaming: boolean;
   onSelect: () => void;
   onClose: () => void;
@@ -205,6 +212,7 @@ function TabRow(props: {
         sub: props.row.sub,
         last: props.row.last,
         active: props.active,
+        done: props.mark?.kind === "done",
       }}
     >
       <Show
@@ -229,6 +237,7 @@ function TabRow(props: {
             <span class="tab-text">
               <span class="tab-title">{tab().title}</span>
             </span>
+            <StateMark mark={props.mark} />
             <Show when={props.account}>
               {(account) => (
                 <span
@@ -264,6 +273,50 @@ function TabRow(props: {
         <CloseIcon />
       </button>
     </div>
+  );
+}
+
+function StateMark(props: { mark: Mark | undefined }) {
+  return (
+    <Switch>
+      <Match when={props.mark?.kind === "working"}>
+        <span
+          class="mark working"
+          role="img"
+          aria-label="Working"
+          title="Working"
+        />
+      </Match>
+      <Match when={props.mark?.kind === "waiting"}>
+        <span
+          class="mark waiting"
+          role="img"
+          aria-label="Waiting on you"
+          title="Waiting on you"
+        />
+      </Match>
+      <Match when={props.mark?.kind === "limited" && props.mark}>
+        {(mark) => {
+          const at = () => {
+            const { resetsAt } = mark();
+            return resetsAt === null ? undefined : resetText(resetsAt);
+          };
+          return (
+            <span
+              class="mark limited"
+              title={
+                at() === undefined
+                  ? "Usage limit reached"
+                  : `Usage limit, resets ${at() ?? ""}`
+              }
+            >
+              <ClockIcon />
+              {at()}
+            </span>
+          );
+        }}
+      </Match>
+    </Switch>
   );
 }
 
