@@ -241,7 +241,7 @@ mod tests {
             .pragma_update(None, "user_version", 99)
             .unwrap();
 
-        let saved = Saved::open(&path);
+        let saved = Saved::open(&path, |_| {});
 
         assert!(matches!(saved.load(), Err(TreeError::Unavailable(_))));
         assert!(saved.save(two_projects()).is_err());

@@ -36,8 +36,6 @@ pub enum TreeError {
     Unavailable(String),
     #[error("another Cerberus window has the saved tabs open")]
     InUse,
-    #[error("recent tab changes are not saved yet: {0}")]
-    NotWritten(String),
 }
 
 impl Serialize for TreeError {
@@ -142,8 +140,6 @@ impl Store for Db {
 
 struct Live {
     snapshot: Arc<Mutex<Snapshot>>,
-    /// The last write's error, cleared by the next write that succeeds.
-    failure: Arc<Mutex<Option<String>>>,
     saver: Mutex<Sender<Message>>,
     thread: Mutex<Option<JoinHandle<()>>>,
 }
@@ -159,26 +155,28 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 
 impl Saved {
     /// A file that cannot be read, or that another Cerberus holds, leaves saving off, so nothing is written over.
-    pub fn open(path: &Path) -> Self {
+    /// `report` hears each change in whether the disk holds the latest tree: the error, or `None` once it does.
+    pub fn open(path: &Path, report: impl Fn(Option<&str>) + Send + 'static) -> Self {
         Self(Arc::new(
             Db::open(path)
                 .and_then(|db| Ok((db.load()?, db)))
-                .map(|(snapshot, db)| Self::start(snapshot, db))
+                .map(|(snapshot, db)| Self::start(snapshot, db, report))
                 .map_err(|e| e.to_string()),
         ))
     }
 
-    fn start(snapshot: Snapshot, store: impl Store) -> Live {
+    fn start(
+        snapshot: Snapshot,
+        store: impl Store,
+        report: impl Fn(Option<&str>) + Send + 'static,
+    ) -> Live {
         let snapshot = Arc::new(Mutex::new(snapshot));
-        let failure = Arc::new(Mutex::new(None));
         let (tx, rx) = mpsc::channel();
         let shared = Arc::clone(&snapshot);
-        let failed = Arc::clone(&failure);
         let written = lock(&snapshot).clone();
-        let thread = thread::spawn(move || save_loop(store, &shared, &failed, written, &rx));
+        let thread = thread::spawn(move || save_loop(store, &shared, written, &rx, report));
         Live {
             snapshot,
-            failure,
             saver: Mutex::new(tx),
             thread: Mutex::new(Some(thread)),
         }
@@ -195,7 +193,6 @@ impl Saved {
         Ok(lock(&self.live()?.snapshot).tree.clone())
     }
 
-    /// Takes the tree at once; an error means the last write to disk failed and is being retried.
     pub fn save(&self, tree: SavedTree) -> Result<(), TreeError> {
         tree.validate()?;
         let live = self.live()?;
@@ -206,10 +203,7 @@ impl Saved {
             snapshot.tree = tree;
         }
         live.changed();
-        match lock(&live.failure).clone() {
-            Some(error) => Err(TreeError::NotWritten(error)),
-            None => Ok(()),
-        }
+        Ok(())
     }
 
     /// Follows a tab onto a new chat, as after `/clear`; ids that could not be a session are ignored.
@@ -282,13 +276,13 @@ fn settle(rx: &Receiver<Message>, waiting: &mut Vec<Sender<()>>) {
 fn save_loop(
     mut store: impl Store,
     snapshot: &Mutex<Snapshot>,
-    failure: &Mutex<Option<String>>,
     mut written: Snapshot,
     rx: &Receiver<Message>,
+    report: impl Fn(Option<&str>),
 ) {
+    let mut failure: Option<String> = None;
     loop {
-        let retrying = lock(failure).is_some();
-        let next = if retrying {
+        let next = if failure.is_some() {
             rx.recv_timeout(RETRY)
         } else {
             rx.recv().map_err(|_| RecvTimeoutError::Disconnected)
@@ -301,17 +295,24 @@ fn save_loop(
             Err(RecvTimeoutError::Disconnected) => return,
         }
         let current = lock(snapshot).clone();
-        if current != written {
+        // A tree changed back to what is on disk needs no write, and any earlier failure is over.
+        let outcome = if current == written {
+            None
+        } else {
             match store.write(&current) {
                 Ok(()) => {
                     written = current;
-                    *lock(failure) = None;
+                    None
                 }
                 Err(e) => {
                     eprintln!("could not save tabs, retrying: {e}");
-                    *lock(failure) = Some(e.to_string());
+                    Some(e.to_string())
                 }
             }
+        };
+        if outcome != failure {
+            report(outcome.as_deref());
+            failure = outcome;
         }
         for reply in waiting {
             let _ = reply.send(());
@@ -371,13 +372,13 @@ pub(crate) mod tests {
     fn saves_reach_the_file_and_a_restart_reads_them_back() {
         let dir = TestDir::new();
         let path = dir.path().join("tree.db");
-        let saved = Saved::open(&path);
+        let saved = Saved::open(&path, |_| {});
 
         saved.save(two_projects()).unwrap();
         saved.set_session(6, SESSION);
         saved.flush();
         drop(saved);
-        let restarted = Saved::open(&path);
+        let restarted = Saved::open(&path, |_| {});
 
         assert_eq!(restarted.load().unwrap(), two_projects());
         assert_eq!(restarted.session_of(6).as_deref(), Some(SESSION));
@@ -388,9 +389,9 @@ pub(crate) mod tests {
     fn a_second_app_on_the_same_file_saves_nothing() {
         let dir = TestDir::new();
         let path = dir.path().join("tree.db");
-        let first = Saved::open(&path);
+        let first = Saved::open(&path, |_| {});
 
-        let second = Saved::open(&path);
+        let second = Saved::open(&path, |_| {});
 
         assert!(first.save(two_projects()).is_ok());
         assert!(
@@ -416,34 +417,59 @@ pub(crate) mod tests {
         }
     }
 
-    #[test]
-    fn a_failed_write_is_reported_and_retried_until_it_lands() {
+    type Kept = Arc<Mutex<Option<Snapshot>>>;
+
+    fn flaky(failures: usize) -> (Saved, Kept, Receiver<Option<String>>) {
         let kept = Arc::new(Mutex::new(None));
         let disk = FlakyDisk {
-            failures: 1,
+            failures,
             kept: Arc::clone(&kept),
         };
-        let saved = Saved(Arc::new(Ok(Saved::start(Snapshot::default(), disk))));
+        let (tx, reports) = mpsc::channel();
+        let report = move |failure: Option<&str>| {
+            let _ = tx.send(failure.map(str::to_owned));
+        };
+        let saved = Saved(Arc::new(Ok(Saved::start(
+            Snapshot::default(),
+            disk,
+            report,
+        ))));
+        (saved, kept, reports)
+    }
+
+    #[test]
+    fn a_failed_write_is_reported_then_retried_until_it_lands() {
+        let (saved, kept, reports) = flaky(1);
+
         saved.save(two_projects()).unwrap();
-        saved.flush();
 
-        assert!(matches!(
-            saved.save(two_projects()),
-            Err(TreeError::NotWritten(_))
-        ));
-        let deadline = Instant::now() + RETRY * 3;
-        while lock(&kept).is_none() && Instant::now() < deadline {
-            thread::sleep(Duration::from_millis(50));
-        }
-
+        let wait = RETRY * 3;
+        assert!(
+            reports
+                .recv_timeout(wait)
+                .unwrap()
+                .is_some_and(|e| e.contains("disk full"))
+        );
+        assert_eq!(reports.recv_timeout(wait).unwrap(), None);
         assert_eq!(lock(&kept).as_ref().map(|s| &s.tree), Some(&two_projects()));
-        assert!(saved.save(two_projects()).is_ok());
+    }
+
+    #[test]
+    fn changing_the_tree_back_ends_a_failure_without_a_write() {
+        let (saved, kept, reports) = flaky(usize::MAX);
+        saved.save(two_projects()).unwrap();
+        assert!(reports.recv_timeout(RETRY).unwrap().is_some());
+
+        saved.save(SavedTree::default()).unwrap();
+
+        assert_eq!(reports.recv_timeout(RETRY * 3).unwrap(), None);
+        assert!(lock(&kept).is_none());
     }
 
     #[test]
     fn a_new_chat_in_a_tab_replaces_the_saved_one() {
         let dir = TestDir::new();
-        let saved = Saved::open(&dir.path().join("tree.db"));
+        let saved = Saved::open(&dir.path().join("tree.db"), |_| {});
         saved.save(two_projects()).unwrap();
 
         saved.set_session(3, SESSION);
@@ -455,7 +481,7 @@ pub(crate) mod tests {
     #[test]
     fn a_closed_tab_forgets_its_chat() {
         let dir = TestDir::new();
-        let saved = Saved::open(&dir.path().join("tree.db"));
+        let saved = Saved::open(&dir.path().join("tree.db"), |_| {});
         saved.save(two_projects()).unwrap();
         saved.set_session(7, SESSION);
 
@@ -469,7 +495,7 @@ pub(crate) mod tests {
     #[test]
     fn a_session_id_that_could_be_a_path_or_flag_is_ignored() {
         let dir = TestDir::new();
-        let saved = Saved::open(&dir.path().join("tree.db"));
+        let saved = Saved::open(&dir.path().join("tree.db"), |_| {});
         saved.save(two_projects()).unwrap();
 
         saved.set_session(3, r"..\..\x");

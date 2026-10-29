@@ -7,7 +7,7 @@ mod saved;
 mod sessions;
 
 use tauri::webview::PageLoadEvent;
-use tauri::{Manager, RunEvent};
+use tauri::{Emitter, Manager, RunEvent};
 
 use crate::accounts::Accounts;
 use crate::pty::PtyManager;
@@ -26,7 +26,12 @@ pub fn run() {
             let paths = app.path();
             let config_dir = paths.app_config_dir()?;
             app.manage(Accounts::new(&config_dir, paths.home_dir()?));
-            app.manage(Saved::open(&config_dir.join("tree.db")));
+            let handle = app.handle().clone();
+            let report = move |failure: Option<&str>| {
+                // Fails only once the window is gone, and then nobody is left to show it.
+                let _ = handle.emit("tree-save", failure);
+            };
+            app.manage(Saved::open(&config_dir.join("tree.db"), report));
             Ok(())
         })
         // A reload drops the page that owned every session, so nothing could close them later.
