@@ -9,7 +9,7 @@ run side by side and a chat can continue on another account. Claude Code is the 
 
 Built with Claude Code.
 
-**Status:** early. Projects and tabs run side by side; saving them across restarts comes next.
+**Status:** early. Projects and tabs run side by side and are saved across restarts.
 
 ## Using it
 
@@ -85,6 +85,9 @@ from Claude Code's `sessions` file for the tab's process, and follows it to the 
 `/clear`. A chat is saved once it has its first message; a tab whose chat file has since been
 deleted starts a new chat and says so. Shell tabs start fresh in their folder. Setup tabs, such
 as signing an account in, are not saved.
+
+If a save fails, the bar shows "Tabs not saved" and Cerberus retries every two seconds. Only one
+Cerberus at a time saves tabs: a second copy opened alongside runs with saving off and says so.
 
 ### The session board
 
