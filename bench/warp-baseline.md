@@ -29,6 +29,18 @@ repeated on Cerberus.
 - The sampler ran from a terminal outside Warp, so it is not in the measured tree.
 - Units are MiB. Rows give the median; CPU also gives p95 and max.
 
+### Running it
+
+```powershell
+.\bench\sample.ps1 -Name warp -Seconds 60 -Csv bench\raw\state-a.csv
+.\bench\sample.ps1 -Name warp -Seconds 14400 -Interval 10 -Csv bench\raw\workday.csv -Quiet
+.\bench\sample.ps1 -FromCsv bench\raw\workday.csv
+Invoke-Pester bench\tree.tests.ps1
+```
+
+Run the sampler from a terminal outside the app under test. `-Csv` refuses an existing file, and
+`-Exclude <pid>` leaves a subtree out.
+
 ### Check against Task Manager
 
 State (a), same minute, both `warp.exe` processes summed:
