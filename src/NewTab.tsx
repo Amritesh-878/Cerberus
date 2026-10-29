@@ -40,11 +40,15 @@ export function NewTab(props: {
   const claude = () => installed(props.programs ?? [], "claude");
   const shell = () => shellChoice(props.profiles, props.programs ?? []);
   const [height, setHeight] = createSignal(0);
+  const [viewport, setViewport] = createSignal({
+    width: innerWidth,
+    height: innerHeight,
+  });
   const position = () => {
     const place = placeBox(
       props.anchor,
       { width: WIDTH, height: height() },
-      { width: innerWidth, height: innerHeight },
+      viewport(),
     );
     return { left: `${String(place.left)}px`, top: `${String(place.top)}px` };
   };
@@ -57,6 +61,10 @@ export function NewTab(props: {
   let box: HTMLDivElement | undefined;
   onMount(() => {
     // Measured once drawn, so a box near the bottom can open above its button instead.
+    const onResize = () => {
+      setViewport({ width: innerWidth, height: innerHeight });
+    };
+    window.addEventListener("resize", onResize);
     const observer = new ResizeObserver(() => {
       setHeight(box?.offsetHeight ?? 0);
     });
@@ -68,6 +76,7 @@ export function NewTab(props: {
     onCleanup(() => {
       window.removeEventListener("keydown", onKey);
       observer.disconnect();
+      window.removeEventListener("resize", onResize);
     });
     primary?.focus();
   });

@@ -37,3 +37,10 @@ test("the box stays inside the window's right edge", () => {
 test("with no anchor the box opens centred near the top", () => {
   expect(placeBox(undefined, BOX, SCREEN)).toEqual({ left: 500, top: 64 });
 });
+
+test("with no anchor in a short window the box moves up to fit", () => {
+  const short = { width: 1280, height: 340 };
+
+  expect(placeBox(undefined, BOX, short).top).toBe(32);
+  expect(placeBox(undefined, BOX, { width: 1280, height: 200 }).top).toBe(8);
+});
