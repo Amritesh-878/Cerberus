@@ -31,8 +31,6 @@ button {
   color: inherit;
 }
 
-/* Layout: sidebar, main, and the side panel slot. */
-
 .app {
   display: grid;
   grid-template-columns: var(--sidebar-width) minmax(0, 1fr) auto;
@@ -85,8 +83,6 @@ button {
 .icon-shell {
   color: var(--dim);
 }
-
-/* Sidebar */
 
 .sidebar {
   display: flex;
@@ -329,8 +325,6 @@ button {
   background: var(--hover);
 }
 
-/* Main */
-
 .main {
   display: flex;
   flex-direction: column;
@@ -461,8 +455,6 @@ button {
   margin: 0;
 }
 
-/* Side panel slot */
-
 .panel {
   display: flex;
   flex-direction: column;
@@ -488,8 +480,6 @@ button {
   border: 1px dashed #333;
   border-radius: 8px;
 }
-
-/* New tab box */
 
 .popover-backdrop {
   position: fixed;
@@ -665,8 +655,6 @@ button {
     display: none;
   }
 }
-
-/* Setup and Accounts pages */
 
 .walkthrough {
   max-width: 880px;

@@ -1,6 +1,11 @@
 import { createMemo, createSignal, For, Index, Show } from "solid-js";
 
-import { accountColor, type Profiles, statusText } from "./accounts";
+import {
+  accountColor,
+  type AccountId,
+  type Profiles,
+  statusText,
+} from "./accounts";
 import {
   ChevronIcon,
   CloseIcon,
@@ -11,6 +16,7 @@ import {
   SearchIcon,
 } from "./icons";
 import type { Statuses } from "./statuses";
+import type { TabAccount } from "./tab";
 import {
   groups,
   type Group,
@@ -21,11 +27,6 @@ import {
   type Tree,
   type TreeTab,
 } from "./tree";
-
-interface TabAccount {
-  id: number;
-  name: string;
-}
 
 export function Sidebar(props: {
   tree: Tree;
@@ -184,7 +185,7 @@ export function Sidebar(props: {
 function TabRow(props: {
   row: Row;
   account: TabAccount | null;
-  status: (id: number) => string;
+  status: (id: AccountId) => string;
   active: boolean;
   renaming: boolean;
   onSelect: () => void;
@@ -269,7 +270,7 @@ function TabRow(props: {
   );
 }
 
-export function AccountDot(props: { id: number }) {
+export function AccountDot(props: { id: AccountId }) {
   return <span class="dot" style={{ background: accountColor(props.id) }} />;
 }
 

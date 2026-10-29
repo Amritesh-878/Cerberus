@@ -60,11 +60,11 @@ export function NewTab(props: {
   let primary: HTMLButtonElement | undefined;
   let box: HTMLDivElement | undefined;
   onMount(() => {
-    // Measured once drawn, so a box near the bottom can open above its button instead.
     const onResize = () => {
       setViewport({ width: innerWidth, height: innerHeight });
     };
     window.addEventListener("resize", onResize);
+    // Measured once drawn, so a box near the bottom can open above its button instead.
     const observer = new ResizeObserver(() => {
       setHeight(box?.offsetHeight ?? 0);
     });

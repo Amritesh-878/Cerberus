@@ -14,7 +14,7 @@ export interface Profiles {
   defaultAccount: AccountId | null;
   /** The program id the Shell button opens; `null` opens the first shell installed. */
   shell: string | null;
-  /** `null` starts tabs in the user's home folder. */
+  /** Where New project's folder picker opens; `null` leaves it to Windows. */
   startFolder: string | null;
   revision: number;
 }

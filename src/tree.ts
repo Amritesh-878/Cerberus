@@ -13,7 +13,6 @@ export interface TreeTab {
   id: TabId;
   /** `null` for a setup tab, such as signing an account in, that belongs to no project. */
   projectId: ProjectId | null;
-  /** The planner tab a coder sub-tab sits under. */
   parentId: TabId | null;
   title: string;
   launch: Tab;
@@ -200,7 +199,6 @@ export function neighbour(tree: Tree, id: TabId): TabId | undefined {
   return order[at + 1] ?? order[at - 1];
 }
 
-/** The tab `step` places away from `id` in the sidebar, wrapping at either end. */
 export function stepTab(
   tree: Tree,
   id: TabId | undefined,

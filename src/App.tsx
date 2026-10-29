@@ -87,7 +87,6 @@ export function App() {
   const [drawer, setDrawer] = createSignal(false);
   const [tabsClosed, setTabsClosed] = createSignal(0);
 
-  // Details refresh when a page or the new-tab box opens and after a tab closes.
   createEffect(
     on(
       [

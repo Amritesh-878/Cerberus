@@ -13,7 +13,6 @@ const GAP = 4;
 const MARGIN = 8;
 const UNANCHORED_TOP = 64;
 
-/** Where a box opens by its anchor: below it, above it when below is short, else as low as fits. */
 export function placeBox(
   anchor: Anchor | undefined,
   box: { width: number; height: number },
