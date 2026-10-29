@@ -23,16 +23,11 @@ pub enum TabState {
     },
 }
 
-#[derive(Debug, Default, PartialEq, Eq)]
-struct Observed {
-    session: Option<String>,
-    state: Option<TabState>,
-}
-
 /// What one tab's session file last said, so only changes are reported.
 #[derive(Default)]
 struct Tracker {
     session: Option<String>,
+    saved: Option<String>,
     state: Option<TabState>,
 }
 
@@ -43,12 +38,10 @@ impl Tracker {
         file: &SessionFile,
         now: u64,
         limit: impl FnOnce(&str) -> Option<Limit>,
-    ) -> Observed {
-        let mut observed = Observed::default();
+    ) -> Option<TabState> {
         let new_chat = file.session_id.is_some() && file.session_id != self.session;
         if new_chat {
             self.session.clone_from(&file.session_id);
-            observed.session.clone_from(&file.session_id);
         }
         let state = match file.status {
             Status::Busy => Some(TabState::Working),
@@ -70,11 +63,21 @@ impl Tracker {
             }
             Status::Unknown => self.state,
         };
-        if state != self.state {
-            self.state = state;
-            observed.state = state;
+        if state == self.state {
+            return None;
         }
-        observed
+        self.state = state;
+        state
+    }
+
+    /// The chat to save, once: Claude Code writes its transcript on the first message, and an empty chat cannot be resumed.
+    fn unsaved(&mut self, has_transcript: impl FnOnce(&str) -> bool) -> Option<String> {
+        let current = self.session.as_deref()?;
+        if self.saved.as_deref() == Some(current) || !has_transcript(current) {
+            return None;
+        }
+        self.saved = Some(current.to_owned());
+        self.saved.clone()
     }
 }
 
@@ -106,15 +109,16 @@ pub fn watch(
             };
             let now = unix_now();
             let cwd = session.cwd.clone().unwrap_or_else(|| watched.cwd.clone());
-            let observed = tracker.observe(&session, now, |id| {
+            let changed = tracker.observe(&session, now, |id| {
                 let path = transcript(&watched.config_dir, &cwd, id)?;
                 limit_in(&path, now).ok().flatten()
             });
-            if let Some(id) = &observed.session {
-                on_session(id);
-            }
-            if let Some(state) = observed.state {
+            if let Some(state) = changed {
                 on_state(state);
+            }
+            let has_transcript = |id: &str| transcript(&watched.config_dir, &cwd, id).is_some();
+            if let Some(id) = tracker.unsaved(has_transcript) {
+                on_session(&id);
             }
         }
     })?;
@@ -150,18 +154,12 @@ mod tests {
     }
 
     #[test]
-    fn the_first_look_reports_the_chat_and_its_state() {
+    fn the_first_look_reports_the_state() {
         let mut tracker = Tracker::default();
 
-        let observed = tracker.observe(&file(FIRST, Status::Busy), NOW, no_limit);
+        let changed = tracker.observe(&file(FIRST, Status::Busy), NOW, no_limit);
 
-        assert_eq!(
-            observed,
-            Observed {
-                session: Some(FIRST.to_owned()),
-                state: Some(TabState::Working),
-            }
-        );
+        assert_eq!(changed, Some(TabState::Working));
     }
 
     #[test]
@@ -169,19 +167,32 @@ mod tests {
         let mut tracker = Tracker::default();
         tracker.observe(&file(FIRST, Status::Busy), NOW, no_limit);
 
-        let observed = tracker.observe(&file(FIRST, Status::Busy), NOW, no_limit);
-
-        assert_eq!(observed, Observed::default());
+        assert_eq!(
+            tracker.observe(&file(FIRST, Status::Busy), NOW, no_limit),
+            None
+        );
+        assert_eq!(tracker.unsaved(|_| true).as_deref(), Some(FIRST));
+        assert_eq!(tracker.unsaved(|_| true), None);
     }
 
     #[test]
-    fn a_cleared_chat_reports_its_new_id() {
+    fn a_chat_is_saved_only_once_it_has_a_transcript() {
         let mut tracker = Tracker::default();
         tracker.observe(&file(FIRST, Status::Idle), NOW, no_limit);
 
-        let observed = tracker.observe(&file(SECOND, Status::Idle), NOW, no_limit);
+        assert_eq!(tracker.unsaved(|_| false), None);
+        assert_eq!(tracker.unsaved(|_| true).as_deref(), Some(FIRST));
+    }
 
-        assert_eq!(observed.session.as_deref(), Some(SECOND));
+    #[test]
+    fn a_cleared_chat_is_saved_under_its_new_id() {
+        let mut tracker = Tracker::default();
+        tracker.observe(&file(FIRST, Status::Idle), NOW, no_limit);
+        tracker.unsaved(|_| true);
+
+        tracker.observe(&file(SECOND, Status::Idle), NOW, no_limit);
+
+        assert_eq!(tracker.unsaved(|id| id == SECOND).as_deref(), Some(SECOND));
     }
 
     #[test]
@@ -206,7 +217,7 @@ mod tests {
         let mut tracker = Tracker::default();
         tracker.observe(&file(FIRST, Status::Busy), NOW, no_limit);
 
-        let observed = tracker.observe(&file(FIRST, Status::Idle), NOW, |id| {
+        let changed = tracker.observe(&file(FIRST, Status::Idle), NOW, |id| {
             assert_eq!(id, FIRST);
             Some(Limit {
                 resets_at: Some(NOW + 60),
@@ -214,7 +225,7 @@ mod tests {
         });
 
         assert_eq!(
-            observed.state,
+            changed,
             Some(TabState::Limited {
                 resets_at: Some(NOW + 60)
             })
@@ -234,8 +245,8 @@ mod tests {
         let before = tracker.observe(&file(FIRST, Status::Idle), NOW + 59, limited);
         let after = tracker.observe(&file(FIRST, Status::Idle), NOW + 60, no_limit);
 
-        assert_eq!(before.state, None);
-        assert_eq!(after.state, Some(TabState::Idle));
+        assert_eq!(before, None);
+        assert_eq!(after, Some(TabState::Idle));
     }
 
     #[test]
@@ -243,9 +254,9 @@ mod tests {
         let mut tracker = Tracker::default();
         tracker.observe(&file(FIRST, Status::Busy), NOW, no_limit);
 
-        let observed = tracker.observe(&file(FIRST, Status::Unknown), NOW, no_limit);
+        let changed = tracker.observe(&file(FIRST, Status::Unknown), NOW, no_limit);
 
-        assert_eq!(observed.state, None);
+        assert_eq!(changed, None);
     }
 
     #[test]
