@@ -43,14 +43,18 @@ The sidebar lists projects, each a folder. **New project** opens the Windows fol
 the folder's name becomes the project's name. Under each project sit its tabs:
 
 - A **planner** is a Claude Code tab at the top of a project.
-- A **coder sub-tab** sits under a planner, one level down.
-- Shell tabs sit at the top of the project.
+- A **sub-tab** sits under a planner, one level down: a Claude Code coder or a shell.
+- A shell tab opened on its own sits at the top of the project, beside the planners.
 
 The **+** beside a project opens the new tab box: pick the account, pick whether the tab goes on
 its own or under a planner, then **Claude Code** or **Shell**. The tab starts in the project's
 folder. Its title is the program and the account until you rename it (double-click it or press
 F2). Closing a planner leaves its sub-tabs open, moved up to the top of the project. Search
 filters tabs by title or account.
+
+A project is renamed the same way, from its row. The **×** beside it removes it from the
+sidebar: when it has tabs open, Cerberus asks first, then closes them. The folder is never
+touched.
 
 Every tab keeps running while another shows, with its scrollback. Closing a tab (its ×, or
 Ctrl+Shift+W) ends that tab's program and anything it started, and no other tab's. Closing the
