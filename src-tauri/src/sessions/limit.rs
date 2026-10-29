@@ -3,6 +3,7 @@ use std::io::{self, Read, Seek, SeekFrom};
 use std::path::Path;
 
 use serde::Deserialize;
+use serde::de::IgnoredAny;
 
 // A limit is the last assistant record, a few KB; tool output after it would be a new turn anyway.
 const TAIL_BYTES: u64 = 64 * 1024;
@@ -22,16 +23,43 @@ struct Record {
     #[serde(default)]
     is_api_error_message: bool,
     error: Option<String>,
-    quota_limits: Option<QuotaLimits>,
+    quota_limits: Option<Quota>,
+}
+
+// Untagged with a catch-all, so an odd `quotaLimits` costs only the reset time, never the whole record.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum Quota {
+    Known(QuotaLimits),
+    Other(IgnoredAny),
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct QuotaLimits {
-    resets_at: Option<u64>,
+    #[serde(default)]
+    resets_at: Option<Seconds>,
 }
 
-/// The limit the transcript's last assistant record reports, unless its reset time has passed.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum Seconds {
+    Number(f64),
+    Other(IgnoredAny),
+}
+
+impl Quota {
+    /// Rounded up, so a reset is never shown earlier than it is.
+    fn resets_at(&self) -> Option<u64> {
+        match self {
+            Self::Known(QuotaLimits {
+                resets_at: Some(Seconds::Number(at)),
+            }) if at.is_finite() && *at >= 0.0 => Some(at.ceil() as u64),
+            _ => None,
+        }
+    }
+}
+
 pub fn limit_in(transcript: &Path, now: u64) -> io::Result<Option<Limit>> {
     Ok(last_limit(&tail(transcript)?, now))
 }
@@ -63,7 +91,7 @@ fn last_limit(tail: &[u8], now: u64) -> Option<Limit> {
     if !last.is_api_error_message || last.error.as_deref() != Some("rate_limit") {
         return None;
     }
-    let resets_at = last.quota_limits.and_then(|q| q.resets_at);
+    let resets_at = last.quota_limits.as_ref().and_then(Quota::resets_at);
     match resets_at {
         Some(at) if at <= now => None,
         _ => Some(Limit { resets_at }),
@@ -172,6 +200,55 @@ mod tests {
         ]);
 
         assert_eq!(last_limit(&tail, NOW), None);
+    }
+
+    fn limit_with_quota(quota: &str) -> String {
+        format!(
+            r#"{{"type":"assistant","message":{{"content":[{{"type":"text","text":"fake limit text"}}]}},"quotaLimits":{quota},"error":"rate_limit","isApiErrorMessage":true}}"#
+        )
+    }
+
+    #[test]
+    fn a_fractional_reset_time_is_read_and_rounded_up() {
+        let tail = lines(&[limit_with_quota(&format!(r#"{{"resetsAt":{RESETS}.25}}"#))]);
+
+        assert_eq!(
+            last_limit(&tail, NOW),
+            Some(Limit {
+                resets_at: Some(RESETS + 1)
+            })
+        );
+    }
+
+    #[test]
+    fn an_odd_quota_field_still_counts_as_a_limit() {
+        for quota in [
+            r#"{"resetsAt":"soon"}"#,
+            r#""rejected""#,
+            "null",
+            r#"{"resetsAt":-5}"#,
+        ] {
+            let tail = lines(&[reply("earlier"), limit_with_quota(quota)]);
+
+            assert_eq!(
+                last_limit(&tail, NOW),
+                Some(Limit { resets_at: None }),
+                "{quota}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_half_written_last_line_falls_back_to_the_record_before_it() {
+        let mut tail = lines(&[limit_record(Some(RESETS))]);
+        tail.extend_from_slice(br#"{"type":"assistant","message":{"content":[{"te"#);
+
+        assert_eq!(
+            last_limit(&tail, NOW),
+            Some(Limit {
+                resets_at: Some(RESETS)
+            })
+        );
     }
 
     #[test]
