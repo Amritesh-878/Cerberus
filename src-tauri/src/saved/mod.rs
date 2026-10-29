@@ -5,7 +5,7 @@ use std::io;
 use std::path::Path;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
-use std::thread;
+use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize, Serializer};
@@ -20,6 +20,7 @@ pub type ProjectId = u32;
 // Saves wait for a quiet moment, but never longer than the cap, so a burst of changes is one write.
 const QUIET: Duration = Duration::from_millis(300);
 const MOST_DELAY: Duration = Duration::from_secs(2);
+const RETRY: Duration = Duration::from_secs(2);
 
 #[derive(Debug, thiserror::Error)]
 pub enum TreeError {
@@ -33,6 +34,10 @@ pub enum TreeError {
     Invalid(String),
     #[error("saved tabs are unavailable: {0}")]
     Unavailable(String),
+    #[error("another Cerberus window has the saved tabs open")]
+    InUse,
+    #[error("recent tab changes are not saved yet: {0}")]
+    NotWritten(String),
 }
 
 impl Serialize for TreeError {
@@ -124,9 +129,23 @@ enum Message {
     Flush(Sender<()>),
 }
 
+/// Where the snapshot is written; a trait so a failing disk can be faked in tests.
+trait Store: Send + 'static {
+    fn write(&mut self, snapshot: &Snapshot) -> Result<(), TreeError>;
+}
+
+impl Store for Db {
+    fn write(&mut self, snapshot: &Snapshot) -> Result<(), TreeError> {
+        Db::write(self, snapshot)
+    }
+}
+
 struct Live {
     snapshot: Arc<Mutex<Snapshot>>,
+    /// The last write's error, cleared by the next write that succeeds.
+    failure: Arc<Mutex<Option<String>>>,
     saver: Mutex<Sender<Message>>,
+    thread: Mutex<Option<JoinHandle<()>>>,
 }
 
 /// The tab tree and each tab's chat id, kept in memory and written to SQLite by one thread.
@@ -139,7 +158,7 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 impl Saved {
-    /// A file that cannot be read leaves saving off, so the app never writes over tabs it failed to load.
+    /// A file that cannot be read, or that another Cerberus holds, leaves saving off, so nothing is written over.
     pub fn open(path: &Path) -> Self {
         Self(Arc::new(
             Db::open(path)
@@ -149,15 +168,19 @@ impl Saved {
         ))
     }
 
-    fn start(snapshot: Snapshot, db: Db) -> Live {
+    fn start(snapshot: Snapshot, store: impl Store) -> Live {
         let snapshot = Arc::new(Mutex::new(snapshot));
+        let failure = Arc::new(Mutex::new(None));
         let (tx, rx) = mpsc::channel();
         let shared = Arc::clone(&snapshot);
+        let failed = Arc::clone(&failure);
         let written = lock(&snapshot).clone();
-        thread::spawn(move || save_loop(db, &shared, written, &rx));
+        let thread = thread::spawn(move || save_loop(store, &shared, &failed, written, &rx));
         Live {
             snapshot,
+            failure,
             saver: Mutex::new(tx),
+            thread: Mutex::new(Some(thread)),
         }
     }
 
@@ -172,6 +195,7 @@ impl Saved {
         Ok(lock(&self.live()?.snapshot).tree.clone())
     }
 
+    /// Takes the tree at once; an error means the last write to disk failed and is being retried.
     pub fn save(&self, tree: SavedTree) -> Result<(), TreeError> {
         tree.validate()?;
         let live = self.live()?;
@@ -182,7 +206,10 @@ impl Saved {
             snapshot.tree = tree;
         }
         live.changed();
-        Ok(())
+        match lock(&live.failure).clone() {
+            Some(error) => Err(TreeError::NotWritten(error)),
+            None => Ok(()),
+        }
     }
 
     /// Follows a tab onto a new chat, as after `/clear`; ids that could not be a session are ignored.
@@ -223,35 +250,67 @@ impl Live {
     }
 }
 
+// Ends the writer and waits for it, so the file and its lock are free once this is dropped.
+impl Drop for Live {
+    fn drop(&mut self) {
+        drop(std::mem::replace(
+            &mut *lock(&self.saver),
+            mpsc::channel().0,
+        ));
+        if let Some(thread) = lock(&self.thread).take() {
+            let _ = thread.join();
+        }
+    }
+}
+
+/// Collects changes until a quiet moment or the cap, so a burst becomes one write.
+fn settle(rx: &Receiver<Message>, waiting: &mut Vec<Sender<()>>) {
+    let deadline = Instant::now() + MOST_DELAY;
+    loop {
+        let wait = QUIET.min(deadline.saturating_duration_since(Instant::now()));
+        match rx.recv_timeout(wait) {
+            Ok(Message::Changed) => {}
+            Ok(Message::Flush(reply)) => {
+                waiting.push(reply);
+                return;
+            }
+            Err(RecvTimeoutError::Timeout | RecvTimeoutError::Disconnected) => return,
+        }
+    }
+}
+
 fn save_loop(
-    mut db: Db,
+    mut store: impl Store,
     snapshot: &Mutex<Snapshot>,
+    failure: &Mutex<Option<String>>,
     mut written: Snapshot,
     rx: &Receiver<Message>,
 ) {
-    while let Ok(first) = rx.recv() {
-        let mut waiting = Vec::new();
-        if let Message::Flush(reply) = first {
-            waiting.push(reply);
+    loop {
+        let retrying = lock(failure).is_some();
+        let next = if retrying {
+            rx.recv_timeout(RETRY)
         } else {
-            let deadline = Instant::now() + MOST_DELAY;
-            loop {
-                let wait = QUIET.min(deadline.saturating_duration_since(Instant::now()));
-                match rx.recv_timeout(wait) {
-                    Ok(Message::Changed) => {}
-                    Ok(Message::Flush(reply)) => {
-                        waiting.push(reply);
-                        break;
-                    }
-                    Err(RecvTimeoutError::Timeout | RecvTimeoutError::Disconnected) => break,
-                }
-            }
+            rx.recv().map_err(|_| RecvTimeoutError::Disconnected)
+        };
+        let mut waiting = Vec::new();
+        match next {
+            Ok(Message::Flush(reply)) => waiting.push(reply),
+            Ok(Message::Changed) => settle(rx, &mut waiting),
+            Err(RecvTimeoutError::Timeout) => {}
+            Err(RecvTimeoutError::Disconnected) => return,
         }
         let current = lock(snapshot).clone();
         if current != written {
-            match db.write(&current) {
-                Ok(()) => written = current,
-                Err(e) => eprintln!("could not save tabs: {e}"),
+            match store.write(&current) {
+                Ok(()) => {
+                    written = current;
+                    *lock(failure) = None;
+                }
+                Err(e) => {
+                    eprintln!("could not save tabs, retrying: {e}");
+                    *lock(failure) = Some(e.to_string());
+                }
             }
         }
         for reply in waiting {
@@ -317,11 +376,68 @@ pub(crate) mod tests {
         saved.save(two_projects()).unwrap();
         saved.set_session(6, SESSION);
         saved.flush();
+        drop(saved);
         let restarted = Saved::open(&path);
 
         assert_eq!(restarted.load().unwrap(), two_projects());
         assert_eq!(restarted.session_of(6).as_deref(), Some(SESSION));
         assert_eq!(restarted.session_of(3), None);
+    }
+
+    #[test]
+    fn a_second_app_on_the_same_file_saves_nothing() {
+        let dir = TestDir::new();
+        let path = dir.path().join("tree.db");
+        let first = Saved::open(&path);
+
+        let second = Saved::open(&path);
+
+        assert!(first.save(two_projects()).is_ok());
+        assert!(
+            matches!(second.load(), Err(TreeError::Unavailable(e)) if e.contains("another Cerberus"))
+        );
+        assert!(second.save(two_projects()).is_err());
+    }
+
+    /// Fails its first `failures` writes, then keeps what it is given.
+    struct FlakyDisk {
+        failures: usize,
+        kept: Arc<Mutex<Option<Snapshot>>>,
+    }
+
+    impl Store for FlakyDisk {
+        fn write(&mut self, snapshot: &Snapshot) -> Result<(), TreeError> {
+            if self.failures > 0 {
+                self.failures -= 1;
+                return Err(TreeError::Invalid("disk full (fake)".to_owned()));
+            }
+            *lock(&self.kept) = Some(snapshot.clone());
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn a_failed_write_is_reported_and_retried_until_it_lands() {
+        let kept = Arc::new(Mutex::new(None));
+        let disk = FlakyDisk {
+            failures: 1,
+            kept: Arc::clone(&kept),
+        };
+        let saved = Saved(Arc::new(Ok(Saved::start(Snapshot::default(), disk))));
+        saved.save(two_projects()).unwrap();
+        saved.flush();
+
+        assert!(matches!(
+            saved.save(two_projects()),
+            Err(TreeError::NotWritten(_))
+        ));
+        let deadline = Instant::now() + RETRY * 3;
+        while lock(&kept).is_none() && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(50));
+        }
+
+        assert_eq!(lock(&kept).as_ref().map(|s| &s.tree), Some(&two_projects()));
+        assert!(saved.save(two_projects()).is_ok());
     }
 
     #[test]

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, ErrorCode, OptionalExtension, params};
 
 use crate::saved::{SavedProject, SavedTab, SavedTree, Snapshot, TabId, TreeError};
 
@@ -37,7 +37,16 @@ impl Db {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir)?;
         }
-        let mut db = Self(Connection::open(path)?);
+        let connection = Connection::open(path)?;
+        // Held until the app exits, so a second Cerberus cannot replace this one's tabs with its own.
+        connection.pragma_update(None, "locking_mode", "EXCLUSIVE")?;
+        connection
+            .execute_batch("BEGIN EXCLUSIVE; COMMIT;")
+            .map_err(|e| match e.sqlite_error_code() {
+                Some(ErrorCode::DatabaseBusy | ErrorCode::DatabaseLocked) => TreeError::InUse,
+                _ => TreeError::Db(e),
+            })?;
+        let mut db = Self(connection);
         db.migrate()?;
         Ok(db)
     }
