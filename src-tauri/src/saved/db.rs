@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::path::Path;
+use std::time::Duration;
 
 use rusqlite::{Connection, ErrorCode, OptionalExtension, params};
 
@@ -38,6 +39,8 @@ impl Db {
             std::fs::create_dir_all(dir)?;
         }
         let connection = Connection::open(path)?;
+        // A second window learns at once that the file is taken, instead of after rusqlite's 5 s default wait.
+        connection.busy_timeout(Duration::ZERO)?;
         // Held until the app exits, so a second Cerberus cannot replace this one's tabs with its own.
         connection.pragma_update(None, "locking_mode", "EXCLUSIVE")?;
         connection
@@ -244,6 +247,10 @@ mod tests {
         let saved = Saved::open(&path, |_| {});
 
         assert!(matches!(saved.load(), Err(TreeError::Unavailable(_))));
+        assert!(
+            !dir.path().join("tree.db.bad").exists(),
+            "a newer file was set aside"
+        );
         assert!(saved.save(two_projects()).is_err());
     }
 }

@@ -8,7 +8,7 @@ use tauri::ipc::{Channel, InvokeResponseBody, IpcResponse};
 use crate::accounts::{AccountId, Accounts, AccountsError, AuthStatus, Candidate, Profiles};
 use crate::programs::{Finder, ProgramChoice};
 use crate::pty::{PtyError, PtyManager, SessionId, SpawnRequest};
-use crate::saved::{Saved, SavedTree, TabId, TreeError};
+use crate::saved::{Loaded, Saved, SavedTree, TabId, TreeError};
 use crate::sessions::{Resume, TabState, Watched, is_claude, plan_resume, watch};
 
 #[derive(Serialize)]
@@ -214,7 +214,7 @@ pub fn account_status(
 }
 
 #[tauri::command(async)]
-pub fn tree_load(saved: State<'_, Saved>) -> Result<SavedTree, TreeError> {
+pub fn tree_load(saved: State<'_, Saved>) -> Result<Loaded, TreeError> {
     saved.load()
 }
 

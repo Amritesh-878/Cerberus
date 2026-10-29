@@ -1,13 +1,15 @@
 mod db;
 
 use std::collections::{HashMap, HashSet};
-use std::io;
-use std::path::Path;
+use std::fs;
+use std::io::{self, ErrorKind};
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
+use rusqlite::ErrorCode;
 use serde::{Deserialize, Serialize, Serializer};
 
 use crate::accounts::AccountId;
@@ -36,6 +38,20 @@ pub enum TreeError {
     Unavailable(String),
     #[error("another Cerberus window has the saved tabs open")]
     InUse,
+}
+
+impl TreeError {
+    /// A file that is not a database, or holds a tree that breaks the rules; a newer or busy file is not corrupt.
+    fn is_corrupt(&self) -> bool {
+        match self {
+            Self::Invalid(_) => true,
+            Self::Db(e) => matches!(
+                e.sqlite_error_code(),
+                Some(ErrorCode::NotADatabase | ErrorCode::DatabaseCorrupt)
+            ),
+            _ => false,
+        }
+    }
 }
 
 impl Serialize for TreeError {
@@ -138,13 +154,21 @@ impl Store for Db {
     }
 }
 
+/// The saved tree, and what to tell the user when an unreadable file was set aside to get it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Loaded {
+    pub tree: SavedTree,
+    pub notice: Option<String>,
+}
+
 struct Live {
     snapshot: Arc<Mutex<Snapshot>>,
+    notice: Option<String>,
     saver: Mutex<Sender<Message>>,
     thread: Mutex<Option<JoinHandle<()>>>,
 }
 
-/// The tab tree and each tab's chat id, kept in memory and written to SQLite by one thread.
 #[derive(Clone)]
 pub struct Saved(Arc<Result<Live, String>>);
 
@@ -154,13 +178,24 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 impl Saved {
-    /// A file that cannot be read, or that another Cerberus holds, leaves saving off, so nothing is written over.
-    /// `report` hears each change in whether the disk holds the latest tree: the error, or `None` once it does.
+    /// A newer or busy file leaves saving off, so it is never written over; a corrupt one is set aside.
     pub fn open(path: &Path, report: impl Fn(Option<&str>) + Send + 'static) -> Self {
+        let load = || Db::open(path).and_then(|db| Ok((db.load()?, db)));
+        let opened = match load() {
+            Err(e) if e.is_corrupt() => {
+                eprintln!("set aside an unreadable tabs file: {e}");
+                set_aside(path).map_err(TreeError::from).and_then(|kept| {
+                    let notice = format!(
+                        "The saved tabs could not be read, so Cerberus started with none. The old file is kept as {kept}."
+                    );
+                    load().map(|(snapshot, db)| (snapshot, db, Some(notice)))
+                })
+            }
+            other => other.map(|(snapshot, db)| (snapshot, db, None)),
+        };
         Self(Arc::new(
-            Db::open(path)
-                .and_then(|db| Ok((db.load()?, db)))
-                .map(|(snapshot, db)| Self::start(snapshot, db, report))
+            opened
+                .map(|(snapshot, db, notice)| Self::start(snapshot, db, notice, report))
                 .map_err(|e| e.to_string()),
         ))
     }
@@ -168,6 +203,7 @@ impl Saved {
     fn start(
         snapshot: Snapshot,
         store: impl Store,
+        notice: Option<String>,
         report: impl Fn(Option<&str>) + Send + 'static,
     ) -> Live {
         let snapshot = Arc::new(Mutex::new(snapshot));
@@ -177,6 +213,7 @@ impl Saved {
         let thread = thread::spawn(move || save_loop(store, &shared, written, &rx, report));
         Live {
             snapshot,
+            notice,
             saver: Mutex::new(tx),
             thread: Mutex::new(Some(thread)),
         }
@@ -189,8 +226,12 @@ impl Saved {
             .map_err(|e| TreeError::Unavailable(e.clone()))
     }
 
-    pub fn load(&self) -> Result<SavedTree, TreeError> {
-        Ok(lock(&self.live()?.snapshot).tree.clone())
+    pub fn load(&self) -> Result<Loaded, TreeError> {
+        let live = self.live()?;
+        Ok(Loaded {
+            tree: lock(&live.snapshot).tree.clone(),
+            notice: live.notice.clone(),
+        })
     }
 
     pub fn save(&self, tree: SavedTree) -> Result<(), TreeError> {
@@ -227,7 +268,6 @@ impl Saved {
         lock(&live.snapshot).sessions.get(&tab).cloned()
     }
 
-    /// Waits until everything changed so far is on disk.
     pub fn flush(&self) {
         let Ok(live) = self.live() else { return };
         let (tx, rx) = mpsc::channel();
@@ -257,7 +297,34 @@ impl Drop for Live {
     }
 }
 
-/// Collects changes until a quiet moment or the cap, so a burst becomes one write.
+/// Renames the file, and its journal, to the first free `.bad`, `.bad2`, ... name and returns that name.
+fn set_aside(path: &Path) -> io::Result<String> {
+    let name = |n: u32| -> PathBuf {
+        let suffix = if n == 1 {
+            "bad".to_owned()
+        } else {
+            format!("bad{n}")
+        };
+        path.with_extension(format!("db.{suffix}"))
+    };
+    let kept = (1..1000)
+        .map(name)
+        .find(|candidate| !candidate.exists())
+        .ok_or_else(|| io::Error::other("no free name to set the tabs file aside"))?;
+    fs::rename(path, &kept)?;
+    let mut journal = path.as_os_str().to_owned();
+    journal.push("-journal");
+    let mut kept_journal = kept.as_os_str().to_owned();
+    kept_journal.push("-journal");
+    match fs::rename(&journal, &kept_journal) {
+        Err(e) if e.kind() != ErrorKind::NotFound => return Err(e),
+        _ => {}
+    }
+    Ok(kept
+        .file_name()
+        .map_or_else(String::new, |n| n.to_string_lossy().into_owned()))
+}
+
 fn settle(rx: &Receiver<Message>, waiting: &mut Vec<Sender<()>>) {
     let deadline = Instant::now() + MOST_DELAY;
     loop {
@@ -380,9 +447,59 @@ pub(crate) mod tests {
         drop(saved);
         let restarted = Saved::open(&path, |_| {});
 
-        assert_eq!(restarted.load().unwrap(), two_projects());
+        assert_eq!(
+            restarted.load().unwrap(),
+            Loaded {
+                tree: two_projects(),
+                notice: None
+            }
+        );
         assert_eq!(restarted.session_of(6).as_deref(), Some(SESSION));
         assert_eq!(restarted.session_of(3), None);
+    }
+
+    #[test]
+    fn a_corrupt_file_is_set_aside_and_saving_starts_fresh() {
+        let dir = TestDir::new();
+        let path = dir.path().join("tree.db");
+        fs::write(&path, b"not a database, just fake bytes").unwrap();
+
+        let saved = Saved::open(&path, |_| {});
+        let loaded = saved.load().unwrap();
+        saved.save(two_projects()).unwrap();
+        saved.flush();
+        drop(saved);
+
+        assert_eq!(loaded.tree.tabs, []);
+        assert!(loaded.notice.is_some_and(|n| n.contains("tree.db.bad")));
+        assert_eq!(
+            fs::read(dir.path().join("tree.db.bad")).unwrap(),
+            b"not a database, just fake bytes"
+        );
+        assert_eq!(
+            Saved::open(&path, |_| {}).load().unwrap().tree,
+            two_projects()
+        );
+    }
+
+    #[test]
+    fn a_second_corrupt_file_takes_the_next_free_name() {
+        let dir = TestDir::new();
+        let path = dir.path().join("tree.db");
+        fs::write(dir.path().join("tree.db.bad"), b"older fake bytes").unwrap();
+        fs::write(&path, b"newer fake bytes").unwrap();
+
+        let loaded = Saved::open(&path, |_| {}).load().unwrap();
+
+        assert!(loaded.notice.is_some_and(|n| n.contains("tree.db.bad2")));
+        assert_eq!(
+            fs::read(dir.path().join("tree.db.bad2")).unwrap(),
+            b"newer fake bytes"
+        );
+        assert_eq!(
+            fs::read(dir.path().join("tree.db.bad")).unwrap(),
+            b"older fake bytes"
+        );
     }
 
     #[test]
@@ -391,8 +508,13 @@ pub(crate) mod tests {
         let path = dir.path().join("tree.db");
         let first = Saved::open(&path, |_| {});
 
+        let started = Instant::now();
         let second = Saved::open(&path, |_| {});
 
+        assert!(
+            started.elapsed() < Duration::from_secs(1),
+            "the second app waited for the lock"
+        );
         assert!(first.save(two_projects()).is_ok());
         assert!(
             matches!(second.load(), Err(TreeError::Unavailable(e)) if e.contains("another Cerberus"))
@@ -432,6 +554,7 @@ pub(crate) mod tests {
         let saved = Saved(Arc::new(Ok(Saved::start(
             Snapshot::default(),
             disk,
+            None,
             report,
         ))));
         (saved, kept, reports)
