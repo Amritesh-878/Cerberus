@@ -12,6 +12,8 @@ import {
   settle,
   sidebarTitles,
 } from "./harness";
+import { emit as emitEvent } from "@tauri-apps/api/event";
+
 import { resetText } from "./board";
 import type { SavedTab, SavedTree } from "./saved";
 
@@ -178,14 +180,27 @@ test("nothing is saved over a tree that failed to load", async () => {
   expect(restore.saves).toEqual([]);
 });
 
-test("a failed save shows in the bar until a save goes through", async () => {
+test("a write the core reports as failed shows in the bar until a retry lands", async () => {
+  const root = await renderApp(() => SAVED, restoring().core);
+
+  await emitEvent("tree-save", "disk full (fake)");
+  await settle();
+  expect(root.querySelector(".save-error")?.getAttribute("title")).toBe(
+    "disk full (fake)",
+  );
+
+  await emitEvent("tree-save", null);
+  await settle();
+  expect(root.querySelector(".save-error")).toBeNull();
+});
+
+test("a refused save shows in the bar until a save goes through", async () => {
   const restore = restoring();
   let failing = true;
   const root = await renderApp(() => SAVED, {
     ...restore.core,
     tree_save: () => {
-      if (failing)
-        throw new Error("recent tab changes are not saved yet: fake");
+      if (failing) throw new Error("saved tabs are unavailable: fake");
     },
   });
 

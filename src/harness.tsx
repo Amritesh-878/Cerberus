@@ -8,9 +8,11 @@ import type { ProgramChoice } from "./pty";
 let dispose: (() => void) | undefined;
 
 /** Call from `afterEach`, so each test starts with no app and no IPC mock. */
-export function cleanup(): void {
+export async function cleanup(): Promise<void> {
   dispose?.();
   document.body.innerHTML = "";
+  // Event listeners unregister a tick after disposal and need the mocks still in place.
+  await settled();
   clearMocks();
 }
 
@@ -60,23 +62,26 @@ export async function renderApp(
   profiles: () => Profiles,
   core: Record<string, (args: unknown) => unknown> = {},
 ): Promise<HTMLElement> {
-  mockIPC((cmd, args) => {
-    if (cmd in core) return core[cmd]?.(args);
-    switch (cmd) {
-      case "list_programs":
-        return CHOICES;
-      case "load_profiles":
-        return profiles();
-      case "detect_accounts":
-        return [];
-      case "account_status":
-        return { state: "loggedIn", summary: "user@example.com · Pro" };
-      case "tree_load":
-        return { projects: [], tabs: [], nextId: 1 };
-      default:
-        return null;
-    }
-  });
+  mockIPC(
+    (cmd, args) => {
+      if (cmd in core) return core[cmd]?.(args);
+      switch (cmd) {
+        case "list_programs":
+          return CHOICES;
+        case "load_profiles":
+          return profiles();
+        case "detect_accounts":
+          return [];
+        case "account_status":
+          return { state: "loggedIn", summary: "user@example.com · Pro" };
+        case "tree_load":
+          return { projects: [], tabs: [], nextId: 1 };
+        default:
+          return null;
+      }
+    },
+    { shouldMockEvents: true },
+  );
   const root = document.createElement("div");
   document.body.append(root);
   dispose = render(() => <App />, root);

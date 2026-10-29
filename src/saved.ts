@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 import type { AccountId, Profiles } from "./accounts";
 import type { ProgramChoice } from "./pty";
@@ -27,6 +28,15 @@ export function loadTree(): Promise<SavedTree> {
 
 export function saveTree(tree: SavedTree): Promise<void> {
   return invoke("tree_save", { tree });
+}
+
+/** Hears each change in whether the disk holds the latest tree: the error, or `null` once it does. */
+export function onWriteStatus(
+  handler: (error: string | null) => void,
+): Promise<UnlistenFn> {
+  return listen<string | null>("tree-save", (event) => {
+    handler(event.payload);
+  });
 }
 
 /** Setup tabs, such as signing an account in, are left out because they belong to that moment only. */

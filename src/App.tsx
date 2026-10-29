@@ -35,7 +35,7 @@ import { CloseIcon, MenuIcon, PanelIcon } from "./icons";
 import { shortcutFor } from "./keys";
 import { type Launch, NewTab } from "./NewTab";
 import { listPrograms } from "./pty";
-import { fromSaved, loadTree, saveTree, toSaved } from "./saved";
+import { fromSaved, loadTree, onWriteStatus, saveTree, toSaved } from "./saved";
 import { AccountDot, Sidebar } from "./Sidebar";
 import { createStatuses } from "./statuses";
 import { type Tab, tabFor } from "./tab";
@@ -121,7 +121,20 @@ export function App() {
       },
     );
   });
-  const [saveError, setSaveError] = createSignal<string>();
+  // A write error comes from the core as it happens, a retry that later succeeds included.
+  const [writeError, setWriteError] = createSignal<string>();
+  const [callError, setCallError] = createSignal<string>();
+  const saveError = () => callError() ?? writeError();
+  onMount(() => {
+    const listening = onWriteStatus((error) => {
+      setWriteError(error ?? undefined);
+    });
+    onCleanup(() => {
+      void listening.then((stop) => {
+        stop();
+      });
+    });
+  });
   // One call at a time, so an older tree can never reach the core after a newer one.
   let saving: Promise<void> = Promise.resolve();
   createEffect(
@@ -134,10 +147,10 @@ export function App() {
           .then(() => saveTree(next))
           .then(
             () => {
-              setSaveError(undefined);
+              setCallError(undefined);
             },
             (error: unknown) => {
-              setSaveError(String(error));
+              setCallError(String(error));
             },
           );
       },
