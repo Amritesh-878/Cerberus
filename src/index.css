@@ -181,13 +181,14 @@ button {
   transform: rotate(-90deg);
 }
 
+/* Transparent, not hidden, so the keyboard can still reach these buttons. */
 .project .add {
-  visibility: hidden;
+  opacity: 0;
 }
 
 .project:hover .add,
 .project .add:focus-visible {
-  visibility: visible;
+  opacity: 1;
 }
 
 .tab-row {
@@ -243,14 +244,14 @@ button {
 }
 
 .tab-row .close {
-  visibility: hidden;
   margin-right: 4px;
+  opacity: 0;
 }
 
 .tab-row:hover .close,
 .tab-row.active .close,
 .tab-row .close:focus-visible {
-  visibility: visible;
+  opacity: 1;
 }
 
 .tab-row.sub {
@@ -500,7 +501,7 @@ button {
   position: absolute;
   box-sizing: border-box;
   width: 280px;
-  max-height: calc(100vh - 80px);
+  max-height: calc(100vh - 16px);
   padding: 12px;
   overflow: auto;
   background: #202020;
