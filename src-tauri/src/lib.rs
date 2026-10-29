@@ -1,22 +1,37 @@
 mod accounts;
 mod commands;
+mod job;
 mod programs;
 mod pty;
+mod saved;
+mod sessions;
 
 use tauri::webview::PageLoadEvent;
-use tauri::{Manager, RunEvent};
+use tauri::{Emitter, Manager, RunEvent};
 
 use crate::accounts::Accounts;
 use crate::pty::PtyManager;
+use crate::saved::Saved;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Joined before anything starts, so the webview and every tab are in the job too.
+    if let Err(e) = job::end_children_with_app() {
+        eprintln!("tab programs may outlive a crash: {e}");
+    }
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(PtyManager::default())
         .setup(|app| {
             let paths = app.path();
-            app.manage(Accounts::new(&paths.app_config_dir()?, paths.home_dir()?));
+            let config_dir = paths.app_config_dir()?;
+            app.manage(Accounts::new(&config_dir, paths.home_dir()?));
+            let handle = app.handle().clone();
+            let report = move |failure: Option<&str>| {
+                // Fails only once the window is gone, and then nobody is left to show it.
+                let _ = handle.emit("tree-save", failure);
+            };
+            app.manage(Saved::open(&config_dir.join("tree.db"), report));
             Ok(())
         })
         // A reload drops the page that owned every session, so nothing could close them later.
@@ -43,6 +58,8 @@ pub fn run() {
             commands::set_start_folder,
             commands::set_shell,
             commands::account_status,
+            commands::tree_load,
+            commands::tree_save,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
@@ -50,6 +67,8 @@ pub fn run() {
     app.run(|handle, event| {
         if let RunEvent::Exit = event {
             handle.state::<PtyManager>().kill_all();
+            handle.state::<Saved>().flush();
+            job::spare_children_on_exit();
         }
     });
 }

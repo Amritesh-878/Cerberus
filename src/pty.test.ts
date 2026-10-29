@@ -27,7 +27,7 @@ function mockCore(options: { writesHang?: boolean } = {}): {
     return new Promise((resolve, reject) => {
       settle = (result) => {
         if (result instanceof Error) reject(result);
-        else resolve(result);
+        else resolve({ id: result, resume: "new" });
       };
     });
   });
@@ -103,6 +103,39 @@ test("nothing is sent after the program failed to start", async () => {
   await settled();
 
   expect(core.calls.map((c) => c.cmd)).toEqual(["pty_spawn"]);
+});
+
+test("a state report after the exit is dropped, so an ended tab stays done", async () => {
+  const core = mockCore();
+  const states: unknown[] = [];
+  new PtySession(SPEC, SIZE, {
+    ...HANDLERS,
+    state: (state) => states.push(state),
+  });
+  core.start(8);
+  await settled();
+  const channel = core.calls[0]?.args as { events: { id: number } };
+  // The mocked core delivers channel messages through the callback the channel registered.
+  const internals = (
+    window as unknown as {
+      __TAURI_INTERNALS__: { runCallback: (id: number, data: unknown) => void };
+    }
+  ).__TAURI_INTERNALS__;
+
+  internals.runCallback(channel.events.id, {
+    index: 0,
+    message: { state: "working" },
+  });
+  internals.runCallback(channel.events.id, {
+    index: 1,
+    message: { exitCode: 0 },
+  });
+  internals.runCallback(channel.events.id, {
+    index: 2,
+    message: { state: "idle" },
+  });
+
+  expect(states).toEqual([{ state: "working" }]);
 });
 
 test("drawn output is acked in batches", async () => {

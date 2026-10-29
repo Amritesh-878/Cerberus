@@ -32,6 +32,11 @@ describe("terminalHandlesKey", () => {
     ["Alt+V, Claude Code's image paste", chord("v", { altKey: true })],
     ["Ctrl+Alt+V", chord("v", { ctrlKey: true, altKey: true })],
     ["Ctrl+C", chord("c", { ctrlKey: true })],
+    ["Ctrl+A, start of line", chord("a", { ctrlKey: true })],
+    [
+      "Ctrl+Shift+C, Claude Code's copy",
+      chord("C", { ctrlKey: true, shiftKey: true }),
+    ],
     ["a plain v", chord("v")],
     ["Insert", chord("Insert")],
   ])("passes %s to the program", (_name, key) => {
@@ -79,6 +84,11 @@ describe("shortcutFor", () => {
     ],
     ["Ctrl+Shift+T", chord("T", { ctrlKey: true, shiftKey: true }), "newTab"],
     ["Ctrl+Shift+W", chord("W", { ctrlKey: true, shiftKey: true }), "closeTab"],
+    [
+      "Ctrl+Shift+A",
+      chord("A", { ctrlKey: true, shiftKey: true }),
+      "nextWaiting",
+    ],
   ])("maps %s", (_name, key, shortcut) => {
     expect(shortcutFor(key)).toBe(shortcut);
   });
@@ -88,6 +98,11 @@ describe("shortcutFor", () => {
     ["Ctrl+W, delete a word", chord("w", { ctrlKey: true })],
     ["Shift+Tab, Claude Code's mode switch", chord("Tab", { shiftKey: true })],
     ["Ctrl+C", chord("c", { ctrlKey: true })],
+    ["Ctrl+A, start of line", chord("a", { ctrlKey: true })],
+    [
+      "Ctrl+Shift+C, Claude Code's copy",
+      chord("C", { ctrlKey: true, shiftKey: true }),
+    ],
     ["Alt+V", chord("v", { altKey: true })],
     ["Ctrl+Alt+Tab", chord("Tab", { ctrlKey: true, altKey: true })],
   ])("leaves %s to the terminal", (_name, key) => {
