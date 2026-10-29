@@ -301,11 +301,17 @@ button {
   animation: spin 0.9s linear infinite;
 }
 
+/* Neutral, because every saturated hue is already an account's colour. */
 .mark.waiting {
   width: 6px;
   height: 6px;
-  background: var(--accent);
+  background: var(--text);
   border-radius: 50%;
+}
+
+.tab-row.waiting .tab-title {
+  font-weight: 600;
+  color: var(--text);
 }
 
 .mark.limited {

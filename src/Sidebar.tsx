@@ -213,6 +213,7 @@ function TabRow(props: {
         last: props.row.last,
         active: props.active,
         done: props.mark?.kind === "done",
+        waiting: props.mark?.kind === "waiting",
       }}
     >
       <Show
