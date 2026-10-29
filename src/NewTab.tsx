@@ -7,6 +7,7 @@ import {
   statusText,
 } from "./accounts";
 import { ClaudeIcon, ShellIcon } from "./icons";
+import { placeBox } from "./place";
 import type { ProgramChoice } from "./pty";
 import { AccountDot } from "./Sidebar";
 import type { Statuses } from "./statuses";
@@ -14,7 +15,6 @@ import { installed, shellChoice } from "./tab";
 import type { Project, TabId, TreeTab } from "./tree";
 
 const WIDTH = 280;
-const MARGIN = 8;
 
 export interface Launch {
   choice: ProgramChoice;
@@ -39,19 +39,14 @@ export function NewTab(props: {
   const [parentId, setParentId] = createSignal<TabId | null>(null);
   const claude = () => installed(props.programs ?? [], "claude");
   const shell = () => shellChoice(props.profiles, props.programs ?? []);
+  const [height, setHeight] = createSignal(0);
   const position = () => {
-    const anchor = props.anchor;
-    if (!anchor) {
-      return {
-        left: `${String(Math.max(MARGIN, (innerWidth - WIDTH) / 2))}px`,
-        top: "64px",
-      };
-    }
-    const left = Math.max(
-      MARGIN,
-      Math.min(anchor.left, innerWidth - WIDTH - MARGIN),
+    const place = placeBox(
+      props.anchor,
+      { width: WIDTH, height: height() },
+      { width: innerWidth, height: innerHeight },
     );
-    return { left: `${String(left)}px`, top: `${String(anchor.bottom + 4)}px` };
+    return { left: `${String(place.left)}px`, top: `${String(place.top)}px` };
   };
   const launch = (choice: ProgramChoice | undefined) => {
     if (choice)
@@ -59,13 +54,20 @@ export function NewTab(props: {
   };
 
   let primary: HTMLButtonElement | undefined;
+  let box: HTMLDivElement | undefined;
   onMount(() => {
+    // Measured once drawn, so a box near the bottom can open above its button instead.
+    const observer = new ResizeObserver(() => {
+      setHeight(box?.offsetHeight ?? 0);
+    });
+    if (box) observer.observe(box);
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") props.onDismiss();
     };
     window.addEventListener("keydown", onKey);
     onCleanup(() => {
       window.removeEventListener("keydown", onKey);
+      observer.disconnect();
     });
     primary?.focus();
   });
@@ -79,6 +81,9 @@ export function NewTab(props: {
     >
       <div
         class="popover new-tab"
+        ref={(el) => {
+          box = el;
+        }}
         role="dialog"
         aria-label={`New tab in ${props.project.name}`}
         style={position()}
