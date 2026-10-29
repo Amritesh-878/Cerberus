@@ -184,6 +184,12 @@ impl Finder {
         self.transcript = Some((id.to_owned(), path.clone()));
         Some(path)
     }
+
+    /// Searches at once: a turn just ended, and a limit it hit must not wait out the gap.
+    fn transcript_now(&mut self, cwd: &str, id: &str) -> Option<PathBuf> {
+        self.next_transcript_search = Instant::now();
+        self.transcript(cwd, id)
+    }
 }
 
 /// Follows a `claude` process's session file until `stop` fires or its sender is dropped.
@@ -205,7 +211,9 @@ pub fn watch(
             let now = unix_now();
             let cwd = session.cwd.clone().unwrap_or_else(|| fallback_cwd.clone());
             let changed = tracker.observe(&session, now, |id| {
-                limit_in(&finder.transcript(&cwd, id)?, now).ok().flatten()
+                limit_in(&finder.transcript_now(&cwd, id)?, now)
+                    .ok()
+                    .flatten()
             });
             if let Some(state) = changed {
                 on_state(state);
@@ -433,6 +441,38 @@ mod tests {
             finder.transcript(r"C:\work\app", FIRST),
             Some(path),
             "searched again"
+        );
+    }
+
+    #[test]
+    fn a_limit_on_the_first_turn_shows_even_while_searches_are_slow() {
+        let dir = TestDir::new();
+        let mut finder = Finder::new(watched_in(&dir, std::process::id(), 0));
+        finder.born = Instant::now() - QUICK_SEARCH - Duration::from_secs(1);
+        let mut tracker = Tracker::default();
+        let now = unix_now();
+        tracker.observe(&file(FIRST, Status::Busy), now, no_limit);
+        assert!(finder.transcript(r"C:\work\app", FIRST).is_none());
+        write_transcript(
+            &dir,
+            &format!(
+                r#"{{"type":"assistant","quotaLimits":{{"resetsAt":{}}},"error":"rate_limit","isApiErrorMessage":true}}{}"#,
+                now + 60,
+                "\n"
+            ),
+        );
+
+        let changed = tracker.observe(&file(FIRST, Status::Idle), now, |id| {
+            limit_in(&finder.transcript_now(r"C:\work\app", id)?, now)
+                .ok()
+                .flatten()
+        });
+
+        assert_eq!(
+            changed,
+            Some(TabState::Limited {
+                resets_at: Some(now + 60)
+            })
         );
     }
 
