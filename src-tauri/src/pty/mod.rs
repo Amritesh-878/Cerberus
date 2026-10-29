@@ -233,6 +233,7 @@ fn command_for(request: &SpawnRequest) -> Result<CommandBuilder, PtyError> {
         }
         command.cwd(cwd);
     }
+    strip_inherited_session_vars(&mut command);
     command.env("TERM", "xterm-256color");
     command.env("COLORTERM", "truecolor");
     match &request.claude_config_dir {
@@ -241,6 +242,32 @@ fn command_for(request: &SpawnRequest) -> Result<CommandBuilder, PtyError> {
         None => command.env_remove("CLAUDE_CONFIG_DIR"),
     }
     Ok(command)
+}
+
+// Set when Cerberus runs from a Claude Code shell; `claude` in a tab would then draw no colour and save no transcript.
+fn strip_inherited_session_vars(command: &mut CommandBuilder) {
+    let inherited: Vec<String> = command
+        .iter_full_env_as_str()
+        .map(|(name, _)| name)
+        .filter(|name| is_session_var(name))
+        .map(str::to_owned)
+        .collect();
+    for name in inherited {
+        command.env_remove(name);
+    }
+}
+
+fn is_session_var(name: &str) -> bool {
+    let name = name.to_ascii_uppercase();
+    name.starts_with("CLAUDE_CODE_")
+        || [
+            "NO_COLOR",
+            "CLAUDECODE",
+            "CLAUDE_PID",
+            "CLAUDE_EFFORT",
+            "AI_AGENT",
+        ]
+        .contains(&name.as_str())
 }
 
 fn pty_failed(error: impl Display) -> PtyError {
@@ -425,6 +452,24 @@ mod tests {
     }
 
     #[test]
+    fn killing_one_session_leaves_the_others_running() {
+        let manager = PtyManager::default();
+        let (closed_id, closed) = start(&manager, "cmd", &["/q", "/k"]);
+        let (open_id, open) = start(&manager, "cmd", &["/q", "/k"]);
+
+        manager.kill(closed_id);
+        let (_, exit) = collect(&manager, closed_id, &closed, |_| false);
+        manager.write(open_id, b"echo still-%OS%\r").unwrap();
+        let (text, open_exit) =
+            collect(&manager, open_id, &open, |t| t.contains("still-Windows_NT"));
+
+        assert!(exit.is_some(), "no exit after kill");
+        assert_eq!(open_exit, None, "the other session ended");
+        assert!(text.contains("still-Windows_NT"), "output was {text:?}");
+        manager.kill(open_id);
+    }
+
+    #[test]
     fn kill_all_ends_every_session() {
         let manager = PtyManager::default();
         let (first_id, first) = start(&manager, "cmd", &["/q", "/k"]);
@@ -495,5 +540,35 @@ mod tests {
     #[test]
     fn a_tab_under_the_default_account_has_no_config_dir() {
         assert_eq!(shell_under(None).get_env("CLAUDE_CONFIG_DIR"), None);
+    }
+
+    #[test]
+    fn variables_from_a_parent_claude_session_are_removed() {
+        let mut command = CommandBuilder::new("cmd");
+        for name in [
+            "NO_COLOR",
+            "CLAUDECODE",
+            "CLAUDE_CODE_CHILD_SESSION",
+            "claude_code_messaging_socket",
+            "CLAUDE_PID",
+            "AI_AGENT",
+        ] {
+            command.env(name, "1");
+        }
+        command.env("CLAUDE_CONFIG_DIR", r"C:\Users\u\.claude-acc2");
+        command.env("PATHEXT", ".EXE");
+
+        strip_inherited_session_vars(&mut command);
+
+        let names: Vec<_> = command
+            .iter_full_env_as_str()
+            .map(|(name, _)| name.to_ascii_uppercase())
+            .collect();
+        let left: Vec<_> = names
+            .iter()
+            .filter(|n| n.contains("CLAUDE") || *n == "NO_COLOR" || *n == "AI_AGENT")
+            .collect();
+        assert_eq!(left, ["CLAUDE_CONFIG_DIR"]);
+        assert!(names.iter().any(|n| n == "PATHEXT"));
     }
 }
