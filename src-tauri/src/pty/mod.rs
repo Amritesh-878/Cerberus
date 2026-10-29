@@ -244,30 +244,37 @@ fn command_for(request: &SpawnRequest) -> Result<CommandBuilder, PtyError> {
     Ok(command)
 }
 
-// Set when Cerberus runs from a Claude Code shell; `claude` in a tab would then draw no colour and save no transcript.
+// Set by a Claude Code session for its own shells; settings such as `CLAUDE_CODE_USE_BEDROCK` are not here.
+const SESSION_VARS: [&str; 11] = [
+    "CLAUDECODE",
+    "CLAUDE_CODE_CHILD_SESSION",
+    "CLAUDE_CODE_ENTRYPOINT",
+    "CLAUDE_CODE_EXECPATH",
+    "CLAUDE_CODE_MESSAGING_SOCKET",
+    "CLAUDE_CODE_MESSAGING_TOKEN",
+    "CLAUDE_CODE_SESSION_ATTENDED",
+    "CLAUDE_CODE_SESSION_ID",
+    "CLAUDE_EFFORT",
+    "CLAUDE_PID",
+    "AI_AGENT",
+];
+
+// Inherited when Cerberus runs from a Claude Code shell; `claude` in a tab would then draw no colour and save no transcript.
 fn strip_inherited_session_vars(command: &mut CommandBuilder) {
-    let inherited: Vec<String> = command
+    let names: Vec<String> = command
         .iter_full_env_as_str()
-        .map(|(name, _)| name)
-        .filter(|name| is_session_var(name))
-        .map(str::to_owned)
+        .map(|(name, _)| name.to_ascii_uppercase())
         .collect();
-    for name in inherited {
+    let is_session = |name: &String| SESSION_VARS.contains(&name.as_str());
+    // A NO_COLOR next to a session's variables came from Claude Code, not from the user.
+    let from_claude = names.iter().any(is_session);
+    let removed: Vec<String> = names
+        .into_iter()
+        .filter(|name| is_session(name) || (from_claude && name == "NO_COLOR"))
+        .collect();
+    for name in removed {
         command.env_remove(name);
     }
-}
-
-fn is_session_var(name: &str) -> bool {
-    let name = name.to_ascii_uppercase();
-    name.starts_with("CLAUDE_CODE_")
-        || [
-            "NO_COLOR",
-            "CLAUDECODE",
-            "CLAUDE_PID",
-            "CLAUDE_EFFORT",
-            "AI_AGENT",
-        ]
-        .contains(&name.as_str())
 }
 
 fn pty_failed(error: impl Display) -> PtyError {
@@ -545,6 +552,7 @@ mod tests {
     #[test]
     fn variables_from_a_parent_claude_session_are_removed() {
         let mut command = CommandBuilder::new("cmd");
+        command.env_clear();
         for name in [
             "NO_COLOR",
             "CLAUDECODE",
@@ -556,19 +564,33 @@ mod tests {
             command.env(name, "1");
         }
         command.env("CLAUDE_CONFIG_DIR", r"C:\Users\u\.claude-acc2");
-        command.env("PATHEXT", ".EXE");
+        command.env("CLAUDE_CODE_USE_BEDROCK", "1");
 
         strip_inherited_session_vars(&mut command);
 
-        let names: Vec<_> = command
+        assert_eq!(
+            env_names(&command),
+            ["CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CONFIG_DIR"]
+        );
+    }
+
+    #[test]
+    fn no_color_stays_when_no_claude_session_set_it() {
+        let mut command = CommandBuilder::new("cmd");
+        command.env_clear();
+        command.env("NO_COLOR", "1");
+
+        strip_inherited_session_vars(&mut command);
+
+        assert_eq!(env_names(&command), ["NO_COLOR"]);
+    }
+
+    fn env_names(command: &CommandBuilder) -> Vec<String> {
+        let mut names: Vec<_> = command
             .iter_full_env_as_str()
             .map(|(name, _)| name.to_ascii_uppercase())
             .collect();
-        let left: Vec<_> = names
-            .iter()
-            .filter(|n| n.contains("CLAUDE") || *n == "NO_COLOR" || *n == "AI_AGENT")
-            .collect();
-        assert_eq!(left, ["CLAUDE_CONFIG_DIR"]);
-        assert!(names.iter().any(|n| n == "PATHEXT"));
+        names.sort();
+        names
     }
 }
