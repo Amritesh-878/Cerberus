@@ -38,8 +38,8 @@ pub enum AccountsError {
     NoSuchDir(String),
     #[error("no account {0}")]
     NoAccount(AccountId),
-    #[error("unknown program {0}")]
-    UnknownProgram(String),
+    #[error("not a shell Cerberus knows: {0}")]
+    UnknownShell(String),
 }
 
 impl Serialize for AccountsError {
@@ -61,7 +61,8 @@ pub struct Account {
 pub struct Profiles {
     pub accounts: Vec<Account>,
     pub default_account: Option<AccountId>,
-    pub last_program: Option<String>,
+    /// The program id the Shell button opens; `None` opens the first shell installed.
+    pub shell: Option<String>,
     pub start_folder: Option<PathBuf>,
     // Raised on every save, so the webview can drop a reply that a newer one already replaced.
     #[serde(default)]
@@ -215,12 +216,16 @@ impl Accounts {
         })
     }
 
-    pub fn remember_program(&self, program: String) -> Result<Profiles, AccountsError> {
-        if !Finder::from_env().choices().iter().any(|c| c.id == program) {
-            return Err(AccountsError::UnknownProgram(program));
+    pub fn set_shell(&self, shell: String) -> Result<Profiles, AccountsError> {
+        if !Finder::from_env()
+            .choices()
+            .iter()
+            .any(|c| c.id == shell && c.is_shell())
+        {
+            return Err(AccountsError::UnknownShell(shell));
         }
         self.update(|p| {
-            p.last_program = Some(program);
+            p.shell = Some(shell);
             Ok(())
         })
     }
@@ -497,16 +502,18 @@ mod tests {
     }
 
     #[test]
-    fn only_a_known_program_is_remembered() {
+    fn only_a_known_shell_is_saved() {
         let home = TestDir::new();
         let accounts = Accounts::new(&home.path().join("app"), home.path().to_path_buf());
 
-        assert!(matches!(
-            accounts.remember_program("notepad".to_owned()),
-            Err(AccountsError::UnknownProgram(_))
-        ));
-        let saved = accounts.remember_program("powershell".to_owned()).unwrap();
-        assert_eq!(saved.last_program.as_deref(), Some("powershell"));
+        for refused in ["notepad", "claude"] {
+            assert!(matches!(
+                accounts.set_shell(refused.to_owned()),
+                Err(AccountsError::UnknownShell(_))
+            ));
+        }
+        let saved = accounts.set_shell("git-bash".to_owned()).unwrap();
+        assert_eq!(saved.shell.as_deref(), Some("git-bash"));
     }
 
     #[test]

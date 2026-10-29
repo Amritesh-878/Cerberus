@@ -87,7 +87,7 @@ export function Walkthrough(props: Props) {
               props.onFinish();
             }}
           >
-            Back to launcher
+            Close setup
           </button>
         </Show>
       </nav>
@@ -112,7 +112,7 @@ function InstallStep(props: {
   return (
     <section>
       <Show
-        when={claude()?.program}
+        when={claude()}
         fallback={
           <>
             <p>
@@ -145,11 +145,7 @@ function InstallStep(props: {
           </>
         }
       >
-        {(path) => (
-          <p>
-            Claude Code is installed at <code>{path()}</code>.
-          </p>
-        )}
+        <p>Claude Code is installed.</p>
       </Show>
     </section>
   );

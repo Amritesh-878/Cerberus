@@ -11,7 +11,7 @@ import type { Tab } from "./tab";
 const EMPTY: Profiles = {
   accounts: [],
   defaultAccount: null,
-  lastProgram: null,
+  shell: null,
   startFolder: null,
   revision: 0,
 };

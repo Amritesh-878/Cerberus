@@ -151,11 +151,8 @@ pub fn set_start_folder(
 }
 
 #[tauri::command(async)]
-pub fn remember_program(
-    accounts: State<'_, Accounts>,
-    program: String,
-) -> Result<Profiles, AccountsError> {
-    accounts.remember_program(program)
+pub fn set_shell(accounts: State<'_, Accounts>, shell: String) -> Result<Profiles, AccountsError> {
+    accounts.set_shell(shell)
 }
 
 #[tauri::command(async)]

@@ -15,6 +15,12 @@ pub struct ProgramChoice {
     pub pastes_images: bool,
 }
 
+impl ProgramChoice {
+    pub fn is_shell(&self) -> bool {
+        self.id != "claude"
+    }
+}
+
 pub struct Finder {
     dirs: Vec<PathBuf>,
     exts: Vec<String>,

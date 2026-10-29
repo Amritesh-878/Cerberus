@@ -8,7 +8,7 @@ use serde_json::Value;
 
 use crate::accounts::{AccountId, AccountsError, Profiles};
 
-const VERSION: u32 = 2;
+const VERSION: u32 = 3;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -112,7 +112,11 @@ fn parse(bytes: &[u8]) -> Result<Profiles, AccountsError> {
     let Versioned { version } = serde_json::from_slice(bytes).map_err(corrupt)?;
     let mut saved: Value = serde_json::from_slice(bytes).map_err(corrupt)?;
     match version {
-        1 => upgrade_from_v1(&mut saved),
+        1 => {
+            upgrade_from_v1(&mut saved);
+            upgrade_from_v2(&mut saved);
+        }
+        2 => upgrade_from_v2(&mut saved),
         VERSION => {}
         other => return Err(AccountsError::UnknownVersion(other)),
     }
@@ -140,6 +144,17 @@ fn upgrade_from_v1(saved: &mut Value) {
         if let Some(value) = fields.remove(old) {
             fields.insert(new.to_owned(), value);
         }
+    }
+}
+
+// Version 2 remembered the last program opened; a shell there becomes the Shell button's choice.
+fn upgrade_from_v2(saved: &mut Value) {
+    let Some(fields) = saved.as_object_mut() else {
+        return;
+    };
+    let last = fields.remove("lastProgram");
+    if let Some(shell) = last.filter(|p| p != "claude" && !p.is_null()) {
+        fields.insert("shell".to_owned(), shell);
     }
 }
 
@@ -176,7 +191,7 @@ mod tests {
         let saved = store
             .update(|p| {
                 p.set_default_account(1)?;
-                p.last_program = Some("claude".to_owned());
+                p.shell = Some("git-bash".to_owned());
                 p.set_start_folder(Some(PathBuf::from(r"C:\code")))
             })
             .unwrap();
@@ -185,7 +200,7 @@ mod tests {
 
         assert_eq!(loaded, saved);
         assert_eq!(loaded.next_id, 2);
-        assert_eq!(loaded.last_program.as_deref(), Some("claude"));
+        assert_eq!(loaded.shell.as_deref(), Some("git-bash"));
     }
 
     #[test]
@@ -248,10 +263,10 @@ mod tests {
     #[test]
     fn a_file_that_breaks_the_rules_is_corrupt() {
         let dir = TestDir::new();
-        let text = r#"{"version":2,"nextId":2,"accounts":[
+        let text = r#"{"version":3,"nextId":2,"accounts":[
             {"id":0,"name":"a","configDir":"C:\\h\\.claude"},
             {"id":1,"name":"A","configDir":"C:\\h\\.claude-2"}
-        ],"defaultAccount":0,"lastProgram":null,"startFolder":null}"#;
+        ],"defaultAccount":0,"shell":null,"startFolder":null}"#;
 
         let result = write_raw(&dir, text).load();
 
@@ -268,7 +283,7 @@ mod tests {
     }
 
     #[test]
-    fn a_version_1_file_keeps_its_program_and_folder() {
+    fn a_version_1_file_keeps_its_shell_and_folder() {
         let dir = TestDir::new();
         let text = r#"{"version":1,"nextId":1,"accounts":[
             {"id":0,"name":"a","configDir":"C:\\h\\.claude"}
@@ -278,7 +293,7 @@ mod tests {
         let loaded = store.load().unwrap();
         let saved = store.update(|_| Ok(())).unwrap();
 
-        assert_eq!(loaded.last_program.as_deref(), Some("powershell"));
+        assert_eq!(loaded.shell.as_deref(), Some("powershell"));
         assert_eq!(loaded.start_folder, Some(PathBuf::from(r"C:\code")));
         assert_eq!(saved.revision, loaded.revision + 1);
         assert_eq!(
@@ -289,7 +304,18 @@ mod tests {
             loaded
         );
         let raw = fs::read_to_string(dir.path().join("profiles.json")).unwrap();
-        assert!(raw.contains(r#""version": 2"#) && !raw.contains("defaultCwd"));
+        assert!(raw.contains(r#""version": 3"#) && !raw.contains("defaultCwd"));
+    }
+
+    #[test]
+    fn a_version_2_file_drops_claude_as_its_last_program() {
+        let dir = TestDir::new();
+        let text = r#"{"version":2,"nextId":0,"accounts":[],"defaultAccount":null,
+            "lastProgram":"claude","startFolder":null}"#;
+
+        let loaded = write_raw(&dir, text).load().unwrap();
+
+        assert_eq!(loaded.shell, None);
     }
 
     #[test]

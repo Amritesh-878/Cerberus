@@ -12,8 +12,8 @@ export interface Account {
 export interface Profiles {
   accounts: Account[];
   defaultAccount: AccountId | null;
-  /** A program id from `listPrograms`. */
-  lastProgram: string | null;
+  /** The program id the Shell button opens; `null` opens the first shell installed. */
+  shell: string | null;
   /** `null` starts tabs in the user's home folder. */
   startFolder: string | null;
   revision: number;
@@ -73,13 +73,13 @@ export function setStartFolder(folder: string | null): Promise<Profiles> {
   return invoke<Profiles>("set_start_folder", { folder });
 }
 
-export function rememberProgram(program: string): Promise<Profiles> {
-  return invoke<Profiles>("remember_program", { program });
+export function setShell(shell: string): Promise<Profiles> {
+  return invoke<Profiles>("set_shell", { shell });
 }
 
 /** Resolves to `null` when the user cancels. */
-export function pickFolder(): Promise<string | null> {
-  return open({ directory: true });
+export function pickFolder(from?: string): Promise<string | null> {
+  return open({ directory: true, defaultPath: from });
 }
 
 export function accountStatus(id: AccountId): Promise<AuthStatus> {
@@ -89,6 +89,12 @@ export function accountStatus(id: AccountId): Promise<AuthStatus> {
 export function preselectedAccount(profiles: Profiles): AccountId | null {
   const saved = profiles.accounts.find((a) => a.id === profiles.defaultAccount);
   return (saved ?? profiles.accounts[0])?.id ?? null;
+}
+
+const ACCOUNT_COLORS = ["#d97757", "#7aa2c8", "#7fb27f", "#b58ad6", "#d6b45a"];
+
+export function accountColor(id: AccountId): string {
+  return ACCOUNT_COLORS[id % ACCOUNT_COLORS.length] ?? "#8a8a8a";
 }
 
 export function statusText(status: AuthStatus | undefined): string {

@@ -6,11 +6,12 @@ import {
   preselectedAccount,
   type Profiles,
   setDefaultAccount,
+  setShell,
   setStartFolder,
 } from "./accounts";
 import type { ProgramChoice } from "./pty";
 import type { Statuses } from "./statuses";
-import type { Tab } from "./tab";
+import { shellChoice, type Tab } from "./tab";
 
 export function AccountsScreen(props: {
   profiles: Profiles;
@@ -36,6 +37,11 @@ export function AccountsScreen(props: {
           profiles={props.profiles}
           onProfiles={props.onProfiles}
         />
+        <ShellSetting
+          profiles={props.profiles}
+          programs={props.programs}
+          onProfiles={props.onProfiles}
+        />
         <StartFolderSetting
           profiles={props.profiles}
           onProfiles={props.onProfiles}
@@ -48,7 +54,7 @@ export function AccountsScreen(props: {
             props.onClose();
           }}
         >
-          Back to launcher
+          Done
         </button>
       </nav>
     </main>
@@ -96,6 +102,52 @@ export function DefaultAccountPicker(props: {
   );
 }
 
+function ShellSetting(props: {
+  profiles: Profiles;
+  programs: ProgramChoice[];
+  onProfiles: (profiles: Profiles) => void;
+}) {
+  const [error, setError] = createSignal<string>();
+  const shells = () =>
+    props.programs.filter((p) => p.id !== "claude" && p.program !== null);
+
+  return (
+    <>
+      <label>
+        Which shell should the Shell button open?
+        <select
+          onChange={(event) => {
+            setShell(event.currentTarget.value)
+              .then((profiles) => {
+                setError(undefined);
+                props.onProfiles(profiles);
+              })
+              .catch((e: unknown) => {
+                setError(String(e));
+              });
+          }}
+        >
+          <For each={shells()}>
+            {(shell) => (
+              <option
+                value={shell.id}
+                selected={
+                  shell.id === shellChoice(props.profiles, props.programs)?.id
+                }
+              >
+                {shell.label}
+              </option>
+            )}
+          </For>
+        </select>
+      </label>
+      <Show when={error()}>
+        <p class="error">{error()}</p>
+      </Show>
+    </>
+  );
+}
+
 function StartFolderSetting(props: {
   profiles: Profiles;
   onProfiles: (profiles: Profiles) => void;
@@ -114,8 +166,10 @@ function StartFolderSetting(props: {
 
   return (
     <div class="start-folder">
-      Start folder:{" "}
-      <span class="program">{props.profiles.startFolder ?? "Home"}</span>{" "}
+      New project opens the folder picker in:{" "}
+      <span class="program">
+        {props.profiles.startFolder ?? "the last folder picked"}
+      </span>{" "}
       <button
         type="button"
         onClick={() => {
@@ -138,7 +192,7 @@ function StartFolderSetting(props: {
             save(null);
           }}
         >
-          Use Home
+          Clear
         </button>
       </Show>
       <Show when={error()}>

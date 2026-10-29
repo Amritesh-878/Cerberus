@@ -8,7 +8,7 @@ const PROFILES: Profiles = {
     { id: 4, name: "work", configDir: String.raw`C:\h\.claude-work` },
   ],
   defaultAccount: 4,
-  lastProgram: null,
+  shell: null,
   startFolder: null,
   revision: 0,
 };

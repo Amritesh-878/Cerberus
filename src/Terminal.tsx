@@ -2,7 +2,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
-import { onCleanup, onMount } from "solid-js";
+import { createEffect, onCleanup, onMount } from "solid-js";
 
 import { pasteInput, terminalHandlesKey } from "./keys";
 import { PtySession, type SpawnSpec } from "./pty";
@@ -35,6 +35,7 @@ export function TerminalView(props: {
   spec: SpawnSpec;
   pastesImages: boolean;
   input: string | null;
+  active: boolean;
 }) {
   let host: HTMLDivElement | undefined;
 
@@ -110,7 +111,9 @@ export function TerminalView(props: {
     }, FIT_INTERVAL_MS);
     const observer = new ResizeObserver(refit.call);
     observer.observe(element);
-    term.focus();
+    createEffect(() => {
+      if (props.active) term.focus();
+    });
 
     onCleanup(() => {
       disposed = true;
