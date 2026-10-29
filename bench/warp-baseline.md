@@ -16,12 +16,15 @@ repeated on Cerberus.
 ## Method
 
 - `sample.ps1 -Name warp` takes one `Win32_Process` snapshot per interval and walks every process
-  descended from `warp.exe`. CPU is the change in kernel plus user time over the interval, as a
-  percent of all 24 logical cores (one full core is 4.2 %). Memory is working set and private
-  bytes.
-- **App only** is `warp.exe` plus the `OpenConsole.exe` pseudo-console hosts it starts, one per tab.
-  **Children** is everything running inside the tabs: shells, `claude`, `node` and what they start.
-  Children are grouped by process name only.
+  descended from `warp.exe`. CPU is the change in `KernelModeTime` plus `UserModeTime` over the
+  interval, as a percent of all 24 logical cores (one full core is 4.2 %). Memory is
+  `WorkingSetSize` (working set) and `PrivatePageCount` (private bytes, in bytes despite the name).
+- **App only** is every `warp.exe`, plus any `OpenConsole.exe` or `conhost.exe` whose parent is in
+  the app group: the pseudo-console hosts Warp starts, one per tab. **Children** is everything else
+  in the tree: shells, `claude`, `node` and what they start, summed per process name.
+- CPU used by a process that exits between two snapshots is not counted, because `Win32_Process`
+  cannot report a process after it exits. Short-lived processes are undercounted, more so at the
+  workday's 10 s interval than at 1 s.
 - Controlled states (a) to (d) are 60 s at a 1 s interval. The workday (e) is 4 h at 10 s.
 - The sampler ran from a terminal outside Warp, so it is not in the measured tree.
 - Units are MiB. Rows give the median; CPU also gives p95 and max.
@@ -30,13 +33,15 @@ repeated on Cerberus.
 
 State (a), same minute, both `warp.exe` processes summed:
 
-| Source | Working set | Private bytes / commit size |
+| Source | Working set | Private bytes |
 |---|---|---|
-| Task Manager, Details tab | 850.7 | 821.2 |
-| `sample.ps1`, 60 s median | 842.6 | 822.8 |
-| `Get-Process`, after the run | 839.2 | 822.8 |
+| Task Manager, Details tab: Working set (memory), Commit size | 850.7 | 821.2 |
+| `sample.ps1`, 60 s median: `WorkingSetSize`, `PrivatePageCount` | 842.6 | 822.8 |
+| `Get-Process` after the run: `WorkingSet64`, `PrivateMemorySize64` | 839.2 | 822.8 |
 
-They agree within 1 %. Task Manager showed CPU 00; the sampler median was 0.1 %.
+The sampler is within 1 % of Task Manager on both. `Get-Process`, read a minute later, is 1.4 %
+lower on working set and within 1 % on private bytes. Task Manager showed CPU 00; the sampler median
+was 0.1 %.
 
 ### Departures from the task
 
@@ -70,7 +75,8 @@ They agree within 1 %. Task Manager showed CPU 00; the sampler median was 0.1 %.
 ### Workday
 
 (e) Normal work in Warp, 10:04 to 14:14, 1,440 samples: about 25 tabs, a median of 6 `claude`
-sessions, builds and git.
+sessions, builds and git. That run's sampler slept 10 s after each ~0.4 s snapshot query, so 1,440
+samples spanned 4 h 10 min, not 4 h; the sampler now keeps a fixed schedule.
 
 | Group | CPU % med / p95 / max | WS med / p95 / max | Private med / p95 / max |
 |---|---|---|---|
@@ -91,7 +97,8 @@ with every tab idle.
 
 The sampler counts these under children because they are named `powershell.exe`, so Warp's
 app-only CPU above leaves them out. Their average across the controlled runs was 0.2 to 0.6 % of the
-machine, more than Warp's own idle median.
+machine, more than Warp's own idle median. That is a lower bound: probes that start and exit
+between two snapshots are not counted.
 
 ## Observed faults
 
