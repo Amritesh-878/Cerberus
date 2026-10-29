@@ -1,12 +1,4 @@
-<#
-.SYNOPSIS
-Samples CPU and memory of a process tree, split into the app's own processes and its children.
-
-.EXAMPLE
-.\bench\sample.ps1 -Name warp -Seconds 60
-.\bench\sample.ps1 -Name warp -Seconds 14400 -Interval 10 -Csv bench\raw\workday.csv -Quiet
-.\bench\sample.ps1 -FromCsv bench\raw\workday.csv
-#>
+# Measures a terminal the same way for every app, so baselines taken on different terminals compare.
 [CmdletBinding(DefaultParameterSetName = 'Live')]
 param(
     [Parameter(Mandatory = $true, ParameterSetName = 'Live')]
@@ -31,52 +23,7 @@ Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
 $Cores = [Environment]::ProcessorCount
-# ConPTY hosts started by the app belong to the terminal, not to the program running in it.
-$PtyHosts = @('openconsole.exe', 'conhost.exe')
-
-function Get-TreeRow {
-    param([object[]]$Snapshot, [string]$RootName, [int[]]$Skip)
-
-    $rootFile = ($RootName -replace '\.exe$', '') + '.exe'
-    $byParent = @{}
-    $byId = @{}
-    foreach ($p in $Snapshot) {
-        $byId[[int]$p.ProcessId] = $p
-        $parent = [int]$p.ParentProcessId
-        if (-not $byParent.ContainsKey($parent)) { $byParent[$parent] = New-Object System.Collections.ArrayList }
-        [void]$byParent[$parent].Add($p)
-    }
-
-    $rows = New-Object System.Collections.ArrayList
-    $queue = New-Object System.Collections.Queue
-    foreach ($p in $Snapshot) {
-        if ($p.Name -ine $rootFile) { continue }
-        $parent = $byId[[int]$p.ParentProcessId]
-        # A root is a process of that name whose parent is not one too, so helpers are not counted twice.
-        if ($null -ne $parent -and $parent.Name -ieq $rootFile) { continue }
-        $queue.Enqueue(@($p, 'app'))
-    }
-
-    # A same-named process under a differently named parent is both a root and a descendant; count it once.
-    $seen = @{}
-    while ($queue.Count -gt 0) {
-        $item = $queue.Dequeue()
-        $p = $item[0]
-        $group = $item[1]
-        if ($Skip -contains [int]$p.ProcessId -or $seen.ContainsKey([int]$p.ProcessId)) { continue }
-        $seen[[int]$p.ProcessId] = $true
-        [void]$rows.Add([pscustomobject]@{ Process = $p; Group = $group })
-        if (-not $byParent.ContainsKey([int]$p.ProcessId)) { continue }
-        foreach ($c in $byParent[[int]$p.ProcessId]) {
-            # A PID can be reused by a process started after its parent exited, so check start order.
-            if ($c.CreationDate -lt $p.CreationDate) { continue }
-            $childGroup = 'child'
-            if ($group -eq 'app' -and ($c.Name -ieq $rootFile -or $PtyHosts -contains $c.Name.ToLower())) { $childGroup = 'app' }
-            $queue.Enqueue(@($c, $childGroup))
-        }
-    }
-    return $rows
-}
+. (Join-Path $PSScriptRoot 'tree.ps1')
 
 function Get-Percentile {
     param([double[]]$Sorted, [double]$P)
@@ -151,7 +98,7 @@ if ($Csv) {
     if (Test-Path $Csv) { throw "$Csv exists; record each run to a new file so runs are never mixed" }
     $dir = Split-Path -Parent $Csv
     if ($dir -and -not (Test-Path $dir)) { [void](New-Item -ItemType Directory -Path $dir) }
-    Set-Content -Path $Csv -Value 'Time,Group,Name,Count,Cpu,WsMb,PrivMb' -Encoding Ascii
+    Set-Content -Path $Csv -Value 'Time,Group,Name,Count,Cpu,WsMb,PrivMb' -Encoding UTF8
 }
 
 $all = New-Object System.Collections.ArrayList
@@ -171,7 +118,7 @@ for ($i = 0; $i -le $samples; $i++) {
     $snapshot = @(Get-CimInstance Win32_Process -Property ProcessId, ParentProcessId, Name, CreationDate, WorkingSetSize, PrivatePageCount, KernelModeTime, UserModeTime)
     $tick = $clock.Elapsed.Ticks
     $wall = Get-Date
-    $tree = @(Get-TreeRow -Snapshot $snapshot -RootName $Name -Skip $skip)
+    $tree = Get-TreeRow -Snapshot $snapshot -RootName $Name -Skip $skip
     if ($tree.Count -eq 0) { throw "No process named $Name is running" }
 
     $cpuNow = @{}
@@ -203,14 +150,14 @@ for ($i = 0; $i -le $samples; $i++) {
         $stamp = $wall.ToString('HH:mm:ss')
         $sampleRows = foreach ($a in $agg.Values) {
             [pscustomobject]@{
-                Time = $wall.ToString('s'); Group = $a.Group; Name = $a.Name; Count = $a.Count
+                Time = $wall.ToString('yyyy-MM-ddTHH:mm:ss.fff'); Group = $a.Group; Name = $a.Name; Count = $a.Count
                 Cpu = [math]::Round($a.Cpu100ns / ($span * $Cores) * 100, 2)
                 WsMb = [math]::Round($a.Ws / 1MB, 1); PrivMb = [math]::Round($a.Priv / 1MB, 1)
             }
         }
         $sampleRows = @($sampleRows)
         foreach ($r in $sampleRows) { [void]$all.Add($r) }
-        if ($Csv) { $sampleRows | ConvertTo-Csv -NoTypeInformation | Select-Object -Skip 1 | Add-Content -Path $Csv -Encoding Ascii }
+        if ($Csv) { $sampleRows | ConvertTo-Csv -NoTypeInformation | Select-Object -Skip 1 | Add-Content -Path $Csv -Encoding UTF8 }
 
         if (-not $Quiet) {
             $s = @{}
