@@ -527,6 +527,92 @@ test("signing in from the walkthrough returns to the same step", async () => {
   expect(root.querySelector(".steps .current")?.textContent).toBe("Accounts");
 });
 
+// Two projects, alpha with a shell and a Claude Code tab (sessions 1 and 2), beta with a shell (3).
+async function twoProjects(root: HTMLElement): Promise<void> {
+  await firstTab(root, "Shell");
+  await openTabs(root, ["Claude Code"]);
+  await firstTab(root, "Shell");
+}
+
+function folders(): Record<string, () => string> {
+  const picks = [String.raw`C:\code\alpha`, String.raw`C:\code\beta`];
+  return { "plugin:dialog|open": () => picks.shift() ?? "" };
+}
+
+function projectNames(root: HTMLElement): string[] {
+  return [...root.querySelectorAll(".project-name span")].map(
+    (s) => s.textContent,
+  );
+}
+
+test("a project is renamed from its row", async () => {
+  const root = await renderApp(() => SAVED, ptyCore().core);
+  await firstTab(root, "Shell");
+
+  root
+    .querySelector(".project-name")
+    ?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+  await settle();
+  const input = root.querySelector<HTMLInputElement>(
+    '.rename[aria-label="Project name"]',
+  );
+  if (!input) throw new Error("no project name field");
+  input.value = "Alpha app";
+  input.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+  );
+  await settle();
+
+  expect(projectNames(root)).toEqual(["Alpha app"]);
+});
+
+test("removing a project with tabs asks first, and Cancel keeps it", async () => {
+  const pty = ptyCore();
+  const root = await renderApp(() => SAVED, { ...pty.core, ...folders() });
+  await twoProjects(root);
+
+  click(root, "Remove alpha");
+  await settle();
+  expect(root.querySelector(".confirm")?.textContent).toContain(
+    "Close 2 tabs and remove alpha? The folder stays on disk.",
+  );
+  click(root, "Cancel");
+  await settle();
+
+  expect(projectNames(root)).toEqual(["alpha", "beta"]);
+  expect(pty.killed).toEqual([]);
+});
+
+test("removing a project ends only its own tabs' sessions", async () => {
+  const pty = ptyCore();
+  const root = await renderApp(() => SAVED, { ...pty.core, ...folders() });
+  await twoProjects(root);
+
+  click(root, "Remove alpha");
+  await settle();
+  click(root.querySelector(".confirm") ?? root, "Remove");
+  await settle();
+
+  expect(projectNames(root)).toEqual(["beta"]);
+  expect([...pty.killed].sort()).toEqual([1, 2]);
+  expect(sidebarTitles(root)).toEqual(["PowerShell · work"]);
+});
+
+test("a project with no tabs is removed without asking", async () => {
+  const root = await renderApp(() => SAVED, ptyCore().core);
+  await newProject(root);
+  click(root, "New tab in alpha");
+  await settle();
+  root.querySelector<HTMLElement>(".popover-backdrop")?.click();
+  await settle();
+
+  click(root, "Remove alpha");
+  await settle();
+
+  expect(root.querySelector(".confirm")).toBeNull();
+  expect(projectNames(root)).toEqual([]);
+});
+
 test("an unreadable accounts file offers to start fresh", async () => {
   const root = await renderApp(
     () => {

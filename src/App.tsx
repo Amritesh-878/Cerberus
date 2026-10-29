@@ -38,8 +38,11 @@ import {
   neighbour,
   planners,
   type ProjectId,
+  removeProject,
+  renameProject,
   renameTab,
   stepTab,
+  tabOrder,
   type TabId,
   type Tree,
 } from "./tree";
@@ -160,6 +163,17 @@ export function App() {
     void recheckPrograms();
   };
 
+  const forgetProject = (id: ProjectId) => {
+    const next = removeProject(tree(), id);
+    const current = active();
+    setTree(next);
+    if (current !== undefined && !next.tabs.some((t) => t.id === current)) {
+      setActive(tabOrder(next)[0]);
+    }
+    if (opening()?.projectId === id) setOpening(undefined);
+    setTabsClosed((n) => n + 1);
+  };
+
   const newTabIn = (projectId: ProjectId) => {
     const button = document.querySelector(
       `[data-new-tab="${String(projectId)}"]`,
@@ -247,6 +261,10 @@ export function App() {
                 setDrawer(false);
                 setOpening({ projectId, anchor });
               }}
+              onRenameProject={(id, name) =>
+                setTree(renameProject(tree(), id, name))
+              }
+              onRemoveProject={forgetProject}
               onNewProject={newProject}
               onAccounts={() => {
                 showPage("accounts");

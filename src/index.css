@@ -178,13 +178,49 @@ button {
 }
 
 /* Transparent, not hidden, so the keyboard can still reach these buttons. */
-.project .add {
+.project .icon-button {
   opacity: 0;
 }
 
-.project:hover .add,
-.project .add:focus-visible {
+.project:hover .icon-button,
+.project .icon-button:focus-visible {
   opacity: 1;
+}
+
+.project-name .rename {
+  flex: 1;
+}
+
+.confirm {
+  padding: 8px 10px;
+  margin: 2px 0 6px;
+  background: #221c1a;
+  border: 1px solid #3a2a24;
+  border-radius: 6px;
+}
+
+.confirm p {
+  margin: 0 0 8px;
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.confirm-actions button {
+  height: 26px;
+  padding: 0 10px;
+  cursor: pointer;
+  background: #2a2a2a;
+  border: 1px solid #3a3a3a;
+  border-radius: 6px;
+}
+
+.confirm-actions .danger {
+  color: var(--bg);
+  background: var(--accent);
+  border-color: var(--accent);
 }
 
 .tab-row {

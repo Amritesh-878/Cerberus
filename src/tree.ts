@@ -58,6 +58,26 @@ export function addProject(tree: Tree, folder: string): [Tree, ProjectId] {
   ];
 }
 
+export function renameProject(tree: Tree, id: ProjectId, name: string): Tree {
+  const trimmed = name.trim();
+  if (trimmed === "") return tree;
+  return {
+    ...tree,
+    projects: tree.projects.map((p) =>
+      p.id === id ? { ...p, name: trimmed } : p,
+    ),
+  };
+}
+
+/** Forgets the project and its tabs; its folder is left alone. */
+export function removeProject(tree: Tree, id: ProjectId): Tree {
+  return {
+    ...tree,
+    projects: tree.projects.filter((p) => p.id !== id),
+    tabs: tree.tabs.filter((t) => t.projectId !== id),
+  };
+}
+
 export function defaultTitle(tab: Tab): string {
   return tab.account ? `${tab.label} · ${tab.account.name}` : tab.label;
 }

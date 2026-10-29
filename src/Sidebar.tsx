@@ -1,4 +1,12 @@
-import { createMemo, createSignal, For, Index, Show } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  Index,
+  on,
+  Show,
+} from "solid-js";
 
 import {
   accountColor,
@@ -37,6 +45,8 @@ export function Sidebar(props: {
   onClose: (id: TabId) => void;
   onRename: (id: TabId, title: string) => void;
   onNewTab: (projectId: ProjectId, anchor: DOMRect) => void;
+  onRenameProject: (id: ProjectId, name: string) => void;
+  onRemoveProject: (id: ProjectId) => void;
   onNewProject: () => void;
   onAccounts: () => void;
 }) {
@@ -89,41 +99,24 @@ export function Sidebar(props: {
         <Index each={listed()}>
           {(group) => (
             <section>
-              <div class="project">
-                <button
-                  type="button"
-                  class="project-name"
-                  classList={{ folded: isFolded(group()) }}
-                  aria-expanded={!isFolded(group())}
-                  title={group().project?.folder}
-                  onClick={() => {
-                    const project = group().project;
-                    if (project) toggle(project.id);
-                  }}
-                >
-                  <ChevronIcon />
-                  <span>{group().project?.name ?? "Setup"}</span>
-                </button>
-                <Show when={group().project}>
-                  {(project) => (
-                    <button
-                      type="button"
-                      class="icon-button add"
-                      data-new-tab={project().id}
-                      aria-label={`New tab in ${project().name}`}
-                      title="New tab (Ctrl+Shift+T)"
-                      onClick={(event) => {
-                        props.onNewTab(
-                          project().id,
-                          event.currentTarget.getBoundingClientRect(),
-                        );
-                      }}
-                    >
-                      <PlusIcon />
-                    </button>
-                  )}
-                </Show>
-              </div>
+              <ProjectHeader
+                group={group()}
+                folded={isFolded(group())}
+                tabCount={
+                  props.tree.tabs.filter(
+                    (t) =>
+                      t.projectId !== null &&
+                      t.projectId === group().project?.id,
+                  ).length
+                }
+                onToggle={() => {
+                  const project = group().project;
+                  if (project) toggle(project.id);
+                }}
+                onNewTab={props.onNewTab}
+                onRename={props.onRenameProject}
+                onRemove={props.onRemoveProject}
+              />
               <Show when={!isFolded(group())}>
                 <For each={group().rows}>
                   {(row) => (
@@ -251,7 +244,11 @@ function TabRow(props: {
         <div class="tab-select">
           {icon()}
           <span class="tab-text">
-            <RenameField title={tab().title} onDone={props.onRenamed} />
+            <RenameField
+              title={tab().title}
+              label="Tab name"
+              onDone={props.onRenamed}
+            />
           </span>
         </div>
       </Show>
@@ -274,8 +271,145 @@ export function AccountDot(props: { id: AccountId }) {
   return <span class="dot" style={{ background: accountColor(props.id) }} />;
 }
 
+function ProjectHeader(props: {
+  group: Group;
+  folded: boolean;
+  tabCount: number;
+  onToggle: () => void;
+  onNewTab: (id: ProjectId, anchor: DOMRect) => void;
+  onRename: (id: ProjectId, name: string) => void;
+  onRemove: (id: ProjectId) => void;
+}) {
+  const [renaming, setRenaming] = createSignal(false);
+  const [confirming, setConfirming] = createSignal(false);
+  // Sections are kept by position, so another project landing here must not inherit an open edit.
+  createEffect(
+    on(
+      () => props.group.project?.id,
+      () => {
+        setRenaming(false);
+        setConfirming(false);
+      },
+      { defer: true },
+    ),
+  );
+  const tabs = () =>
+    `${String(props.tabCount)} tab${props.tabCount === 1 ? "" : "s"}`;
+
+  return (
+    <>
+      <div class="project">
+        <Show
+          when={renaming() && props.group.project}
+          fallback={
+            <button
+              type="button"
+              class="project-name"
+              classList={{ folded: props.folded }}
+              aria-expanded={!props.folded}
+              title={
+                props.group.project
+                  ? `${props.group.project.folder}\nDouble-click or F2 to rename`
+                  : undefined
+              }
+              onClick={() => {
+                props.onToggle();
+              }}
+              onDblClick={() => {
+                if (props.group.project) setRenaming(true);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "F2" && props.group.project)
+                  setRenaming(true);
+              }}
+            >
+              <ChevronIcon />
+              <span>{props.group.project?.name ?? "Setup"}</span>
+            </button>
+          }
+        >
+          {(project) => (
+            <div class="project-name">
+              <ChevronIcon />
+              <RenameField
+                title={project().name}
+                label="Project name"
+                onDone={(name) => {
+                  const id = project().id;
+                  setRenaming(false);
+                  if (name !== undefined) props.onRename(id, name);
+                }}
+              />
+            </div>
+          )}
+        </Show>
+        <Show when={props.group.project}>
+          {(project) => (
+            <>
+              <button
+                type="button"
+                class="icon-button add"
+                data-new-tab={project().id}
+                aria-label={`New tab in ${project().name}`}
+                title="New tab (Ctrl+Shift+T)"
+                onClick={(event) => {
+                  props.onNewTab(
+                    project().id,
+                    event.currentTarget.getBoundingClientRect(),
+                  );
+                }}
+              >
+                <PlusIcon />
+              </button>
+              <button
+                type="button"
+                class="icon-button remove"
+                aria-label={`Remove ${project().name}`}
+                title="Remove project (the folder stays)"
+                onClick={() => {
+                  if (props.tabCount > 0) setConfirming(true);
+                  else props.onRemove(project().id);
+                }}
+              >
+                <CloseIcon />
+              </button>
+            </>
+          )}
+        </Show>
+      </div>
+      <Show when={confirming() && props.group.project}>
+        {(project) => (
+          <div class="confirm" role="alert">
+            <p>
+              Close {tabs()} and remove {project().name}? The folder stays on
+              disk.
+            </p>
+            <div class="confirm-actions">
+              <button
+                type="button"
+                class="danger"
+                onClick={() => {
+                  const id = project().id;
+                  setConfirming(false);
+                  props.onRemove(id);
+                }}
+              >
+                Remove
+              </button>
+              <button type="button" onClick={() => setConfirming(false)}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+      </Show>
+    </>
+  );
+}
+
 function RenameField(props: {
   title: string;
+  label: string;
   onDone: (title: string | undefined) => void;
 }) {
   let done = false;
@@ -289,7 +423,7 @@ function RenameField(props: {
     <input
       class="rename"
       value={props.title}
-      aria-label="Tab name"
+      aria-label={props.label}
       ref={(el) => {
         queueMicrotask(() => {
           el.focus();

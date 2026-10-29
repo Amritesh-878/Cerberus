@@ -12,6 +12,8 @@ import {
   moveTab,
   neighbour,
   planners,
+  removeProject,
+  renameProject,
   renameTab,
   reuseRows,
   stepTab,
@@ -224,4 +226,29 @@ test("a rebuild with nothing changed returns the same groups", () => {
   );
 
   expect(after.every((g, i) => g === before[i])).toBe(true);
+});
+
+test("a project rename trims the name and ignores a blank one", () => {
+  const renamed = renameProject(sample(), 1, "  Alpha app ");
+
+  expect(renamed.projects.map((p) => p.name)).toEqual(["Alpha app", "beta"]);
+  expect(renamed.projects[0]?.folder).toBe(String.raw`C:\code\alpha`);
+  expect(renameProject(renamed, 1, "  ")).toBe(renamed);
+});
+
+test("removing a project forgets it and its tabs and nothing else", () => {
+  const removed = removeProject(sample(), 1);
+
+  expect(removed.projects.map((p) => p.name)).toEqual(["beta"]);
+  expect(removed.tabs.map((t) => t.id)).toEqual([7]);
+});
+
+test("removing a project keeps setup tabs", () => {
+  const [tree] = addTab(
+    sample(),
+    { projectId: null, parentId: null },
+    launch("claude"),
+  );
+
+  expect(removeProject(tree, 1).tabs.map((t) => t.id)).toEqual([7, 8]);
 });
