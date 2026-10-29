@@ -38,7 +38,7 @@ $skip = @($Exclude) + @($PID)
 if ($Csv) {
     if (Test-Path -LiteralPath $Csv) { throw "$Csv exists; record each run to a new file so runs are never mixed" }
     $dir = Split-Path -Parent $Csv
-    if ($dir -and -not (Test-Path $dir)) { [void](New-Item -ItemType Directory -Path $dir) }
+    if ($dir -and -not (Test-Path -LiteralPath $dir)) { [void](New-Item -ItemType Directory -Path $dir) }
 }
 
 $all = New-Object System.Collections.ArrayList

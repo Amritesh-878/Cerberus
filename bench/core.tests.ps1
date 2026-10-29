@@ -76,4 +76,11 @@ Describe 'sample.ps1' {
         Set-Content -LiteralPath $csv -Value 'kept'
         { & (Join-Path $PSScriptRoot 'sample.ps1') -Name 'no-such-process-for-bench' -Seconds 1 -Csv $csv -Quiet } | Should Throw 'exists'
     }
+
+    It 'creates a missing csv folder whose name has wildcard characters' {
+        [void](New-Item -ItemType Directory -Path (Join-Path $TestDrive 'out1'))
+        $dir = Join-Path $TestDrive 'out[1]'
+        { & (Join-Path $PSScriptRoot 'sample.ps1') -Name 'no-such-process-for-bench' -Seconds 1 -Csv (Join-Path $dir 'run.csv') -Quiet } | Should Throw 'No process'
+        Test-Path -LiteralPath $dir | Should Be $true
+    }
 }
