@@ -68,6 +68,7 @@ pub fn run() {
         if let RunEvent::Exit = event {
             handle.state::<PtyManager>().kill_all();
             handle.state::<Saved>().flush();
+            job::spare_children_on_exit();
         }
     });
 }
