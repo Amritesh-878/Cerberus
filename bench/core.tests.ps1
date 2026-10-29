@@ -1,8 +1,13 @@
+# Written for Pester 3.4.0, which ships with Windows PowerShell 5.1; Pester 5 dropped this assertion syntax.
 Set-StrictMode -Version 2.0
-. (Join-Path $PSScriptRoot 'tree.ps1')
+. (Join-Path $PSScriptRoot 'core.ps1')
 
 function New-Proc([int]$Id, [int]$Parent, [string]$Name, [int]$StartedSec = $Id) {
     [pscustomobject]@{ ProcessId = $Id; ParentProcessId = $Parent; Name = $Name; CreationDate = ([datetime]'2026-01-01').AddSeconds($StartedSec) }
+}
+
+function New-Row([string]$Time, [string]$Group, [string]$Name, [double]$WsMb) {
+    [pscustomobject]@{ Time = $Time; Group = $Group; Name = $Name; Count = 1; Cpu = 0.5; WsMb = $WsMb; PrivMb = $WsMb }
 }
 
 Describe 'Get-TreeRow' {
@@ -38,13 +43,31 @@ Describe 'Get-TreeRow' {
     }
 }
 
+Describe 'Get-SampleStamp' {
+    It 'keeps two samples taken in the same second apart' {
+        $first = Get-SampleStamp ([datetime]'2026-01-01T10:00:01.200')
+        $second = Get-SampleStamp ([datetime]'2026-01-01T10:00:01.700')
+        $first | Should Not Be $second
+        $rows = @((New-Row $first 'app' 'term.exe' 100), (New-Row $second 'app' 'term.exe' 100))
+        (Write-Summary $rows 'test cores')[1] | Should Be 'Summary over 2 samples (CPU % of test cores)'
+    }
+}
+
+Describe 'Format-SampleLine' {
+    It 'prints a sample that has no children' {
+        $line = Format-SampleLine -Rows @((New-Row 't' 'app' 'lone.exe' 3)) -Clock '10:00:01' -ProcessCount 1
+        $line | Should Match '^10:00:01 +1 \| +0\.5 +3 +3 \| +0\.0 +0 +0 \|'
+    }
+}
+
 Describe 'sample.ps1' {
-    It 'samples a process with no children' {
-        # smss.exe runs on every Windows install and starts no lasting children.
-        { & (Join-Path $PSScriptRoot 'sample.ps1') -Name smss -Seconds 1 | Out-Null } | Should Not Throw
+    It 'refuses an interval longer than the run' {
+        { & (Join-Path $PSScriptRoot 'sample.ps1') -Name term -Seconds 1 -Interval 2 } | Should Throw
     }
 
-    It 'refuses an interval longer than the run' {
-        { & (Join-Path $PSScriptRoot 'sample.ps1') -Name smss -Seconds 1 -Interval 2 } | Should Throw
+    It 'leaves no csv behind when the process is not running' {
+        $csv = Join-Path $TestDrive 'run.csv'
+        { & (Join-Path $PSScriptRoot 'sample.ps1') -Name 'no-such-process-for-bench' -Seconds 1 -Csv $csv -Quiet } | Should Throw
+        Test-Path $csv | Should Be $false
     }
 }

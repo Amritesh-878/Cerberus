@@ -23,66 +23,7 @@ Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
 $Cores = [Environment]::ProcessorCount
-. (Join-Path $PSScriptRoot 'tree.ps1')
-
-function Get-Percentile {
-    param([double[]]$Sorted, [double]$P)
-    $rank = [math]::Ceiling($P / 100 * $Sorted.Count)
-    return $Sorted[[math]::Max(0, $rank - 1)]
-}
-
-function Write-Summary {
-    param([object[]]$Rows, [string]$Basis)
-
-    $byTime = [ordered]@{}
-    foreach ($r in $Rows) {
-        if (-not $byTime.Contains($r.Time)) { $byTime[$r.Time] = New-Object System.Collections.ArrayList }
-        [void]$byTime[$r.Time].Add($r)
-    }
-    $groups = @('app', 'child', 'total')
-    $metrics = @('Cpu', 'WsMb', 'PrivMb')
-    $perSample = @{}
-    foreach ($g in $groups) { foreach ($m in $metrics) { $perSample["$g.$m"] = New-Object System.Collections.ArrayList } }
-
-    foreach ($at in $byTime.Values) {
-        foreach ($g in $groups) {
-            $inGroup = $at
-            if ($g -ne 'total') { $inGroup = @($at | Where-Object { $_.Group -eq $g }) }
-            foreach ($m in $metrics) {
-                $sum = 0.0
-                foreach ($r in $inGroup) { $sum += [double]$r.$m }
-                [void]$perSample["$g.$m"].Add($sum)
-            }
-        }
-    }
-
-    ''
-    'Summary over {0} samples (CPU % of {1})' -f $byTime.Count, $Basis
-    '{0,-6} {1,-7} {2,9} {3,9} {4,9} {5,9}' -f 'group', 'metric', 'min', 'median', 'p95', 'max'
-    foreach ($g in $groups) {
-        foreach ($m in $metrics) {
-            $sorted = [double[]]@($perSample["$g.$m"] | Sort-Object)
-            '{0,-6} {1,-7} {2,9:N1} {3,9:N1} {4,9:N1} {5,9:N1}' -f $g, $m, $sorted[0], (Get-Percentile $sorted 50), (Get-Percentile $sorted 95), $sorted[-1]
-        }
-    }
-
-    ''
-    'Median per process name (count, CPU %, working set MB, private MB)'
-    '{0,-6} {1,-24} {2,5} {3,7} {4,9} {5,9}' -f 'group', 'name', 'count', 'cpu', 'ws_mb', 'priv_mb'
-    $byName = $Rows | Group-Object Group, Name
-    foreach ($n in ($byName | Sort-Object Name)) {
-        $first = $n.Group[0]
-        $vals = @{}
-        foreach ($m in @('Count', 'Cpu', 'WsMb', 'PrivMb')) {
-            # Samples where the name is absent count as zero, so medians stay comparable across names.
-            $list = New-Object System.Collections.ArrayList
-            foreach ($r in $n.Group) { [void]$list.Add([double]$r.$m) }
-            for ($i = $list.Count; $i -lt $byTime.Count; $i++) { [void]$list.Add(0.0) }
-            $vals[$m] = Get-Percentile ([double[]]@($list | Sort-Object)) 50
-        }
-        '{0,-6} {1,-24} {2,5:N0} {3,7:N1} {4,9:N1} {5,9:N1}' -f $first.Group, $first.Name, $vals['Count'], $vals['Cpu'], $vals['WsMb'], $vals['PrivMb']
-    }
-}
+. (Join-Path $PSScriptRoot 'core.ps1')
 
 if ($PSCmdlet.ParameterSetName -eq 'Summary') {
     $rows = @(Import-Csv $FromCsv)
@@ -98,7 +39,6 @@ if ($Csv) {
     if (Test-Path $Csv) { throw "$Csv exists; record each run to a new file so runs are never mixed" }
     $dir = Split-Path -Parent $Csv
     if ($dir -and -not (Test-Path $dir)) { [void](New-Item -ItemType Directory -Path $dir) }
-    Set-Content -Path $Csv -Value 'Time,Group,Name,Count,Cpu,WsMb,PrivMb' -Encoding UTF8
 }
 
 $all = New-Object System.Collections.ArrayList
@@ -150,27 +90,17 @@ for ($i = 0; $i -le $samples; $i++) {
         $stamp = $wall.ToString('HH:mm:ss')
         $sampleRows = foreach ($a in $agg.Values) {
             [pscustomobject]@{
-                Time = $wall.ToString('yyyy-MM-ddTHH:mm:ss.fff'); Group = $a.Group; Name = $a.Name; Count = $a.Count
+                Time = (Get-SampleStamp $wall); Group = $a.Group; Name = $a.Name; Count = $a.Count
                 Cpu = [math]::Round($a.Cpu100ns / ($span * $Cores) * 100, 2)
                 WsMb = [math]::Round($a.Ws / 1MB, 1); PrivMb = [math]::Round($a.Priv / 1MB, 1)
             }
         }
         $sampleRows = @($sampleRows)
         foreach ($r in $sampleRows) { [void]$all.Add($r) }
-        if ($Csv) { $sampleRows | ConvertTo-Csv -NoTypeInformation | Select-Object -Skip 1 | Add-Content -Path $Csv -Encoding UTF8 }
+        # The header goes in with the first rows, so a run that fails before sampling leaves no file to block a rerun.
+        if ($Csv) { $sampleRows | ConvertTo-Csv -NoTypeInformation | Select-Object -Skip ([int](Test-Path $Csv)) | Add-Content -Path $Csv -Encoding UTF8 }
 
-        if (-not $Quiet) {
-            $s = @{}
-            foreach ($k in @('app.cpu', 'app.ws', 'app.priv', 'child.cpu', 'child.ws', 'child.priv')) { $s[$k] = 0.0 }
-            foreach ($r in $sampleRows) {
-                $s["$($r.Group).cpu"] += $r.Cpu
-                $s["$($r.Group).ws"] += $r.WsMb
-                $s["$($r.Group).priv"] += $r.PrivMb
-            }
-            '{0,-8} {1,4} | {2,6:N1} {3,8:N0} {4,8:N0} | {5,6:N1} {6,8:N0} {7,8:N0} | {8,6:N1} {9,8:N0} {10,8:N0}' -f $stamp, $tree.Count,
-                $s['app.cpu'], $s['app.ws'], $s['app.priv'], $s['child.cpu'], $s['child.ws'], $s['child.priv'],
-                ($s['app.cpu'] + $s['child.cpu']), ($s['app.ws'] + $s['child.ws']), ($s['app.priv'] + $s['child.priv'])
-        }
+        if (-not $Quiet) { Format-SampleLine -Rows $sampleRows -Clock $stamp -ProcessCount $tree.Count }
     }
 
     $lastCpu = $cpuNow
