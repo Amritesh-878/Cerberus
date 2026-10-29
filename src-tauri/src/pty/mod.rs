@@ -210,7 +210,6 @@ impl PtyManager {
         }
     }
 
-    /// The program's process id, while it runs.
     pub fn pid(&self, id: SessionId) -> Option<u32> {
         self.session(id).ok()?.pid
     }

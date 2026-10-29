@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 use std::sync::mpsc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 use tauri::State;
@@ -67,6 +68,11 @@ pub fn pty_spawn(
         let session = tab.and_then(|t| saved.session_of(t));
         (request.args, resume) = plan_resume(&request.args, home, &cwd, session.as_deref());
     }
+    let started_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .and_then(|d| u64::try_from(d.as_millis()).ok())
+        .unwrap_or(0);
     // Dropped when the program exits, which ends the session-file watcher.
     let (stop, stopped) = mpsc::channel::<()>();
     let exit_events = events.clone();
@@ -89,6 +95,7 @@ pub fn pty_spawn(
             config_dir,
             pid,
             cwd,
+            started_ms,
         };
         let saved = Saved::clone(&saved);
         let on_session = move |session: &str| {

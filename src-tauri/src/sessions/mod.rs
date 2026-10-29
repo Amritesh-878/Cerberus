@@ -1,4 +1,5 @@
 mod limit;
+mod procs;
 mod watch;
 
 use std::fs;
@@ -24,6 +25,8 @@ pub struct SessionFile {
     pub session_id: Option<String>,
     pub cwd: Option<String>,
     pub status: Status,
+    /// When the process started, in milliseconds since 1970.
+    pub started_at: Option<u64>,
 }
 
 #[derive(Deserialize)]
@@ -32,6 +35,7 @@ struct RawSessionFile {
     session_id: Option<String>,
     cwd: Option<String>,
     status: Option<String>,
+    started_at: Option<f64>,
 }
 
 /// `None` for a file that is not a session object; a field that is missing or odd reads as unknown.
@@ -45,6 +49,10 @@ pub fn parse_session_file(bytes: &[u8]) -> Option<SessionFile> {
             Some("idle") => Status::Idle,
             _ => Status::Unknown,
         },
+        started_at: raw
+            .started_at
+            .filter(|ms| ms.is_finite() && *ms >= 0.0)
+            .map(|ms| ms as u64),
     })
 }
 
@@ -61,7 +69,7 @@ pub fn is_claude(program: &str) -> bool {
         .is_some_and(|stem| stem.eq_ignore_ascii_case("claude"))
 }
 
-/// Claude Code's folder name for a cwd under `projects/`: every UTF-16 unit that is not a letter or digit becomes `-`.
+/// Claude Code's folder name for a cwd under `projects/`: every UTF-16 unit that is not an ASCII letter or digit becomes `-`.
 pub fn slug(cwd: &str) -> String {
     cwd.chars()
         .flat_map(|c| {
@@ -107,7 +115,6 @@ pub enum Resume {
     Missing,
 }
 
-/// A Claude tab's args: its saved chat resumed when the transcript is still there.
 pub fn plan_resume(
     args: &[String],
     config_dir: &Path,
@@ -143,6 +150,7 @@ mod tests {
                 session_id: Some(SESSION.to_owned()),
                 cwd: Some(r"C:\work\app".to_owned()),
                 status: Status::Busy,
+                started_at: None,
             })
         );
     }
@@ -164,7 +172,23 @@ mod tests {
                 session_id: None,
                 cwd: None,
                 status: Status::Unknown,
+                started_at: None,
             })
+        );
+    }
+
+    #[test]
+    fn the_start_time_is_read_whole_or_fractional() {
+        let whole = br#"{"status":"idle","startedAt":1793286414170}"#;
+        let fractional = br#"{"status":"idle","startedAt":1793286414170.5}"#;
+
+        assert_eq!(
+            parse_session_file(whole).unwrap().started_at,
+            Some(1_793_286_414_170)
+        );
+        assert_eq!(
+            parse_session_file(fractional).unwrap().started_at,
+            Some(1_793_286_414_170)
         );
     }
 
