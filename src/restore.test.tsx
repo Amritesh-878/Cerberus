@@ -1,5 +1,7 @@
+import { emit as emitEvent } from "@tauri-apps/api/event";
 import { afterEach, expect, test } from "vitest";
 
+import { resetText } from "./board";
 import {
   activeTitle,
   cleanup,
@@ -12,9 +14,6 @@ import {
   settle,
   sidebarTitles,
 } from "./harness";
-import { emit as emitEvent } from "@tauri-apps/api/event";
-
-import { resetText } from "./board";
 import type { SavedTab, SavedTree } from "./saved";
 
 afterEach(cleanup);
@@ -61,7 +60,7 @@ function restoring(tree: SavedTree = TREE) {
     saves,
     core: {
       ...pty.core,
-      tree_load: () => tree,
+      tree_load: () => ({ tree, notice: null }),
       tree_save: (args: unknown) => {
         saves.push(field(args, "tree"));
       },
@@ -163,6 +162,22 @@ test("loading saves nothing; a change saves the tree without setup tabs", async 
   const tree = restore.saves[0] as SavedTree;
   expect(tree.tabs.map((t) => t.id)).toEqual([3, 4, 5, 6]);
   expect(tree.nextId).toBe(8);
+});
+
+test("a tabs file that was set aside is explained on the home page", async () => {
+  const restore = restoring();
+  const notice =
+    "The saved tabs could not be read, so Cerberus started with none. The old file is kept as tree.db.bad.";
+  const root = await renderApp(() => SAVED, {
+    ...restore.core,
+    tree_load: () => ({
+      tree: { projects: [], tabs: [], nextId: 1 },
+      notice,
+    }),
+  });
+
+  expect(root.querySelector(".home")?.textContent).toContain(notice);
+  expect(root.querySelector(".home .error")).toBeNull();
 });
 
 test("nothing is saved over a tree that failed to load", async () => {

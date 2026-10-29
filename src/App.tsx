@@ -104,15 +104,17 @@ export function App() {
   // Nothing is saved until the saved tree is in, or an early save would replace it with an empty one.
   const [restored, setRestored] = createSignal(false);
   const [treeError, setTreeError] = createSignal<string>();
+  const [treeNotice, setTreeNotice] = createSignal<string>();
   const savedTree = loadTree();
   createEffect(() => {
     const ready = profiles();
     const choices = programs.state === "errored" ? [] : programs.latest;
     if (!ready || !choices || untrack(restored)) return;
     savedTree.then(
-      (saved) => {
+      (loaded) => {
         if (untrack(restored)) return;
-        setTree(fromSaved(saved, ready, choices));
+        setTree(fromSaved(loaded.tree, ready, choices));
+        setTreeNotice(loaded.notice ?? undefined);
         setRestored(true);
       },
       (error: unknown) => {
@@ -475,6 +477,7 @@ export function App() {
                         <Home
                           hasProjects={tree().projects.length > 0}
                           treeError={treeError()}
+                          treeNotice={treeNotice()}
                           onNewProject={newProject}
                         />
                       }
@@ -561,10 +564,14 @@ export function App() {
 function Home(props: {
   hasProjects: boolean;
   treeError: string | undefined;
+  treeNotice: string | undefined;
   onNewProject: () => void;
 }) {
   return (
     <main class="home">
+      <Show when={props.treeNotice}>
+        {(notice) => <p class="hint">{notice()}</p>}
+      </Show>
       <Show when={props.treeError}>
         {(error) => (
           <p class="error">

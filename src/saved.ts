@@ -22,8 +22,14 @@ export interface SavedTree {
   nextId: number;
 }
 
-export function loadTree(): Promise<SavedTree> {
-  return invoke<SavedTree>("tree_load");
+export interface Loaded {
+  tree: SavedTree;
+  /** Set when an unreadable file was set aside and Cerberus started with no saved tabs. */
+  notice: string | null;
+}
+
+export function loadTree(): Promise<Loaded> {
+  return invoke<Loaded>("tree_load");
 }
 
 export function saveTree(tree: SavedTree): Promise<void> {

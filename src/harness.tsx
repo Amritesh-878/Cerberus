@@ -75,7 +75,10 @@ export async function renderApp(
         case "account_status":
           return { state: "loggedIn", summary: "user@example.com · Pro" };
         case "tree_load":
-          return { projects: [], tabs: [], nextId: 1 };
+          return {
+            tree: { projects: [], tabs: [], nextId: 1 },
+            notice: null,
+          };
         default:
           return null;
       }
