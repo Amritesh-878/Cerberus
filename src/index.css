@@ -1,8 +1,21 @@
 :root {
+  --bg: #1a1a1a;
+  --side: #141414;
+  --bar: #171717;
+  --line: #2a2a2a;
+  --hover: #212121;
+  --selected: #2a2a2a;
+  --text: #e6e6e6;
+  --dim: #8a8a8a;
+  --faint: #5c5c5c;
+  --accent: #d97757;
+  --sidebar-width: 248px;
+
   color-scheme: dark;
   font-family: "Segoe UI", system-ui, sans-serif;
-  color: #e6e6e6;
-  background-color: #1a1a1a;
+  font-size: 13px;
+  color: var(--text);
+  background-color: var(--bg);
 }
 
 html,
@@ -10,23 +23,685 @@ body,
 #root {
   height: 100%;
   margin: 0;
+  overflow: hidden;
 }
 
-.launcher,
-.walkthrough {
-  max-width: 880px;
-  padding: 24px;
+button {
+  font: inherit;
+  color: inherit;
 }
 
-.home[hidden] {
+.app {
+  display: grid;
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr) auto;
+  height: 100%;
+}
+
+.icon-button {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  color: var(--dim);
+  cursor: pointer;
+  background: none;
+  border: 0;
+  border-radius: 6px;
+}
+
+.icon-button:hover,
+.icon-button[aria-pressed="true"] {
+  color: var(--text);
+  background: var(--hover);
+}
+
+.icon-button:focus-visible,
+.tab-select:focus-visible,
+.project-name:focus-visible,
+.foot-button:focus-visible,
+.choices button:focus-visible,
+.primary:focus-visible,
+.secondary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.dot {
+  display: inline-block;
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.icon-claude {
+  color: var(--accent);
+}
+
+.icon-shell {
+  color: var(--dim);
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--side);
+  border-right: 1px solid var(--line);
+}
+
+.sidebar-top {
+  padding: 10px 10px 6px;
+}
+
+.search {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  height: 28px;
+  padding: 0 8px;
+  color: var(--dim);
+  background: #1c1c1c;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.search:focus-within {
+  border-color: #444;
+}
+
+.search input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  color: var(--text);
+  background: none;
+  border: 0;
+  outline: 0;
+}
+
+.tree {
+  flex: 1;
+  padding: 0 6px 10px;
+  overflow: hidden auto;
+}
+
+.tree-empty {
+  padding: 8px;
+}
+
+.project {
+  display: flex;
+  align-items: center;
+  margin-top: 8px;
+  border-radius: 6px;
+}
+
+.project:hover {
+  background: var(--hover);
+}
+
+.project-name {
+  display: flex;
+  flex: 1;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+  height: 30px;
+  padding: 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--dim);
+  text-align: left;
+  cursor: pointer;
+  background: none;
+  border: 0;
+  border-radius: 6px;
+}
+
+.project-name span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-name svg {
+  flex: none;
+  color: var(--faint);
+  transition: transform 120ms ease-out;
+}
+
+.project-name.folded svg {
+  transform: rotate(-90deg);
+}
+
+/* Transparent, not hidden, so the keyboard can still reach these buttons. */
+.project .icon-button {
+  opacity: 0;
+}
+
+.project:hover .icon-button,
+.project .icon-button:focus-visible {
+  opacity: 1;
+}
+
+.project-name .rename {
+  flex: 1;
+}
+
+.confirm {
+  padding: 8px 10px;
+  margin: 2px 0 6px;
+  background: #221c1a;
+  border: 1px solid #3a2a24;
+  border-radius: 6px;
+}
+
+.confirm p {
+  margin: 0 0 8px;
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.confirm-actions button {
+  height: 26px;
+  padding: 0 10px;
+  cursor: pointer;
+  background: #2a2a2a;
+  border: 1px solid #3a3a3a;
+  border-radius: 6px;
+}
+
+.confirm-actions .danger {
+  color: var(--bg);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.tab-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  border-radius: 6px;
+}
+
+.tab-row:hover {
+  background: var(--hover);
+}
+
+.tab-row.active {
+  background: var(--selected);
+}
+
+.tab-select {
+  display: flex;
+  flex: 1;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  min-height: 36px;
+  padding: 4px 4px 4px 8px;
+  text-align: left;
+  cursor: pointer;
+  background: none;
+  border: 0;
+  border-radius: 6px;
+}
+
+.badge {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  background: #222;
+  border-radius: 7px;
+}
+
+.tab-text {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+
+.tab-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tab-row .close {
+  margin-right: 4px;
+  opacity: 0;
+}
+
+.tab-row:hover .close,
+.tab-row.active .close,
+.tab-row .close:focus-visible {
+  opacity: 1;
+}
+
+.tab-row.sub {
+  margin-left: 14px;
+}
+
+.tab-row.sub .tab-select {
+  min-height: 30px;
+  padding: 0 4px 0 22px;
+}
+
+/* The tree line from a planner down to each of its sub-tabs. */
+.tab-row.sub::before,
+.tab-row.sub::after {
+  position: absolute;
+  left: 4px;
+  content: "";
+  border-color: #333;
+  border-style: solid;
+  border-width: 0;
+}
+
+.tab-row.sub::before {
+  top: 0;
+  bottom: 0;
+  border-left-width: 1px;
+}
+
+.tab-row.sub.last::before {
+  bottom: 50%;
+}
+
+.tab-row.sub::after {
+  top: 50%;
+  width: 10px;
+  border-top-width: 1px;
+}
+
+.rename {
+  min-width: 0;
+  height: 22px;
+  padding: 0 4px;
+  font: inherit;
+  color: var(--text);
+  background: #111;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  outline: 0;
+}
+
+.sidebar-foot {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  padding: 8px 10px;
+  border-top: 1px solid var(--line);
+}
+
+.foot-button {
+  display: flex;
+  flex: 1;
+  gap: 6px;
+  align-items: center;
+  height: 28px;
+  padding: 0 8px;
+  color: var(--dim);
+  cursor: pointer;
+  background: none;
+  border: 0;
+  border-radius: 6px;
+}
+
+.foot-button:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+
+.main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.bar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  height: 38px;
+  min-width: 0;
+  padding: 0 8px 0 12px;
+  background: var(--bar);
+  border-bottom: 1px solid var(--line);
+}
+
+.crumb {
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+.crumb-title {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.account-pill {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  height: 24px;
+  padding: 0 8px;
+  color: var(--dim);
+  white-space: nowrap;
+  background: #222;
+  border-radius: 12px;
+}
+
+.menu-button {
   display: none;
 }
 
-.launcher button,
+.sign-in-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px 4px 12px;
+  background: #2b2720;
+  border-bottom: 1px solid var(--line);
+}
+
+.sign-in-bar button {
+  padding: 2px 10px;
+  cursor: pointer;
+  background: #2a2a2a;
+  border: 1px solid #3a3a3a;
+  border-radius: 4px;
+}
+
+.stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Hidden, not unmounted: a tab keeps its program, scrollback and size while another shows. */
+.tab-view {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  visibility: hidden;
+}
+
+.tab-view.shown {
+  visibility: visible;
+}
+
+.terminal {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  padding: 4px 0 0 8px;
+
+  /* xterm moves its hidden text area to the cursor, which can sit past the right edge. */
+  overflow: hidden;
+}
+
+/* xterm.css paints the viewport black whatever the theme says, and xterm draws its own scrollbar. */
+.terminal .xterm-viewport {
+  background-color: var(--bg);
+  scrollbar-width: none;
+}
+
+.page {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  background: var(--bg);
+}
+
+.home {
+  display: grid;
+  gap: 12px;
+  justify-items: start;
+  max-width: 420px;
+  padding: 48px 24px;
+  margin: 0 auto;
+}
+
+.home h1 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.home p {
+  margin: 0;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  width: 300px;
+  background: var(--bar);
+  border-left: 1px solid var(--line);
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  height: 38px;
+  padding: 0 8px 0 14px;
+  color: var(--dim);
+  border-bottom: 1px solid var(--line);
+}
+
+.panel-empty {
+  padding: 24px 14px;
+  margin: 14px;
+  color: var(--faint);
+  text-align: center;
+  border: 1px dashed #333;
+  border-radius: 8px;
+}
+
+.popover-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+}
+
+.popover {
+  position: absolute;
+  box-sizing: border-box;
+  width: 280px;
+  max-height: calc(100vh - 16px);
+  padding: 12px;
+  overflow: auto;
+  background: #202020;
+  border: 1px solid #333;
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgb(0 0 0 / 45%);
+  transform-origin: top left;
+  animation: popover-in 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+@keyframes popover-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .popover {
+    animation: none;
+  }
+}
+
+.popover-where {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.field-label {
+  margin: 10px 0 6px;
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.choices button {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  height: 30px;
+  padding: 0 12px;
+  color: var(--dim);
+  cursor: pointer;
+  background: #1f1f1f;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.choices button[aria-pressed="true"] {
+  color: var(--text);
+  background: #2a201c;
+  border-color: var(--accent);
+}
+
+.primary,
+.secondary {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  cursor: pointer;
+  border-radius: 8px;
+}
+
+.primary {
+  height: 38px;
+  margin-top: 14px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--bg);
+  background: var(--accent);
+  border: 0;
+}
+
+.primary .icon-claude {
+  color: var(--bg);
+}
+
+.primary:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.home .primary {
+  width: auto;
+  padding: 0 20px;
+  margin-top: 8px;
+}
+
+.secondary {
+  height: 34px;
+  margin-top: 8px;
+  background: none;
+  border: 1px solid var(--line);
+}
+
+.secondary:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.primary:disabled,
+.secondary:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.popover .hint,
+.popover .error {
+  margin: 10px 0 0;
+}
+
+/* Narrow windows: the sidebar becomes a drawer and the panel lies over the terminal. */
+
+@media (width <= 1100px) {
+  .panel {
+    position: fixed;
+    inset: 0 0 0 auto;
+    z-index: 15;
+    width: min(300px, 85vw);
+    box-shadow: -8px 0 24px rgb(0 0 0 / 50%);
+  }
+}
+
+@media (width <= 720px) {
+  .app {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 15;
+    width: min(280px, 85vw);
+    transform: translateX(-100%);
+    transition: transform 200ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+
+  .app.drawer .sidebar {
+    box-shadow: 8px 0 24px rgb(0 0 0 / 50%);
+    transform: none;
+  }
+
+  .scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 14;
+    background: rgb(0 0 0 / 40%);
+  }
+
+  .menu-button {
+    display: grid;
+  }
+
+  .crumb {
+    display: none;
+  }
+}
+
+.walkthrough {
+  max-width: 880px;
+  padding: 24px;
+  font-size: 14px;
+}
+
 .walkthrough button,
 .walkthrough input,
 .walkthrough select,
-.account-picker select {
+.start-folder button {
   padding: 6px 10px;
   font: inherit;
   color: inherit;
@@ -45,9 +720,8 @@ body,
 }
 
 .walkthrough button:hover:not(:disabled),
-.walkthrough :is(button, input, select):focus-visible,
-.account-picker select:focus-visible {
-  border-color: #5a8dee;
+.walkthrough :is(button, input, select):focus-visible {
+  border-color: var(--accent);
   outline: none;
 }
 
@@ -55,7 +729,7 @@ body,
   display: flex;
   gap: 24px;
   padding: 0;
-  color: #8a8a8a;
+  color: var(--dim);
   list-style: none;
   counter-reset: step;
 }
@@ -134,7 +808,7 @@ body,
 
 .hint {
   font-size: 13px;
-  color: #8a8a8a;
+  color: var(--dim);
 }
 
 pre,
@@ -148,113 +822,13 @@ pre {
   border-radius: 4px;
 }
 
-.account-picker {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: center;
-}
-
-.launcher .account-picker button.link {
-  min-width: 0;
-  margin-left: auto;
-}
-
-.tab-account {
-  color: #8a8a8a;
-}
-
-.launcher ul {
-  display: grid;
-  gap: 8px;
-  padding: 0;
-  list-style: none;
-}
-
-.launcher li {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-}
-
-.launcher button {
-  min-width: 140px;
-  padding: 8px 12px;
-  font: inherit;
-  color: inherit;
-  cursor: pointer;
-  background: #2a2a2a;
-  border: 1px solid #3a3a3a;
-  border-radius: 4px;
-}
-
-.launcher button:hover:not(:disabled),
-.launcher button:focus-visible {
-  background: #333;
-  border-color: #5a8dee;
-}
-
-.launcher button:disabled {
-  cursor: default;
-  opacity: 0.5;
-}
-
 .program {
   min-width: 0;
   font-size: 12px;
-  color: #8a8a8a;
+  color: var(--dim);
   overflow-wrap: anywhere;
 }
 
 .error {
   color: #f07070;
-}
-
-.tab {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-}
-
-.tab-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 4px 8px;
-  font-size: 13px;
-  background: #222;
-  border-bottom: 1px solid #333;
-}
-
-.sign-in-bar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: center;
-  justify-content: space-between;
-  padding: 4px 8px;
-  font-size: 13px;
-  background: #2b2720;
-  border-bottom: 1px solid #333;
-}
-
-.tab-bar button {
-  padding: 0 6px;
-  font-size: 16px;
-  color: inherit;
-  cursor: pointer;
-  background: none;
-  border: none;
-}
-
-.terminal {
-  flex: 1;
-  min-height: 0;
-  padding: 4px 0 0 8px;
-}
-
-/* xterm.css paints the viewport black whatever the theme says, and xterm draws its own scrollbar. */
-.terminal .xterm-viewport {
-  background-color: #1a1a1a;
-  scrollbar-width: none;
 }

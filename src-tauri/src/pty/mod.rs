@@ -233,6 +233,7 @@ fn command_for(request: &SpawnRequest) -> Result<CommandBuilder, PtyError> {
         }
         command.cwd(cwd);
     }
+    strip_inherited_session_vars(&mut command);
     command.env("TERM", "xterm-256color");
     command.env("COLORTERM", "truecolor");
     match &request.claude_config_dir {
@@ -241,6 +242,39 @@ fn command_for(request: &SpawnRequest) -> Result<CommandBuilder, PtyError> {
         None => command.env_remove("CLAUDE_CONFIG_DIR"),
     }
     Ok(command)
+}
+
+// Set by a Claude Code session for its own shells; settings such as `CLAUDE_CODE_USE_BEDROCK` are not here.
+const SESSION_VARS: [&str; 11] = [
+    "CLAUDECODE",
+    "CLAUDE_CODE_CHILD_SESSION",
+    "CLAUDE_CODE_ENTRYPOINT",
+    "CLAUDE_CODE_EXECPATH",
+    "CLAUDE_CODE_MESSAGING_SOCKET",
+    "CLAUDE_CODE_MESSAGING_TOKEN",
+    "CLAUDE_CODE_SESSION_ATTENDED",
+    "CLAUDE_CODE_SESSION_ID",
+    "CLAUDE_EFFORT",
+    "CLAUDE_PID",
+    "AI_AGENT",
+];
+
+// Inherited when Cerberus runs from a Claude Code shell; `claude` in a tab would then draw no colour and save no transcript.
+fn strip_inherited_session_vars(command: &mut CommandBuilder) {
+    let names: Vec<String> = command
+        .iter_full_env_as_str()
+        .map(|(name, _)| name.to_ascii_uppercase())
+        .collect();
+    let is_session = |name: &String| SESSION_VARS.contains(&name.as_str());
+    // A NO_COLOR next to a session's variables came from Claude Code, not from the user.
+    let from_claude = names.iter().any(is_session);
+    let removed: Vec<String> = names
+        .into_iter()
+        .filter(|name| is_session(name) || (from_claude && name == "NO_COLOR"))
+        .collect();
+    for name in removed {
+        command.env_remove(name);
+    }
 }
 
 fn pty_failed(error: impl Display) -> PtyError {
@@ -425,6 +459,24 @@ mod tests {
     }
 
     #[test]
+    fn killing_one_session_leaves_the_others_running() {
+        let manager = PtyManager::default();
+        let (closed_id, closed) = start(&manager, "cmd", &["/q", "/k"]);
+        let (open_id, open) = start(&manager, "cmd", &["/q", "/k"]);
+
+        manager.kill(closed_id);
+        let (_, exit) = collect(&manager, closed_id, &closed, |_| false);
+        manager.write(open_id, b"echo still-%OS%\r").unwrap();
+        let (text, open_exit) =
+            collect(&manager, open_id, &open, |t| t.contains("still-Windows_NT"));
+
+        assert!(exit.is_some(), "no exit after kill");
+        assert_eq!(open_exit, None, "the other session ended");
+        assert!(text.contains("still-Windows_NT"), "output was {text:?}");
+        manager.kill(open_id);
+    }
+
+    #[test]
     fn kill_all_ends_every_session() {
         let manager = PtyManager::default();
         let (first_id, first) = start(&manager, "cmd", &["/q", "/k"]);
@@ -495,5 +547,50 @@ mod tests {
     #[test]
     fn a_tab_under_the_default_account_has_no_config_dir() {
         assert_eq!(shell_under(None).get_env("CLAUDE_CONFIG_DIR"), None);
+    }
+
+    #[test]
+    fn variables_from_a_parent_claude_session_are_removed() {
+        let mut command = CommandBuilder::new("cmd");
+        command.env_clear();
+        for name in [
+            "NO_COLOR",
+            "CLAUDECODE",
+            "CLAUDE_CODE_CHILD_SESSION",
+            "claude_code_messaging_socket",
+            "CLAUDE_PID",
+            "AI_AGENT",
+        ] {
+            command.env(name, "1");
+        }
+        command.env("CLAUDE_CONFIG_DIR", r"C:\Users\u\.claude-acc2");
+        command.env("CLAUDE_CODE_USE_BEDROCK", "1");
+
+        strip_inherited_session_vars(&mut command);
+
+        assert_eq!(
+            env_names(&command),
+            ["CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CONFIG_DIR"]
+        );
+    }
+
+    #[test]
+    fn no_color_stays_when_no_claude_session_set_it() {
+        let mut command = CommandBuilder::new("cmd");
+        command.env_clear();
+        command.env("NO_COLOR", "1");
+
+        strip_inherited_session_vars(&mut command);
+
+        assert_eq!(env_names(&command), ["NO_COLOR"]);
+    }
+
+    fn env_names(command: &CommandBuilder) -> Vec<String> {
+        let mut names: Vec<_> = command
+            .iter_full_env_as_str()
+            .map(|(name, _)| name.to_ascii_uppercase())
+            .collect();
+        names.sort();
+        names
     }
 }

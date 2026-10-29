@@ -4,6 +4,7 @@ import {
   type KeyChord,
   type PastedData,
   pasteInput,
+  shortcutFor,
   terminalHandlesKey,
 } from "./keys";
 
@@ -65,5 +66,31 @@ describe("pasteInput", () => {
     ["an empty clipboard", pasted("", []), true],
   ])("leaves %s to xterm", (_name, data, pastesImages) => {
     expect(pasteInput(data, pastesImages)).toBeUndefined();
+  });
+});
+
+describe("shortcutFor", () => {
+  test.each([
+    ["Ctrl+Tab", chord("Tab", { ctrlKey: true }), "nextTab"],
+    [
+      "Ctrl+Shift+Tab",
+      chord("Tab", { ctrlKey: true, shiftKey: true }),
+      "previousTab",
+    ],
+    ["Ctrl+Shift+T", chord("T", { ctrlKey: true, shiftKey: true }), "newTab"],
+    ["Ctrl+Shift+W", chord("W", { ctrlKey: true, shiftKey: true }), "closeTab"],
+  ])("maps %s", (_name, key, shortcut) => {
+    expect(shortcutFor(key)).toBe(shortcut);
+  });
+
+  test.each([
+    ["Ctrl+T, Claude Code's task list", chord("t", { ctrlKey: true })],
+    ["Ctrl+W, delete a word", chord("w", { ctrlKey: true })],
+    ["Shift+Tab, Claude Code's mode switch", chord("Tab", { shiftKey: true })],
+    ["Ctrl+C", chord("c", { ctrlKey: true })],
+    ["Alt+V", chord("v", { altKey: true })],
+    ["Ctrl+Alt+Tab", chord("Tab", { ctrlKey: true, altKey: true })],
+  ])("leaves %s to the terminal", (_name, key) => {
+    expect(shortcutFor(key)).toBeUndefined();
   });
 });

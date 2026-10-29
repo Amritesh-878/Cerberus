@@ -11,7 +11,7 @@ import type { Tab } from "./tab";
 const EMPTY: Profiles = {
   accounts: [],
   defaultAccount: null,
-  lastProgram: null,
+  shell: null,
   startFolder: null,
   revision: 0,
 };
@@ -22,6 +22,7 @@ const CLAUDE: ProgramChoice = {
   program: String.raw`C:\bin\claude.exe`,
   args: [],
   pastesImages: true,
+  isShell: false,
 };
 
 let dispose: (() => void) | undefined;

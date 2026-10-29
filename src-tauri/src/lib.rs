@@ -41,7 +41,7 @@ pub fn run() {
             commands::remove_account,
             commands::set_default_account,
             commands::set_start_folder,
-            commands::remember_program,
+            commands::set_shell,
             commands::account_status,
         ])
         .build(tauri::generate_context!())

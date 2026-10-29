@@ -9,8 +9,7 @@ run side by side and a chat can continue on another account. Claude Code is the 
 
 Built with Claude Code.
 
-**Status:** early. The app runs one terminal tab at a time under a chosen account; the project
-tree comes next.
+**Status:** early. Projects and tabs run side by side; saving them across restarts comes next.
 
 ## Using it
 
@@ -29,22 +28,56 @@ The first launch opens a short walkthrough:
    `claude auth status`.
 3. **New tabs.** Which account new tabs use.
 
-**Accounts…** on the launcher adds, renames or removes accounts, picks the account new tabs use,
-and sets the start folder (your home folder unless you pick one). Removing an account only
-forgets it; its folder stays on disk. The launcher remembers the last program you opened.
+**Accounts** (the person button at the bottom of the sidebar) adds, renames or removes accounts,
+and picks the account new tabs use, the shell the **Shell** button opens, and the folder where
+**New project** opens its folder picker. Removing an account only forgets it; its folder stays
+on disk.
 Accounts and settings live in `profiles.json` in the app's config folder
 (`%APPDATA%\com.cerberus.terminal`). If that file cannot be read, the app offers to start fresh
 and keeps the old file as `profiles.json.bad` (`.bad2`, `.bad3` and so on when that name is
 taken).
 
-### Tabs
+### Projects and tabs
+
+The sidebar lists projects, each a folder. **New project** opens the Windows folder picker, and
+the folder's name becomes the project's name. Under each project sit its tabs:
+
+- A **planner** is a Claude Code tab at the top of a project.
+- A **sub-tab** sits under a planner, one level down: a Claude Code coder or a shell.
+- A shell tab opened on its own sits at the top of the project, beside the planners.
+
+The **+** beside a project opens the new tab box: pick the account, pick whether the tab goes on
+its own or under a planner, then **Claude Code** or **Shell**. The tab starts in the project's
+folder. Its title is the program and the account until you rename it (double-click it or press
+F2). Closing a planner leaves its sub-tabs open, moved up to the top of the project. Search
+filters tabs by title or account.
+
+A project is renamed the same way, from its row. The **×** beside it removes it from the
+sidebar: when it has tabs open, Cerberus asks first, then closes them. The folder is never
+touched.
+
+Every tab keeps running while another shows, with its scrollback. Closing a tab (its ×, or
+Ctrl+Shift+W) ends that tab's program and anything it started, and no other tab's. Closing the
+window ends every program the app started.
+
+| Keys | Does |
+|---|---|
+| Ctrl+Tab, Ctrl+Shift+Tab | Next or previous tab, in sidebar order |
+| Ctrl+Shift+T | New tab in the current project |
+| Ctrl+Shift+W | Close the current tab |
+
+These miss Claude Code's own keys (Ctrl+T, Ctrl+C, Ctrl+V, Alt+V, Shift+Tab).
 
 A tab under an account other than the default gets `CLAUDE_CONFIG_DIR` set to its folder, so
 `claude` there, or typed in a shell tab, runs on that account. The default account leaves the
-variable unset, as Claude Code expects. The tab header shows the account; hover it for the email
-and plan.
+variable unset, as Claude Code expects. The variables a Claude Code session sets for its own
+shells (`CLAUDECODE`, `CLAUDE_CODE_SESSION_ID` and the like, and the `NO_COLOR` that comes with
+them) are removed, so a tab runs the same whether Cerberus started from the Start menu or from
+a Claude Code chat. Settings such as `CLAUDE_CODE_USE_BEDROCK`, and a `NO_COLOR` of your own,
+stay. The bar above the
+terminal shows the account; hover it for the email and plan.
 
-The launcher lists the programs it found:
+The programs a tab can run:
 
 | Program | What runs |
 |---|---|
@@ -52,12 +85,10 @@ The launcher lists the programs it found:
 | PowerShell | `pwsh` from `PATH`, else Windows PowerShell (`powershell.exe`) |
 | Git Bash | `bin\bash.exe` under Git's install folder, found from `git` on `PATH` |
 
-Pick one to open it in a tab under the chosen account, starting in the start folder (your
-home folder unless set). A program that is not installed is
-greyed out. Selecting text copies it; Ctrl+V pastes text. In Claude Code, Alt+V or Ctrl+V pastes
-an image from the clipboard. When the program exits the tab stays open with its exit code; the ×
-closes the tab, ends the program and anything it started, and returns to the launcher. Closing the
-window ends every program the app started.
+Selecting text copies it; Ctrl+V pastes text. In Claude Code, Alt+V or Ctrl+V pastes an image
+from the clipboard. When the program exits the tab stays open with its exit code.
+
+The panel button at the top right opens an empty side panel, kept for later.
 
 ## Stack
 

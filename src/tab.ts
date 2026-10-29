@@ -7,6 +7,8 @@ export interface TabAccount {
 }
 
 export interface Tab {
+  /** The program id from `listPrograms`. */
+  program: string;
   label: string;
   spec: SpawnSpec;
   pastesImages: boolean;
@@ -31,6 +33,7 @@ export function tabFor(
   if (choice.program === null) return undefined;
   const account = options.account;
   return {
+    program: choice.id,
     label: choice.label,
     spec: {
       program: choice.program,
@@ -52,14 +55,11 @@ export function installed(
   return programs.find((p) => p.id === id && p.program !== null);
 }
 
-export function preselectedProgram(
+export function shellChoice(
   profiles: Profiles,
   programs: readonly ProgramChoice[],
-): string | null {
-  const last = profiles.lastProgram;
-  const pick =
-    (last === null ? undefined : installed(programs, last)) ??
-    installed(programs, "claude") ??
-    programs.find((p) => p.program !== null);
-  return pick?.id ?? null;
+): ProgramChoice | undefined {
+  const saved =
+    profiles.shell === null ? undefined : installed(programs, profiles.shell);
+  return saved ?? programs.find((p) => p.isShell && p.program !== null);
 }

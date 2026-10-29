@@ -13,6 +13,8 @@ pub struct ProgramChoice {
     pub args: Vec<String>,
     /// Whether Ctrl+V with only an image on the clipboard should send the program's image-paste key.
     pub pastes_images: bool,
+    /// Whether the Shell button can open it.
+    pub is_shell: bool,
 }
 
 pub struct Finder {
@@ -83,6 +85,7 @@ impl Finder {
                 program: shown(self.find("claude")),
                 args: Vec::new(),
                 pastes_images: true,
+                is_shell: false,
             },
             ProgramChoice {
                 id: "powershell",
@@ -90,6 +93,7 @@ impl Finder {
                 program: shown(self.find("pwsh").or_else(|| self.find("powershell"))),
                 args: vec!["-NoLogo".to_owned()],
                 pastes_images: false,
+                is_shell: true,
             },
             ProgramChoice {
                 id: "git-bash",
@@ -97,6 +101,7 @@ impl Finder {
                 program: shown(self.git_bash()),
                 args: vec!["--login".to_owned(), "-i".to_owned()],
                 pastes_images: false,
+                is_shell: true,
             },
         ]
     }
@@ -200,5 +205,7 @@ mod tests {
         assert_eq!(choices[2].program, None);
         let pastes_images: Vec<_> = choices.iter().map(|c| c.pastes_images).collect();
         assert_eq!(pastes_images, [true, false, false]);
+        let shells: Vec<_> = choices.iter().map(|c| c.is_shell).collect();
+        assert_eq!(shells, [false, true, true]);
     }
 }

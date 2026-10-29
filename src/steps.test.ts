@@ -6,7 +6,7 @@ import { finishBlocker, nextStep, previousStep } from "./steps";
 const PROFILES: Profiles = {
   accounts: [{ id: 0, name: "personal", configDir: String.raw`C:\h\.claude` }],
   defaultAccount: 0,
-  lastProgram: null,
+  shell: null,
   startFolder: null,
   revision: 0,
 };

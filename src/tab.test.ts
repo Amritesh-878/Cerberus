@@ -2,7 +2,7 @@ import { expect, test } from "vitest";
 
 import type { Profiles } from "./accounts";
 import type { ProgramChoice } from "./pty";
-import { preselectedProgram, tabFor } from "./tab";
+import { shellChoice, tabFor } from "./tab";
 
 const GIT_BASH = {
   id: "git-bash",
@@ -10,6 +10,7 @@ const GIT_BASH = {
   program: String.raw`C:\Git\bin\bash.exe`,
   args: ["--login", "-i"],
   pastesImages: false,
+  isShell: true,
 };
 
 test("an installed program opens a tab under its account", () => {
@@ -23,6 +24,7 @@ test("an installed program opens a tab under its account", () => {
   });
 
   expect(tab).toEqual({
+    program: "git-bash",
     label: "Git Bash",
     spec: {
       program: String.raw`C:\Git\bin\bash.exe`,
@@ -54,6 +56,7 @@ test("a missing program opens no tab", () => {
         program: null,
         args: [],
         pastesImages: true,
+        isShell: false,
       },
       { account: null, cwd: null },
     ),
@@ -61,7 +64,14 @@ test("a missing program opens no tab", () => {
 });
 
 function program(id: string, path: string | null): ProgramChoice {
-  return { id, label: id, program: path, args: [], pastesImages: false };
+  return {
+    id,
+    label: id,
+    program: path,
+    args: [],
+    pastesImages: false,
+    isShell: id !== "claude",
+  };
 }
 
 const PROGRAMS = [
@@ -73,18 +83,25 @@ const PROGRAMS = [
 const PROFILES: Profiles = {
   accounts: [],
   defaultAccount: null,
-  lastProgram: null,
+  shell: null,
   startFolder: null,
   revision: 0,
 };
 
-test("the launcher focuses the last program, then Claude Code, then any installed one", () => {
-  const last = { ...PROFILES, lastProgram: "powershell" };
-  const lastButGone = { ...PROFILES, lastProgram: "git-bash" };
-  const noClaude = [program("claude", null), ...PROGRAMS.slice(1)];
+test("the Shell button opens the saved shell, else the first one installed", () => {
+  const bashInstalled = [
+    ...PROGRAMS.slice(0, 2),
+    program("git-bash", String.raw`C:\Git\bin\bash.exe`),
+  ];
+  const bash = { ...PROFILES, shell: "git-bash" };
 
-  expect(preselectedProgram(last, PROGRAMS)).toBe("powershell");
-  expect(preselectedProgram(lastButGone, PROGRAMS)).toBe("claude");
-  expect(preselectedProgram(PROFILES, noClaude)).toBe("powershell");
-  expect(preselectedProgram(PROFILES, [program("claude", null)])).toBeNull();
+  expect(shellChoice(bash, bashInstalled)?.id).toBe("git-bash");
+  expect(shellChoice(bash, PROGRAMS)?.id).toBe("powershell");
+  expect(shellChoice(PROFILES, PROGRAMS)?.id).toBe("powershell");
+  expect(
+    shellChoice(PROFILES, [
+      program("claude", "c"),
+      program("powershell", null),
+    ]),
+  ).toBeUndefined();
 });
