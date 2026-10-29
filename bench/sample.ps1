@@ -57,11 +57,14 @@ function Get-TreeRow {
         $queue.Enqueue(@($p, 'app'))
     }
 
+    # A same-named process under a differently named parent is both a root and a descendant; count it once.
+    $seen = @{}
     while ($queue.Count -gt 0) {
         $item = $queue.Dequeue()
         $p = $item[0]
         $group = $item[1]
-        if ($Skip -contains [int]$p.ProcessId) { continue }
+        if ($Skip -contains [int]$p.ProcessId -or $seen.ContainsKey([int]$p.ProcessId)) { continue }
+        $seen[[int]$p.ProcessId] = $true
         [void]$rows.Add([pscustomobject]@{ Process = $p; Group = $group })
         if (-not $byParent.ContainsKey([int]$p.ProcessId)) { continue }
         foreach ($c in $byParent[[int]$p.ProcessId]) {
@@ -82,16 +85,19 @@ function Get-Percentile {
 }
 
 function Write-Summary {
-    param([object[]]$Rows)
+    param([object[]]$Rows, [string]$Basis)
 
-    $times = @($Rows | Select-Object -ExpandProperty Time -Unique)
+    $byTime = [ordered]@{}
+    foreach ($r in $Rows) {
+        if (-not $byTime.Contains($r.Time)) { $byTime[$r.Time] = New-Object System.Collections.ArrayList }
+        [void]$byTime[$r.Time].Add($r)
+    }
     $groups = @('app', 'child', 'total')
     $metrics = @('Cpu', 'WsMb', 'PrivMb')
     $perSample = @{}
     foreach ($g in $groups) { foreach ($m in $metrics) { $perSample["$g.$m"] = New-Object System.Collections.ArrayList } }
 
-    foreach ($t in $times) {
-        $at = @($Rows | Where-Object { $_.Time -eq $t })
+    foreach ($at in $byTime.Values) {
         foreach ($g in $groups) {
             $inGroup = $at
             if ($g -ne 'total') { $inGroup = @($at | Where-Object { $_.Group -eq $g }) }
@@ -104,7 +110,7 @@ function Write-Summary {
     }
 
     ''
-    'Summary over {0} samples ({1} logical cores; CPU % of the whole machine)' -f $times.Count, $Cores
+    'Summary over {0} samples (CPU % of {1})' -f $byTime.Count, $Basis
     '{0,-6} {1,-7} {2,9} {3,9} {4,9} {5,9}' -f 'group', 'metric', 'min', 'median', 'p95', 'max'
     foreach ($g in $groups) {
         foreach ($m in $metrics) {
@@ -124,7 +130,7 @@ function Write-Summary {
             # Samples where the name is absent count as zero, so medians stay comparable across names.
             $list = New-Object System.Collections.ArrayList
             foreach ($r in $n.Group) { [void]$list.Add([double]$r.$m) }
-            for ($i = $list.Count; $i -lt $times.Count; $i++) { [void]$list.Add(0.0) }
+            for ($i = $list.Count; $i -lt $byTime.Count; $i++) { [void]$list.Add(0.0) }
             $vals[$m] = Get-Percentile ([double[]]@($list | Sort-Object)) 50
         }
         '{0,-6} {1,-24} {2,5:N0} {3,7:N1} {4,9:N1} {5,9:N1}' -f $first.Group, $first.Name, $vals['Count'], $vals['Cpu'], $vals['WsMb'], $vals['PrivMb']
@@ -134,15 +140,18 @@ function Write-Summary {
 if ($PSCmdlet.ParameterSetName -eq 'Summary') {
     $rows = @(Import-Csv $FromCsv)
     if ($rows.Count -eq 0) { throw "No rows in $FromCsv" }
-    Write-Summary $rows
+    # The file does not store the recording machine's core count, so name the basis without guessing it.
+    Write-Summary $rows "the recording machine's logical cores"
     return
 }
 
+if ($Seconds -lt $Interval) { throw "-Seconds ($Seconds) must be at least -Interval ($Interval)" }
 $skip = @($Exclude) + @($PID)
 if ($Csv) {
+    if (Test-Path $Csv) { throw "$Csv exists; record each run to a new file so runs are never mixed" }
     $dir = Split-Path -Parent $Csv
     if ($dir -and -not (Test-Path $dir)) { [void](New-Item -ItemType Directory -Path $dir) }
-    if (-not (Test-Path $Csv)) { Set-Content -Path $Csv -Value 'Time,Group,Name,Count,Cpu,WsMb,PrivMb' -Encoding Ascii }
+    Set-Content -Path $Csv -Value 'Time,Group,Name,Count,Cpu,WsMb,PrivMb' -Encoding Ascii
 }
 
 $all = New-Object System.Collections.ArrayList
@@ -162,7 +171,7 @@ for ($i = 0; $i -le $samples; $i++) {
     $snapshot = @(Get-CimInstance Win32_Process -Property ProcessId, ParentProcessId, Name, CreationDate, WorkingSetSize, PrivatePageCount, KernelModeTime, UserModeTime)
     $tick = $clock.Elapsed.Ticks
     $wall = Get-Date
-    $tree = Get-TreeRow -Snapshot $snapshot -RootName $Name -Skip $skip
+    $tree = @(Get-TreeRow -Snapshot $snapshot -RootName $Name -Skip $skip)
     if ($tree.Count -eq 0) { throw "No process named $Name is running" }
 
     $cpuNow = @{}
@@ -173,6 +182,7 @@ for ($i = 0; $i -le $samples; $i++) {
         $cpu = [double]$p.KernelModeTime + [double]$p.UserModeTime
         $cpuNow[$key] = $cpu
         $delta = 0.0
+        # Win32_Process cannot report a process after it exits, so CPU it used since the last snapshot is lost.
         if ($lastCpu.ContainsKey($key)) { $delta = $cpu - $lastCpu[$key] }
         elseif ($null -ne $lastWall -and $p.CreationDate -gt $lastWall) { $delta = $cpu }
 
@@ -204,12 +214,11 @@ for ($i = 0; $i -le $samples; $i++) {
 
         if (-not $Quiet) {
             $s = @{}
-            foreach ($g in @('app', 'child')) {
-                $in = @($sampleRows | Where-Object { $_.Group -eq $g })
-                $s["$g.cpu"] = ($in | Measure-Object Cpu -Sum).Sum
-                $s["$g.ws"] = ($in | Measure-Object WsMb -Sum).Sum
-                $s["$g.priv"] = ($in | Measure-Object PrivMb -Sum).Sum
-                foreach ($k in @("$g.cpu", "$g.ws", "$g.priv")) { if ($null -eq $s[$k]) { $s[$k] = 0.0 } }
+            foreach ($k in @('app.cpu', 'app.ws', 'app.priv', 'child.cpu', 'child.ws', 'child.priv')) { $s[$k] = 0.0 }
+            foreach ($r in $sampleRows) {
+                $s["$($r.Group).cpu"] += $r.Cpu
+                $s["$($r.Group).ws"] += $r.WsMb
+                $s["$($r.Group).priv"] += $r.PrivMb
             }
             '{0,-8} {1,4} | {2,6:N1} {3,8:N0} {4,8:N0} | {5,6:N1} {6,8:N0} {7,8:N0} | {8,6:N1} {9,8:N0} {10,8:N0}' -f $stamp, $tree.Count,
                 $s['app.cpu'], $s['app.ws'], $s['app.priv'], $s['child.cpu'], $s['child.ws'], $s['child.priv'],
@@ -221,9 +230,10 @@ for ($i = 0; $i -le $samples; $i++) {
     $lastTick = $tick
     $lastWall = $wall
     if ($i -lt $samples) {
-        $wait = $Interval * 1000 - ($clock.Elapsed.Ticks - $tick) / 10000
+        # Sleep to a fixed schedule so query time does not stretch the run.
+        $wait = ($i + 1) * $Interval * 1000 - $clock.Elapsed.TotalMilliseconds
         if ($wait -gt 0) { Start-Sleep -Milliseconds ([int]$wait) }
     }
 }
 
-if (-not $Quiet) { Write-Summary $all.ToArray() }
+if (-not $Quiet) { Write-Summary $all.ToArray() ('{0} logical cores' -f $Cores) }
