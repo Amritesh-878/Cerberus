@@ -2,9 +2,29 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::time::Duration;
 
-use rusqlite::{Connection, ErrorCode, OptionalExtension, params};
+use rusqlite::{Connection, ErrorCode, OpenFlags, OptionalExtension, params};
 
 use crate::saved::{SavedProject, SavedTab, SavedTree, Snapshot, TabId, TreeError};
+
+/// SQLite reads `%`, `?` and `#` in a URI path as syntax, so they are escaped.
+fn unlocked_uri(path: &Path) -> String {
+    let text = path.to_string_lossy().replace('\\', "/");
+    let mut uri = String::from(if text.starts_with('/') {
+        "file://"
+    } else {
+        "file:///"
+    });
+    for c in text.chars() {
+        match c {
+            '%' => uri.push_str("%25"),
+            '?' => uri.push_str("%3f"),
+            '#' => uri.push_str("%23"),
+            c => uri.push(c),
+        }
+    }
+    uri.push_str("?immutable=1");
+    uri
+}
 
 // Forward only: a merged step is never edited, and each one runs once, in order.
 const MIGRATIONS: [&str; 1] = ["
@@ -52,6 +72,23 @@ impl Db {
         let mut db = Self(connection);
         db.migrate()?;
         Ok(db)
+    }
+
+    /// Reads past the running app's exclusive lock: `immutable` takes no lock and ignores the journal.
+    pub fn read_unlocked(path: &Path) -> Result<SavedTree, TreeError> {
+        if !path.exists() {
+            return Ok(SavedTree::default());
+        }
+        let connection = Connection::open_with_flags(
+            unlocked_uri(path),
+            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_URI,
+        )?;
+        let version: i64 = connection.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+        match usize::try_from(version) {
+            Ok(0) => Ok(SavedTree::default()),
+            Ok(done) if done == MIGRATIONS.len() => Ok(Self(connection).load()?.tree),
+            _ => Err(TreeError::UnknownVersion(version)),
+        }
     }
 
     #[cfg(test)]
@@ -233,6 +270,38 @@ mod tests {
         let reopened = Db::open(&path).unwrap();
 
         assert_eq!(reopened.load().unwrap(), snapshot);
+    }
+
+    #[test]
+    fn the_tree_reads_while_the_app_holds_the_file() {
+        let dir = TestDir::new();
+        let folder = dir.path().join("odd 100% #1");
+        let path = folder.join("tree.db");
+        let mut held = Db::open(&path).unwrap();
+        held.write(&Snapshot {
+            tree: two_projects(),
+            sessions: HashMap::new(),
+        })
+        .unwrap();
+
+        assert!(matches!(Db::open(&path), Err(TreeError::InUse)));
+        assert_eq!(Db::read_unlocked(&path).unwrap(), two_projects());
+    }
+
+    #[test]
+    fn a_missing_or_unmigrated_file_reads_as_empty() {
+        let dir = TestDir::new();
+        let path = dir.path().join("tree.db");
+
+        assert_eq!(Db::read_unlocked(&path).unwrap(), SavedTree::default());
+        let other = Connection::open(&path).unwrap();
+        other.execute_batch("CREATE TABLE unrelated (x);").unwrap();
+        assert_eq!(Db::read_unlocked(&path).unwrap(), SavedTree::default());
+        other.pragma_update(None, "user_version", 99).unwrap();
+        assert!(matches!(
+            Db::read_unlocked(&path),
+            Err(TreeError::UnknownVersion(99))
+        ));
     }
 
     #[test]

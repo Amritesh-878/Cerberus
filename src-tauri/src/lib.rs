@@ -1,6 +1,7 @@
 mod accounts;
 mod commands;
 mod job;
+mod open;
 mod programs;
 mod pty;
 mod saved;
@@ -13,16 +14,22 @@ use crate::accounts::Accounts;
 use crate::pty::PtyManager;
 use crate::saved::Saved;
 
+pub use crate::open::console;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let context = tauri::generate_context!();
+    let command = open::from_command_line(&context.config().identifier);
     // Joined before anything starts, so the webview and every tab are in the job too.
     if let Err(e) = job::end_children_with_app() {
         eprintln!("tab programs may outlive a crash: {e}");
     }
     let app = tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(open::on_second_launch))
         .plugin(tauri_plugin_dialog::init())
         .manage(PtyManager::default())
-        .setup(|app| {
+        .manage(open::Pending::default())
+        .setup(move |app| {
             let paths = app.path();
             let config_dir = paths.app_config_dir()?;
             app.manage(Accounts::new(&config_dir, paths.home_dir()?));
@@ -31,7 +38,11 @@ pub fn run() {
                 // Fails only once the window is gone, and then nobody is left to show it.
                 let _ = handle.emit("tree-save", failure);
             };
-            app.manage(Saved::open(&config_dir.join("tree.db"), report));
+            app.manage(Saved::open(&config_dir.join(saved::FILE_NAME), report));
+            if let open::Command::Open(spec) = &command {
+                open::request(app.handle(), spec);
+            }
+            open::listen(app.handle());
             Ok(())
         })
         // A reload drops the page that owned every session, so nothing could close them later.
@@ -60,8 +71,9 @@ pub fn run() {
             commands::account_status,
             commands::tree_load,
             commands::tree_save,
+            open::launch::open_take,
         ])
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("error while building tauri application");
 
     app.run(|handle, event| {

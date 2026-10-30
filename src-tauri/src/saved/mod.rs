@@ -19,6 +19,8 @@ use crate::sessions::is_session_id;
 pub type TabId = u32;
 pub type ProjectId = u32;
 
+pub const FILE_NAME: &str = "tree.db";
+
 // Saves wait for a quiet moment, but never longer than the cap, so a burst of changes is one write.
 const QUIET: Duration = Duration::from_millis(300);
 const MOST_DELAY: Duration = Duration::from_secs(2);
@@ -293,6 +295,21 @@ impl Drop for Live {
         ));
         if let Some(thread) = lock(&self.thread).take() {
             let _ = thread.join();
+        }
+    }
+}
+
+/// The tree as last written, read without waiting for a running app's lock.
+pub fn read_unlocked(path: &Path) -> Result<SavedTree, TreeError> {
+    let mut tries = 3;
+    loop {
+        match Db::read_unlocked(path) {
+            // A read can land mid-write, since it takes no lock, so a failure is tried again.
+            Err(TreeError::Db(_) | TreeError::Invalid(_)) if tries > 1 => {
+                tries -= 1;
+                thread::sleep(Duration::from_millis(50));
+            }
+            other => return other,
         }
     }
 }

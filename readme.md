@@ -87,10 +87,40 @@ from Claude Code's `sessions` file for the tab's process, and follows it to the 
 deleted starts a new chat and says so. Shell tabs start fresh in their folder. Setup tabs, such
 as signing an account in, are not saved.
 
-If a save fails, the bar shows "Tabs not saved" and Cerberus retries every two seconds. Only one
-Cerberus at a time saves tabs: a second copy opened alongside runs with saving off and says so.
+If a save fails, the bar shows "Tabs not saved" and Cerberus retries every two seconds. Starting
+Cerberus again brings the open window forward instead of opening a second one. Should a second
+copy start anyway, only the first saves tabs: the second runs with saving off and says so.
 A `tree.db` that cannot be read is renamed to `tree.db.bad` (or `.bad2` and so on), and Cerberus
 starts with no saved tabs and says where the old file went.
+
+### Opening a tab from the command line
+
+```powershell
+cerberus open alpha/planner   # project alpha, tab planner
+cerberus open alpha           # project alpha: the tab last shown there since Cerberus started, else its first
+```
+
+This starts Cerberus if it is not running, or brings the open window forward, and shows that
+tab; a saved Claude Code tab resumes its chat as usual. The project matches by name, then the
+same name in any case, then its folder's name; the tab matches by title the same way. Words
+after `open` are joined, so `cerberus open my app/planner` needs no quotes. A running Cerberus
+answers from its open window, so a tab made a moment ago is found; otherwise the saved file is read.
+
+When nothing matches, Cerberus prints the close names and exits with 1. A name that matches
+two projects or tabs lists them and exits with 1 too; rename one to tell them apart. Bad usage
+exits with 2. Only project names, folders and tab titles are printed, never chat content.
+
+`cerberus open` runs a small console command, not the app itself: the app is a windowed program,
+so a shell would not wait for it or see what it prints. With no Cerberus running, the command
+starts the app on the tab and exits with 0. Run with no arguments, it starts the app or brings it
+forward.
+
+- **Installed:** the installer puts the console command beside the app as `cerberus-cli.exe`, in
+  `%LOCALAPPDATA%\Cerberus`. The installer does not add that folder to `PATH` yet, so run it by
+  its path: `& "$env:LOCALAPPDATA\Cerberus\cerberus-cli.exe" open alpha/planner`.
+- **Dev build:** `cargo build` in `src-tauri` makes `target\debug\cerberus-cli.exe` beside
+  `cerberus.exe`; run it by its path, for example
+  `src-tauri\target\debug\cerberus-cli.exe open alpha/planner`.
 
 ### The session board
 

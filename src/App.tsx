@@ -34,6 +34,7 @@ import {
 import { CloseIcon, MenuIcon, PanelIcon } from "./icons";
 import { shortcutFor } from "./keys";
 import { type Launch, NewTab } from "./NewTab";
+import { followOpenRequests } from "./open";
 import { listPrograms } from "./pty";
 import { fromSaved, loadTree, onWriteStatus, saveTree, toSaved } from "./saved";
 import { AccountDot, Sidebar } from "./Sidebar";
@@ -278,6 +279,8 @@ export function App() {
       },
     );
   };
+
+  followOpenRequests({ tree, shown, restored, select, newTabIn });
 
   onMount(() => {
     // Capture phase, so a shortcut never reaches the terminal as input.
