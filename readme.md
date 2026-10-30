@@ -87,10 +87,32 @@ from Claude Code's `sessions` file for the tab's process, and follows it to the 
 deleted starts a new chat and says so. Shell tabs start fresh in their folder. Setup tabs, such
 as signing an account in, are not saved.
 
-If a save fails, the bar shows "Tabs not saved" and Cerberus retries every two seconds. Only one
-Cerberus at a time saves tabs: a second copy opened alongside runs with saving off and says so.
+If a save fails, the bar shows "Tabs not saved" and Cerberus retries every two seconds. Starting
+Cerberus again brings the open window forward instead of opening a second one. Should a second
+copy start anyway, only the first saves tabs: the second runs with saving off and says so.
 A `tree.db` that cannot be read is renamed to `tree.db.bad` (or `.bad2` and so on), and Cerberus
 starts with no saved tabs and says where the old file went.
+
+### Opening a tab from the command line
+
+```powershell
+cerberus open alpha/planner   # project alpha, tab planner
+cerberus open alpha           # project alpha, at the tab you last had open there
+```
+
+This starts Cerberus if it is not running, or brings the open window forward, and shows that
+tab; a saved Claude Code tab resumes its chat as usual. The project matches by name, then the
+same name in any case, then its folder's name; the tab matches by title the same way. Words
+after `open` are joined, so `cerberus open my app/planner` needs no quotes.
+
+When nothing matches, Cerberus prints the close names and exits with 1. A name that matches
+two projects or tabs lists them and exits with 1 too; rename one to tell them apart. Bad usage
+exits with 2. Only project names, folders and tab titles are printed, never chat content.
+
+The installer does not put `cerberus` on `PATH` yet; call it by its full path
+(`%LOCALAPPDATA%\Cerberus\cerberus.exe`). A release build is a windowed program, so a shell does
+not wait for it and its messages and exit code are lost; the debug build that `npm run tauri dev`
+makes (`src-tauri\target\debug\cerberus.exe`) is a console program and shows both.
 
 ### The session board
 
