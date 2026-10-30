@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.10.0.schema.json
+PackageIdentifier: Amritesh-878.Cerberus
+PackageVersion: <version>
+PackageLocale: en-US
+Publisher: Amritesh-878
+PublisherUrl: https://github.com/Amritesh-878
+PublisherSupportUrl: https://github.com/Amritesh-878/Cerberus/issues
+PackageName: Cerberus
+PackageUrl: https://github.com/Amritesh-878/Cerberus
+License: MIT
+LicenseUrl: https://github.com/Amritesh-878/Cerberus/blob/main/LICENSE
+ShortDescription: A fast Windows terminal built around Claude Code
+Description: |-
+  Cerberus holds every project as a tree: a planner tab per project with coder sub-tabs under it,
+  each tab tied to a folder, a Claude account and a saved session. Each tab runs the official
+  Claude Code CLI, which must be installed separately.
+Tags:
+  - claude
+  - claude-code
+  - terminal
+ReleaseNotesUrl: https://github.com/Amritesh-878/Cerberus/releases/tag/v<version>
+ManifestType: defaultLocale
+ManifestVersion: 1.10.0
