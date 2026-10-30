@@ -219,3 +219,28 @@ test("a limited tab offers the move on its row", async () => {
 
   expect(app.continued).toEqual([{ tab: 2, account: 0 }]);
 });
+
+test("while a move is under way the tab's menu offers nothing, so it moves once", async () => {
+  const app = core();
+  let finish: () => void = () => undefined;
+  const root = await renderApp(() => SAVED, {
+    ...app.core,
+    continue_on_account: (args: unknown) => {
+      app.continued.push(args);
+      return new Promise<void>((done) => (finish = done));
+    },
+  });
+
+  await openMenu(root, "Claude Code · work");
+  click(root.querySelector(".tab-menu") ?? root, "Continue on personal…");
+  await settle();
+  await openMenu(root, "Claude Code · work");
+  expect(menuItems(root)).toEqual(["Continue on personal… (off)"]);
+  click(root.querySelector(".tab-menu") ?? root, "Continue on personal…");
+  await settle();
+
+  expect(app.continued).toHaveLength(1);
+  finish();
+  await settle();
+  expect(app.pty.spawned.map((s) => field(s, "account"))).toEqual([0]);
+});
