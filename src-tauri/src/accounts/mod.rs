@@ -10,7 +10,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize, Serializer};
 
 pub use crate::accounts::detect::Candidate;
-pub use crate::accounts::status::AuthStatus;
+pub use crate::accounts::status::{AuthState, AuthStatus};
 use crate::accounts::store::Store;
 use crate::programs::Finder;
 
