@@ -1,15 +1,18 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Condvar, Mutex, MutexGuard, PoisonError};
-use std::time::Duration;
+use std::thread::{self, JoinHandle};
+use std::time::{Duration, Instant};
 
 use serde::{Serialize, Serializer};
 
 use crate::accounts::{AccountId, Accounts, AccountsError};
 use crate::saved::{Saved, TabId};
 use crate::sessions::carry::{CarryError, copy_chat};
+use crate::sessions::procs;
 
 // Long enough for a closed tab's `claude` to finish exiting, short enough to answer a click.
 const EXIT_WAIT: Duration = Duration::from_secs(5);
+const TREE_POLL: Duration = Duration::from_millis(100);
 
 #[derive(Debug, thiserror::Error)]
 pub enum ContinueError {
@@ -17,6 +20,8 @@ pub enum ContinueError {
     NoTab,
     #[error("this tab already runs on that account")]
     SameAccount,
+    #[error("this chat is already moving")]
+    Busy,
     #[error("the chat is still running; close it first")]
     Running,
     #[error("this tab has no saved chat yet")]
@@ -35,11 +40,35 @@ impl Serialize for ContinueError {
     }
 }
 
-/// Which tabs have a program running, so a chat is never copied while `claude` may still write to it.
 #[derive(Default)]
+struct TabProcs {
+    live: usize,
+    /// The tab's last program, kept after it exits so anything it left running can be waited for.
+    root: Option<u32>,
+    watchers: Vec<JoinHandle<()>>,
+}
+
+/// What Windows says about processes, as plain functions so tests can stand in for it.
+pub struct Probes {
+    pub below: fn(u32) -> Vec<u32>,
+    pub is_running: fn(u32) -> bool,
+}
+
+/// Each tab's programs and watchers, so a chat is never copied while anything may still write to it.
 pub struct RunningTabs {
-    count: Mutex<HashMap<TabId, usize>>,
+    tabs: Mutex<HashMap<TabId, TabProcs>>,
     changed: Condvar,
+    moving: Mutex<HashSet<TabId>>,
+    probes: Probes,
+}
+
+impl Default for RunningTabs {
+    fn default() -> Self {
+        Self::with(Probes {
+            below: procs::descendants,
+            is_running: procs::is_running,
+        })
+    }
 }
 
 // A panicked holder leaves the counts whole, so poisoning is not a reason to fail.
@@ -47,33 +76,89 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
+/// Holds a tab's place in the moving set until dropped, so a second move of it is refused.
+struct Moving<'a>(&'a RunningTabs, TabId);
+
+impl Drop for Moving<'_> {
+    fn drop(&mut self) {
+        lock(&self.0.moving).remove(&self.1);
+    }
+}
+
 impl RunningTabs {
+    fn with(probes: Probes) -> Self {
+        Self {
+            tabs: Mutex::default(),
+            changed: Condvar::new(),
+            moving: Mutex::default(),
+            probes,
+        }
+    }
+
     pub fn started(&self, tab: TabId) {
-        *lock(&self.count).entry(tab).or_default() += 1;
+        lock(&self.tabs).entry(tab).or_default().live += 1;
+    }
+
+    pub fn spawned(&self, tab: TabId, pid: u32) {
+        lock(&self.tabs).entry(tab).or_default().root = Some(pid);
+    }
+
+    pub fn watching(&self, tab: TabId, watcher: JoinHandle<()>) {
+        lock(&self.tabs)
+            .entry(tab)
+            .or_default()
+            .watchers
+            .push(watcher);
     }
 
     pub fn ended(&self, tab: TabId) {
-        let mut count = lock(&self.count);
-        if let Some(n) = count.get_mut(&tab) {
-            *n -= 1;
-            if *n == 0 {
-                count.remove(&tab);
-            }
+        if let Some(procs) = lock(&self.tabs).get_mut(&tab) {
+            procs.live = procs.live.saturating_sub(1);
         }
         self.changed.notify_all();
     }
 
-    fn wait_ended(&self, tab: TabId, wait: Duration) -> bool {
-        let count = lock(&self.count);
-        let (count, _) = self
+    fn begin_move(&self, tab: TabId) -> Option<Moving<'_>> {
+        let inserted = lock(&self.moving).insert(tab);
+        inserted.then(|| Moving(self, tab))
+    }
+
+    /// Waits for the tab's program, everything it started, and its watchers to end.
+    fn settle(&self, tab: TabId, wait: Duration) -> bool {
+        let deadline = Instant::now() + wait;
+        let tabs = lock(&self.tabs);
+        let (mut tabs, _) = self
             .changed
-            .wait_timeout_while(count, wait, |count| count.contains_key(&tab))
+            .wait_timeout_while(tabs, wait, |tabs| {
+                tabs.get(&tab).is_some_and(|p| p.live > 0)
+            })
             .unwrap_or_else(PoisonError::into_inner);
-        !count.contains_key(&tab)
+        let Some(procs) = tabs.remove(&tab) else {
+            return true;
+        };
+        drop(tabs);
+        if procs.live > 0 {
+            lock(&self.tabs).insert(tab, procs);
+            return false;
+        }
+        // A wrapper such as `claude.cmd` can exit while the `claude` it started is still writing.
+        if let Some(root) = procs.root {
+            while !(self.probes.below)(root).is_empty() {
+                if Instant::now() >= deadline {
+                    lock(&self.tabs).insert(tab, procs);
+                    return false;
+                }
+                thread::sleep(TREE_POLL);
+            }
+        }
+        // A watcher's last poll could still save a newer chat id; joining it first settles which chat moves.
+        for watcher in procs.watchers {
+            let _ = watcher.join();
+        }
+        true
     }
 }
 
-/// Copies the tab's chat to `account`; the webview then moves the tab there, which resumes it.
 pub fn continue_chat(
     saved: &Saved,
     accounts: &Accounts,
@@ -94,13 +179,14 @@ fn continue_within(
     account: AccountId,
     wait: Duration,
 ) -> Result<(), ContinueError> {
+    let _moving = running.begin_move(tab).ok_or(ContinueError::Busy)?;
     let saved_tab = saved.tab(tab).ok_or(ContinueError::NoTab)?;
     let from = accounts.claude_home(saved_tab.account)?;
     let to = accounts.claude_home(Some(account))?;
     if saved_tab.account == Some(account) || from == to {
         return Err(ContinueError::SameAccount);
     }
-    if !running.wait_ended(tab, wait) {
+    if !running.settle(tab, wait) {
         return Err(ContinueError::Running);
     }
     let id = saved.session_of(tab).ok_or(ContinueError::NoChat)?;
@@ -111,7 +197,7 @@ fn continue_within(
     let cwd = saved_tab
         .cwd
         .unwrap_or_else(|| accounts.home().to_string_lossy().into_owned());
-    copy_chat(&from, &to, &cwd, &id)?;
+    copy_chat(&from, &to, &cwd, &id, &running.probes.is_running)?;
     Ok(())
 }
 
@@ -119,6 +205,8 @@ fn continue_within(
 mod tests {
     use std::fs;
     use std::path::PathBuf;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
     use super::*;
     use crate::accounts::testdir::TestDir;
@@ -126,7 +214,23 @@ mod tests {
     use crate::sessions::slug;
 
     const ID: &str = "0f6c3a52-7d1e-4b8a-9c2f-5e4d3b2a1f00";
+    const NEWER_ID: &str = "a1b2c3d4-0000-4000-8000-000000000001";
     const CWD: &str = r"C:\work\app";
+
+    fn nothing_below(_: u32) -> Vec<u32> {
+        Vec::new()
+    }
+
+    fn nothing_running(_: u32) -> bool {
+        false
+    }
+
+    fn quiet() -> RunningTabs {
+        RunningTabs::with(Probes {
+            below: nothing_below,
+            is_running: nothing_running,
+        })
+    }
 
     struct World {
         dir: TestDir,
@@ -136,7 +240,7 @@ mod tests {
     }
 
     /// Two accounts (0 and 1) and one saved Claude tab (id 2) on account 0 whose chat is `ID`.
-    fn world() -> World {
+    fn world_with(running: RunningTabs) -> World {
         let dir = TestDir::new();
         let accounts = Accounts::new(&dir.path().join("app"), dir.path().to_path_buf());
         accounts
@@ -171,14 +275,20 @@ mod tests {
             .join("projects")
             .join(slug(CWD));
         fs::create_dir_all(&project).unwrap();
-        fs::write(project.join(format!("{ID}.jsonl")), "{\"fake\":\"chat\"}\n").unwrap();
+        for id in [ID, NEWER_ID] {
+            fs::write(project.join(format!("{id}.jsonl")), "{\"fake\":\"chat\"}\n").unwrap();
+        }
         saved.set_session(2, ID);
         World {
             dir,
             accounts,
             saved,
-            running: RunningTabs::default(),
+            running,
         }
+    }
+
+    fn world() -> World {
+        world_with(quiet())
     }
 
     impl World {
@@ -190,17 +300,17 @@ mod tests {
                 |_| Ok(signed_in),
                 2,
                 account,
-                Duration::from_millis(50),
+                Duration::from_millis(300),
             )
         }
 
-        fn copied(&self) -> PathBuf {
+        fn copied(&self, id: &str) -> PathBuf {
             self.dir
                 .path()
                 .join(".claude-work")
                 .join("projects")
                 .join(slug(CWD))
-                .join(format!("{ID}.jsonl"))
+                .join(format!("{id}.jsonl"))
         }
     }
 
@@ -210,7 +320,7 @@ mod tests {
 
         world.continue_to(1, true).unwrap();
 
-        assert!(world.copied().is_file());
+        assert!(world.copied(ID).is_file());
     }
 
     #[test]
@@ -222,7 +332,7 @@ mod tests {
             world.continue_to(1, true),
             Err(ContinueError::Running)
         ));
-        assert!(!world.copied().exists());
+        assert!(!world.copied(ID).exists());
     }
 
     #[test]
@@ -238,6 +348,88 @@ mod tests {
         });
     }
 
+    static LEFT_RUNNING: AtomicUsize = AtomicUsize::new(0);
+
+    fn below_for_a_while(_: u32) -> Vec<u32> {
+        if LEFT_RUNNING.load(Ordering::SeqCst) == 0 {
+            return Vec::new();
+        }
+        LEFT_RUNNING.fetch_sub(1, Ordering::SeqCst);
+        vec![99]
+    }
+
+    fn below_for_ever(_: u32) -> Vec<u32> {
+        vec![99]
+    }
+
+    #[test]
+    fn a_program_left_running_by_a_wrapper_is_waited_for() {
+        LEFT_RUNNING.store(2, Ordering::SeqCst);
+        let world = world_with(RunningTabs::with(Probes {
+            below: below_for_a_while,
+            is_running: nothing_running,
+        }));
+        world.running.started(2);
+        world.running.spawned(2, 7);
+        world.running.ended(2);
+
+        assert!(world.continue_to(1, true).is_ok());
+        assert_eq!(LEFT_RUNNING.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn a_program_that_never_ends_below_a_wrapper_is_refused() {
+        let world = world_with(RunningTabs::with(Probes {
+            below: below_for_ever,
+            is_running: nothing_running,
+        }));
+        world.running.started(2);
+        world.running.spawned(2, 7);
+        world.running.ended(2);
+
+        assert!(matches!(
+            world.continue_to(1, true),
+            Err(ContinueError::Running)
+        ));
+        assert!(!world.copied(ID).exists());
+    }
+
+    #[test]
+    fn a_watchers_last_word_lands_before_the_chat_id_is_read() {
+        let world = world();
+        let done = Arc::new(AtomicBool::new(false));
+        let finished = Arc::clone(&done);
+        let saved = world.saved.clone();
+        world.running.watching(
+            2,
+            thread::spawn(move || {
+                thread::sleep(Duration::from_millis(50));
+                saved.set_session(2, NEWER_ID);
+                finished.store(true, Ordering::SeqCst);
+            }),
+        );
+
+        world.continue_to(1, true).unwrap();
+
+        assert!(done.load(Ordering::SeqCst));
+        assert!(world.copied(NEWER_ID).is_file());
+        assert!(!world.copied(ID).exists());
+    }
+
+    #[test]
+    fn a_second_move_of_the_same_tab_is_refused_while_the_first_runs() {
+        let world = world();
+        let first = world.running.begin_move(2);
+
+        assert!(first.is_some());
+        assert!(matches!(
+            world.continue_to(1, true),
+            Err(ContinueError::Busy)
+        ));
+        drop(first);
+        assert!(world.continue_to(1, true).is_ok());
+    }
+
     #[test]
     fn a_signed_out_target_is_refused_by_name() {
         let world = world();
@@ -245,22 +437,23 @@ mod tests {
         let result = world.continue_to(1, false);
 
         assert!(matches!(result, Err(ContinueError::SignedOut(name)) if name == "work"));
-        assert!(!world.copied().exists());
+        assert!(!world.copied(ID).exists());
     }
 
     #[test]
-    fn a_target_that_has_the_chat_is_refused() {
+    fn a_target_with_an_older_copy_gets_the_chat_and_keeps_the_old_one() {
         let world = world();
-        fs::create_dir_all(world.copied().parent().unwrap()).unwrap();
-        fs::write(world.copied(), "theirs").unwrap();
+        fs::create_dir_all(world.copied(ID).parent().unwrap()).unwrap();
+        fs::write(world.copied(ID), "older copy").unwrap();
 
-        let result = world.continue_to(1, true);
+        world.continue_to(1, true).unwrap();
 
-        assert!(matches!(
-            result,
-            Err(ContinueError::Carry(CarryError::Exists))
-        ));
-        assert_eq!(fs::read_to_string(world.copied()).unwrap(), "theirs");
+        assert_eq!(
+            fs::read_to_string(world.copied(ID)).unwrap(),
+            "{\"fake\":\"chat\"}\n"
+        );
+        let kept = world.copied(ID).with_extension("jsonl.cerberus-old");
+        assert_eq!(fs::read_to_string(kept).unwrap(), "older copy");
     }
 
     #[test]

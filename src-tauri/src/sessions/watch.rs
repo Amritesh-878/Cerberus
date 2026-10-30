@@ -2,7 +2,7 @@ use std::fs;
 use std::io;
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
-use std::thread;
+use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
@@ -198,7 +198,7 @@ pub fn watch(
     stop: Receiver<()>,
     mut on_session: impl FnMut(&str) + Send + 'static,
     mut on_state: impl FnMut(TabState) + Send + 'static,
-) -> io::Result<()> {
+) -> io::Result<JoinHandle<()>> {
     thread::Builder::new().spawn(move || {
         let fallback_cwd = watched.cwd.clone();
         let mut finder = Finder::new(watched);
@@ -222,8 +222,7 @@ pub fn watch(
                 on_session(&id);
             }
         }
-    })?;
-    Ok(())
+    })
 }
 
 fn unix_now() -> u64 {

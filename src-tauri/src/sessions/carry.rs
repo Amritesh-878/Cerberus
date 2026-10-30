@@ -1,25 +1,32 @@
 use std::fs;
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use crate::sessions::{is_session_id, transcript};
+use crate::sessions::{is_session_id, parse_session_file, transcript};
 
 // A copy lands under this suffix first, so a half copy is never mistaken for a chat.
 const IN_PROGRESS: &str = "cerberus-copy";
+const SET_ASIDE: &str = "cerberus-old";
 
 #[derive(Debug, thiserror::Error)]
 pub enum CarryError {
     #[error("the chat's file is gone from the account it started on")]
     Missing,
-    #[error("the other account already has this chat, so nothing was copied")]
-    Exists,
+    #[error("the other account has this chat open right now, so nothing was copied")]
+    OpenOnTarget,
     #[error("could not copy the chat: {0}")]
     Io(#[from] io::Error),
 }
 
 /// Copies a chat's transcript and its folder from one config dir to the same project in another.
-pub fn copy_chat(from: &Path, to: &Path, cwd: &str, id: &str) -> Result<(), CarryError> {
-    copy_chat_with(from, to, cwd, id, &mut |source, target| {
+pub fn copy_chat(
+    from: &Path,
+    to: &Path,
+    cwd: &str,
+    id: &str,
+    is_running: &dyn Fn(u32) -> bool,
+) -> Result<(), CarryError> {
+    copy_chat_with(from, to, cwd, id, is_running, &mut |source, target| {
         fs::copy(source, target).map(|_| ())
     })
 }
@@ -29,6 +36,7 @@ fn copy_chat_with(
     to: &Path,
     cwd: &str,
     id: &str,
+    is_running: &dyn Fn(u32) -> bool,
     copy: &mut dyn FnMut(&Path, &Path) -> io::Result<()>,
 ) -> Result<(), CarryError> {
     if !is_session_id(id) {
@@ -40,16 +48,22 @@ fn copy_chat_with(
         .parent()
         .and_then(Path::file_name)
         .ok_or(CarryError::Missing)?;
+    if open_in(to, id, is_running) {
+        return Err(CarryError::OpenOnTarget);
+    }
     let target_dir = to.join("projects").join(project);
     let target = target_dir.join(format!("{id}.jsonl"));
     let target_folder = target_dir.join(id);
-    if target.exists() || target_folder.exists() {
-        return Err(CarryError::Exists);
-    }
     fs::create_dir_all(&target_dir)?;
     let temp = target_dir.join(format!("{id}.jsonl.{IN_PROGRESS}"));
     let temp_folder = target_dir.join(format!("{id}.{IN_PROGRESS}"));
     remove(&temp, &temp_folder)?;
+    if target.exists() {
+        set_aside(&target_dir, id)?;
+    } else if target_folder.exists() {
+        // A folder with no transcript is what a copy cut short between its two renames leaves.
+        fs::remove_dir_all(&target_folder)?;
+    }
     let source_folder = source.with_file_name(id);
     let mut folder_moved = false;
     let copied = (|| {
@@ -72,6 +86,51 @@ fn copy_chat_with(
         return Err(e.into());
     }
     Ok(())
+}
+
+/// Whether a running `claude` on that config dir has this chat open.
+fn open_in(config_dir: &Path, id: &str, is_running: &dyn Fn(u32) -> bool) -> bool {
+    let Ok(entries) = fs::read_dir(config_dir.join("sessions")) else {
+        return false;
+    };
+    entries.filter_map(Result::ok).any(|entry| {
+        let path = entry.path();
+        let pid = path
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .and_then(|stem| stem.parse::<u32>().ok());
+        let file = fs::read(&path)
+            .ok()
+            .and_then(|bytes| parse_session_file(&bytes));
+        match (pid, file) {
+            (Some(pid), Some(file)) => file.session_id.as_deref() == Some(id) && is_running(pid),
+            _ => false,
+        }
+    })
+}
+
+/// Keeps the target's older copy of the chat, and its folder, under the first free `.cerberus-old` name.
+fn set_aside(dir: &Path, id: &str) -> io::Result<()> {
+    let names = |n: u32| -> (PathBuf, PathBuf) {
+        let suffix = if n == 1 {
+            SET_ASIDE.to_owned()
+        } else {
+            format!("{SET_ASIDE}{n}")
+        };
+        (
+            dir.join(format!("{id}.jsonl.{suffix}")),
+            dir.join(format!("{id}.{suffix}")),
+        )
+    };
+    let (file, folder) = (1..1000)
+        .map(names)
+        .find(|(file, folder)| !file.exists() && !folder.exists())
+        .ok_or_else(|| io::Error::other("no free name to keep the older copy under"))?;
+    let current_folder = dir.join(id);
+    if current_folder.exists() {
+        fs::rename(&current_folder, folder)?;
+    }
+    fs::rename(dir.join(format!("{id}.jsonl")), file)
 }
 
 fn copy_tree(
@@ -127,6 +186,16 @@ mod tests {
         project
     }
 
+    fn carry(dir: &TestDir, cwd: &str) -> Result<(), CarryError> {
+        copy_chat(
+            &dir.path().join("personal"),
+            &dir.path().join("work"),
+            cwd,
+            ID,
+            &|_| false,
+        )
+    }
+
     fn listing(dir: &Path) -> Vec<String> {
         let mut names = Vec::new();
         for entry in fs::read_dir(dir).unwrap() {
@@ -151,13 +220,7 @@ mod tests {
         let dir = TestDir::new();
         let source = chat_in(&dir, "personal", CWD);
 
-        copy_chat(
-            &dir.path().join("personal"),
-            &dir.path().join("work"),
-            CWD,
-            ID,
-        )
-        .unwrap();
+        carry(&dir, CWD).unwrap();
 
         let target = dir.path().join("work").join("projects").join(slug(CWD));
         assert_eq!(listing(&target), listing(&source));
@@ -169,54 +232,103 @@ mod tests {
     }
 
     #[test]
-    fn a_chat_the_target_already_has_is_refused_and_left_alone() {
+    fn an_older_copy_in_the_target_is_kept_aside_and_the_chat_copied_over_it() {
         let dir = TestDir::new();
-        chat_in(&dir, "personal", CWD);
+        let source = chat_in(&dir, "personal", CWD);
         let target = dir.path().join("work").join("projects").join(slug(CWD));
-        fs::create_dir_all(&target).unwrap();
-        fs::write(target.join(format!("{ID}.jsonl")), "theirs").unwrap();
+        fs::create_dir_all(target.join(ID)).unwrap();
+        fs::write(target.join(format!("{ID}.jsonl")), "older copy").unwrap();
+        fs::write(target.join(ID).join("old.txt"), "older folder").unwrap();
 
-        let result = copy_chat(
-            &dir.path().join("personal"),
-            &dir.path().join("work"),
-            CWD,
-            ID,
-        );
+        carry(&dir, CWD).unwrap();
 
-        assert!(matches!(result, Err(CarryError::Exists)));
         assert_eq!(
-            fs::read_to_string(target.join(format!("{ID}.jsonl"))).unwrap(),
-            "theirs"
+            fs::read(target.join(format!("{ID}.jsonl"))).unwrap(),
+            fs::read(source.join(format!("{ID}.jsonl"))).unwrap()
+        );
+        assert_eq!(
+            fs::read_to_string(target.join(format!("{ID}.jsonl.{SET_ASIDE}"))).unwrap(),
+            "older copy"
+        );
+        assert_eq!(
+            fs::read_to_string(target.join(format!("{ID}.{SET_ASIDE}")).join("old.txt")).unwrap(),
+            "older folder"
         );
     }
 
     #[test]
-    fn a_leftover_chat_folder_in_the_target_also_counts_as_taken() {
+    fn a_chat_bounced_back_twice_keeps_both_older_copies() {
         let dir = TestDir::new();
         chat_in(&dir, "personal", CWD);
         let target = dir.path().join("work").join("projects").join(slug(CWD));
+        fs::create_dir_all(&target).unwrap();
+        fs::write(target.join(format!("{ID}.jsonl")), "first").unwrap();
+
+        carry(&dir, CWD).unwrap();
+        carry(&dir, CWD).unwrap();
+
+        assert_eq!(
+            fs::read_to_string(target.join(format!("{ID}.jsonl.{SET_ASIDE}"))).unwrap(),
+            "first"
+        );
+        assert!(target.join(format!("{ID}.jsonl.{SET_ASIDE}2")).is_file());
+    }
+
+    #[test]
+    fn a_folder_left_between_the_two_renames_does_not_block_a_retry() {
+        let dir = TestDir::new();
+        let source = chat_in(&dir, "personal", CWD);
+        let target = dir.path().join("work").join("projects").join(slug(CWD));
         fs::create_dir_all(target.join(ID)).unwrap();
+        fs::write(target.join(ID).join("stray.jsonl"), "half").unwrap();
+
+        carry(&dir, CWD).unwrap();
+
+        assert_eq!(listing(&target), listing(&source));
+    }
+
+    fn open_on_work(dir: &TestDir, pid: u32) {
+        let sessions = dir.path().join("work").join("sessions");
+        fs::create_dir_all(&sessions).unwrap();
+        fs::write(
+            sessions.join(format!("{pid}.json")),
+            format!(r#"{{"pid":{pid},"sessionId":"{ID}","status":"idle"}}"#),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn a_chat_open_on_the_target_right_now_is_refused() {
+        let dir = TestDir::new();
+        chat_in(&dir, "personal", CWD);
+        open_on_work(&dir, 4242);
 
         let result = copy_chat(
             &dir.path().join("personal"),
             &dir.path().join("work"),
             CWD,
             ID,
+            &|pid| pid == 4242,
         );
 
-        assert!(matches!(result, Err(CarryError::Exists)));
+        assert!(matches!(result, Err(CarryError::OpenOnTarget)));
+        assert!(!dir.path().join("work").join("projects").exists());
+    }
+
+    #[test]
+    fn a_session_file_left_by_a_closed_chat_does_not_block_the_copy() {
+        let dir = TestDir::new();
+        chat_in(&dir, "personal", CWD);
+        open_on_work(&dir, 4242);
+
+        assert!(carry(&dir, CWD).is_ok());
     }
 
     #[test]
     fn a_missing_source_copies_nothing() {
         let dir = TestDir::new();
 
-        let result = copy_chat(
-            &dir.path().join("personal"),
-            &dir.path().join("work"),
-            CWD,
-            ID,
-        );
+        let result = carry(&dir, CWD);
 
         assert!(matches!(result, Err(CarryError::Missing)));
         assert!(!dir.path().join("work").exists());
@@ -240,6 +352,7 @@ mod tests {
             &dir.path().join("work"),
             CWD,
             ID,
+            &|_| false,
             &mut failing_second,
         );
 
@@ -256,13 +369,7 @@ mod tests {
         fs::create_dir_all(target.join(format!("{ID}.{IN_PROGRESS}"))).unwrap();
         fs::write(target.join(format!("{ID}.jsonl.{IN_PROGRESS}")), "half").unwrap();
 
-        copy_chat(
-            &dir.path().join("personal"),
-            &dir.path().join("work"),
-            CWD,
-            ID,
-        )
-        .unwrap();
+        carry(&dir, CWD).unwrap();
 
         assert_eq!(listing(&target), listing(&source));
     }
@@ -276,13 +383,7 @@ mod tests {
         fs::create_dir_all(&source).unwrap();
         fs::write(source.join(format!("{ID}.jsonl")), "{}\n").unwrap();
 
-        copy_chat(
-            &dir.path().join("personal"),
-            &dir.path().join("work"),
-            &cwd,
-            ID,
-        )
-        .unwrap();
+        carry(&dir, &cwd).unwrap();
 
         assert!(
             dir.path()
