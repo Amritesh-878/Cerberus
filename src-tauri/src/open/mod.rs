@@ -1,11 +1,13 @@
 pub mod launch;
 mod pipe;
+mod shell;
 
 use std::{fmt, io};
 
 use serde::Serialize;
 
 pub use launch::{Pending, from_command_line, listen, on_second_launch, request};
+pub use shell::console;
 
 use crate::saved::{ProjectId, SavedProject, SavedTab, SavedTree, TabId, TreeError};
 
@@ -15,6 +17,15 @@ pub const USAGE: &str = "usage: cerberus [open <project>[/<tab>]]";
 pub struct Spec {
     pub project: String,
     pub tab: Option<String>,
+}
+
+impl fmt::Display for Spec {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.tab {
+            Some(tab) => write!(f, "{}/{tab}", self.project),
+            None => f.write_str(&self.project),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

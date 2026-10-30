@@ -286,3 +286,12 @@ fn an_app_that_cannot_be_reached_is_a_miss() {
         )
     );
 }
+
+#[test]
+fn a_spec_written_out_parses_back_the_same() {
+    for written in [spec("my app", Some("first planner")), spec("alpha", None)] {
+        let again = parse(&["open".to_owned(), written.to_string()]);
+
+        assert_eq!(again, Some(Command::Open(written)));
+    }
+}

@@ -2,10 +2,11 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use tauri::{AppHandle, Emitter, Manager, State};
 
+use crate::open::shell::{arguments, checked, own_arguments, say};
 use crate::open::{
-    BAD_USAGE, Checked, Command, MISSED, Spec, Target, USAGE, check, opening, parse, pipe, resolve,
+    BAD_USAGE, Checked, Command, MISSED, Spec, Target, USAGE, opening, parse, pipe, resolve,
 };
-use crate::saved::{self, Saved, TreeError};
+use crate::saved::Saved;
 
 /// The last tab asked for, held until the page takes it, so a request made while it loads is kept.
 #[derive(Default)]
@@ -17,33 +18,17 @@ impl Pending {
     }
 }
 
-fn arguments(all: impl Iterator<Item = String>) -> Vec<String> {
-    all.skip(1).collect()
-}
-
 /// Answers `cerberus open` before any window, and exits unless this process should become the app.
 pub fn from_command_line(identifier: &str) -> Command {
-    let args = arguments(std::env::args_os().map(|a| a.to_string_lossy().into_owned()));
-    let ask = |args: &[String]| pipe::ask(&pipe::name(identifier), args);
-    let read = || {
-        // Where Tauri's `app_config_dir` points, found before there is an app to ask.
-        let dir = dirs::config_dir()
-            .ok_or_else(|| TreeError::Unavailable("no app data folder".to_owned()))?;
-        saved::read_unlocked(&dir.join(identifier).join(saved::FILE_NAME))
-    };
-    match check(&args, ask, read) {
+    match checked(identifier, &own_arguments()) {
         Checked::Run(command, note) => {
             if let Some(note) = note {
-                println!("{note}");
+                say(0, &note);
             }
             command
         }
-        Checked::Exit(0, message) => {
-            println!("{message}");
-            std::process::exit(0)
-        }
         Checked::Exit(code, message) => {
-            eprintln!("{message}");
+            say(code, &message);
             std::process::exit(code)
         }
     }

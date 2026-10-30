@@ -4,6 +4,8 @@ version = "0.1.0"
 description = "A fast Windows terminal built around Claude Code"
 license = "MIT"
 edition = "2024"
+# The app; `cerberus-cli` is the console command an installed `cerberus open` runs.
+default-run = "cerberus"
 
 [lib]
 # Distinct from the bin name: on Windows a shared name collides (rust-lang/cargo#8519).
