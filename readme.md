@@ -97,13 +97,14 @@ starts with no saved tabs and says where the old file went.
 
 ```powershell
 cerberus open alpha/planner   # project alpha, tab planner
-cerberus open alpha           # project alpha, at the tab you last had open there
+cerberus open alpha           # project alpha: the tab last shown there since Cerberus started, else its first
 ```
 
 This starts Cerberus if it is not running, or brings the open window forward, and shows that
 tab; a saved Claude Code tab resumes its chat as usual. The project matches by name, then the
 same name in any case, then its folder's name; the tab matches by title the same way. Words
-after `open` are joined, so `cerberus open my app/planner` needs no quotes.
+after `open` are joined, so `cerberus open my app/planner` needs no quotes. A running Cerberus
+answers from its open window, so a tab made a moment ago is found; otherwise the saved file is read.
 
 When nothing matches, Cerberus prints the close names and exits with 1. A name that matches
 two projects or tabs lists them and exits with 1 too; rename one to tell them apart. Bad usage
