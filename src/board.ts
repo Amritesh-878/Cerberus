@@ -40,6 +40,14 @@ export function exited(board: Board, tab: TabId): Board {
   return new Map(board).set(tab, { life: { state: "done" }, waiting: false });
 }
 
+/** Forgets a tab's state, as when its program is stopped to move the chat. */
+export function cleared(board: Board, tab: TabId): Board {
+  if (!board.has(tab)) return board;
+  const next = new Map(board);
+  next.delete(tab);
+  return next;
+}
+
 export function opened(board: Board, tab: TabId): Board {
   const entry = board.get(tab);
   if (!entry?.waiting) return board;
