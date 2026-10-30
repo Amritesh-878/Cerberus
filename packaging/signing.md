@@ -10,8 +10,9 @@ they change.
 
 ## Before applying
 
-- **Release v0 unsigned first.** The project must already be released in the form it wants
-  signed, so apply after the first installer is on GitHub Releases.
+- **Publish v0 unsigned first.** The project must already be released in the form to be
+  signed, so apply only once the first installer is on a published (not draft) GitHub Release
+  that anyone can download.
 - **Licence:** MIT, an OSI licence, and nothing proprietary in the build. Cerberus qualifies.
 - **Built from source in CI:** `.github/workflows/release.yml` builds the installer from a tag
   on GitHub-hosted runners, which is what SignPath's GitHub integration verifies.
@@ -63,9 +64,9 @@ In GitHub (Settings, Secrets and variables, Actions):
 
 ## The workflow change, left out until approved
 
-Add these steps to `release.yml` between "Hash the installer" and "Draft the release", and move
-the hashing after them so the hash is of the signed file. Keep the job's `permissions`
-including `contents: write`, and add `actions: read`.
+Add these steps to the `build` job of `release.yml`, between `npx tauri build` and "Hash the
+installer", so the hash is of the signed file. Give the `build` job `permissions` of
+`contents: read` and `actions: read`; the signing token never needs `contents: write`.
 
 ```yaml
 - name: Upload the unsigned installer for signing
@@ -85,13 +86,14 @@ including `contents: write`, and add `actions: read`.
     organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
     project-slug: Cerberus
     signing-policy-slug: release-signing
+    artifact-configuration-slug: installer
     github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
     wait-for-completion: true
     wait-for-completion-timeout-in-seconds: 3600
     output-artifact-directory: src-tauri/target/release/bundle/nsis
 ```
 
-Use the project and policy slugs SignPath actually shows. Pin the action to a commit SHA once
+Use the project, policy and artifact configuration slugs SignPath actually shows. Pin the action to a commit SHA once
 its release is chosen.
 
 How a signed release then runs:
@@ -107,7 +109,8 @@ How a signed release then runs:
 
 - Only the installer is signed. The `cerberus.exe` inside it and the uninstaller stay unsigned:
   signing those needs the app exe signed before Tauri packs it (`npx tauri build --no-bundle`,
-  sign, then `npx tauri bundle`), which is a second request and a second approval per release.
+  sign, then `npx tauri bundle --no-binary-patching`, since patching the exe would break its
+  signature), which is a second request and a second approval per release.
   Add that only if Defender or SmartScreen flag the installed app.
 - A signature from a new certificate still builds SmartScreen reputation over time, so the first
   downloads may still see a warning.
