@@ -2,6 +2,7 @@ import { expect, test } from "vitest";
 
 import {
   type Board,
+  cleared,
   exited,
   markOf,
   nextWaiting,
@@ -113,4 +114,11 @@ test("a reset time reads like a clock", () => {
   const at = new Date(2026, 9, 29, 5, 50).getTime() / 1000;
 
   expect(resetText(at, "en-US")).toBe("5:50am");
+});
+
+test("a stopped tab's state is forgotten", () => {
+  const board = cleared(finishedOffScreen(EMPTY, 1), 1);
+
+  expect(markOf(board, 1)).toBeUndefined();
+  expect(cleared(board, 1)).toBe(board);
 });

@@ -1,4 +1,4 @@
-import type { Tab } from "./tab";
+import type { Tab, TabAccount } from "./tab";
 
 export type ProjectId = number;
 export type TabId = number;
@@ -125,6 +125,28 @@ export function addTab(
     { ...tree, tabs: [...tree.tabs, tab], nextId: tree.nextId + 1 },
     tab.id,
   ];
+}
+
+/** The tab under another account; a title never renamed follows the account's name. */
+export function moveToAccount(
+  tree: Tree,
+  id: TabId,
+  account: TabAccount,
+): Tree {
+  return {
+    ...tree,
+    tabs: tree.tabs.map((t) => {
+      if (t.id !== id) return t;
+      const launch: Tab = {
+        ...t.launch,
+        account: { id: account.id, name: account.name },
+        spec: { ...t.launch.spec, account: account.id },
+      };
+      const title =
+        t.title === defaultTitle(t.launch) ? defaultTitle(launch) : t.title;
+      return { ...t, title, launch };
+    }),
+  };
 }
 
 export function renameTab(tree: Tree, id: TabId, title: string): Tree {

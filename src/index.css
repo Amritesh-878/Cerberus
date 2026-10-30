@@ -217,7 +217,8 @@ button {
   border-radius: 6px;
 }
 
-.confirm-actions .danger {
+.confirm-actions .danger,
+.confirm-actions .go {
   color: var(--bg);
   background: var(--accent);
   border-color: var(--accent);
@@ -500,6 +501,80 @@ button {
 
 .tab-view.shown {
   visibility: visible;
+}
+
+.limit-continue {
+  display: block;
+  width: calc(100% - 40px);
+  margin: -4px 0 4px 40px;
+  padding: 2px 0;
+  overflow: hidden;
+  font-size: 11px;
+  color: var(--dim);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  background: none;
+  border: 0;
+}
+
+.limit-continue.sub {
+  width: calc(100% - 54px);
+  margin-left: 54px;
+}
+
+.limit-continue:hover,
+.limit-continue:focus-visible {
+  color: var(--text);
+}
+
+.tab-menu {
+  width: 240px;
+  padding: 6px;
+}
+
+.tab-menu [role="menuitem"] {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  justify-content: space-between;
+  width: 100%;
+  padding: 7px 8px;
+  text-align: left;
+  cursor: pointer;
+  background: none;
+  border: 0;
+  border-radius: 6px;
+}
+
+.tab-menu [role="menuitem"]:hover:not(:disabled),
+.tab-menu [role="menuitem"]:focus-visible {
+  background: var(--hover);
+}
+
+.tab-menu [role="menuitem"]:disabled {
+  color: var(--faint);
+  cursor: default;
+}
+
+.menu-note {
+  font-size: 11px;
+}
+
+.menu-confirm p {
+  margin: 4px 4px 10px;
+}
+
+.tab-alert {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--text);
+  background: #2a1f1b;
+  border-bottom: 1px solid var(--line);
 }
 
 .save-error {

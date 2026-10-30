@@ -33,6 +33,32 @@ pub fn descendants(_root: u32) -> Vec<u32> {
     Vec::new()
 }
 
+/// Whether a process with this id is still running.
+#[cfg(windows)]
+pub fn is_running(pid: u32) -> bool {
+    use windows_sys::Win32::Foundation::{CloseHandle, STILL_ACTIVE};
+    use windows_sys::Win32::System::Threading::{
+        GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+
+    // SAFETY: a handle this function opens, reads and closes.
+    unsafe {
+        let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+        if process.is_null() {
+            return false;
+        }
+        let mut code = 0;
+        let read = GetExitCodeProcess(process, &raw mut code) != 0;
+        CloseHandle(process);
+        read && code == STILL_ACTIVE as u32
+    }
+}
+
+#[cfg(not(windows))]
+pub fn is_running(_pid: u32) -> bool {
+    false
+}
+
 /// `pairs` are (process, parent); the walk is breadth first, so nearer processes come first.
 fn below(pairs: &[(u32, u32)], root: u32) -> Vec<u32> {
     let mut found = Vec::new();
@@ -58,6 +84,19 @@ mod tests {
 
         assert_eq!(below(&pairs, 10), [20, 21, 30]);
         assert_eq!(below(&pairs, 30), Vec::<u32>::new());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn this_process_is_running_and_a_finished_one_is_not() {
+        let mut child = std::process::Command::new("cmd")
+            .args(["/c", "exit"])
+            .spawn()
+            .unwrap();
+        child.wait().unwrap();
+
+        assert!(is_running(std::process::id()));
+        assert!(!is_running(child.id()));
     }
 
     #[test]

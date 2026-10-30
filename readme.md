@@ -108,6 +108,24 @@ The state comes from Claude Code's `sessions` file. The limit comes from the las
 chat's transcript, of which Cerberus reads only the error type and the reset time; it never
 shows, logs or stores anything else from a transcript.
 
+### Continuing a chat on another account
+
+Right-click a Claude Code tab and pick **Continue on <account>…** to carry its chat to another
+account, for example when one has hit its usage limit. A limited tab offers the same thing on its
+row: "Limited until 6:40pm · continue on work". If the chat is running, Cerberus asks before
+closing it.
+
+Cerberus copies the chat's file, and its folder of subagent chats if there is one, into the
+other account's folder. It writes the copy under a temporary name and renames it once complete,
+so a half copy is never resumed. Then it reopens the tab under that account with
+`claude --resume`, in the same folder. The original stays on the first account. A chat can go
+back and forth: when the other account already has an older copy of it, that copy is kept beside
+it as `<id>.jsonl.cerberus-old` (then `.cerberus-old2` and so on), never deleted. It refuses when
+the other account is signed out, or has that chat open in a running `claude` right now. A tab
+moves one chat at a time, and Cerberus waits for everything its program started to end before
+copying. On any failure the tab stays on its account, still resumable, and says what went wrong.
+The copy moves files only; Cerberus never reads what is in them.
+
 A tab under an account other than the default gets `CLAUDE_CONFIG_DIR` set to its folder, so
 `claude` there, or typed in a shell tab, runs on that account. The default account leaves the
 variable unset, as Claude Code expects. The variables a Claude Code session sets for its own

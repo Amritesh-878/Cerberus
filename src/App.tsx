@@ -1,4 +1,5 @@
 import {
+  batch,
   createEffect,
   createMemo,
   createResource,
@@ -14,6 +15,7 @@ import {
 } from "solid-js";
 
 import {
+  type Account,
   isNewer,
   loadProfiles,
   pickFolder,
@@ -22,8 +24,10 @@ import {
   statusText,
 } from "./accounts";
 import { AccountsScreen } from "./AccountsScreen";
+import { continueOnAccount } from "./carry";
 import {
   type Board,
+  cleared,
   exited,
   markOf,
   nextWaiting,
@@ -45,6 +49,7 @@ import {
   addTab,
   closeTab,
   emptyTree,
+  moveToAccount,
   neighbour,
   planners,
   type ProjectId,
@@ -195,11 +200,67 @@ export function App() {
       if (id !== undefined) setBoard((b) => opened(b, id));
     }),
   );
+  // Each start of a tab's program; 0 holds it stopped, and a new number starts it again.
+  const [runs, setRuns] = createSignal<ReadonlyMap<TabId, number>>(new Map());
+  const runOf = (id: TabId) => runs().get(id) ?? 1;
+  const setRun = (id: TabId, run: number) => {
+    setRuns((all) => new Map(all).set(id, run));
+  };
+  const [alerts, setAlerts] = createSignal<ReadonlyMap<TabId, string>>(
+    new Map(),
+  );
+  const setAlert = (id: TabId, alert: string | undefined) => {
+    setAlerts((all) => {
+      const next = new Map(all);
+      if (alert === undefined) next.delete(id);
+      else next.set(id, alert);
+      return next;
+    });
+  };
+  const isRunning = (id: TabId) =>
+    started().has(id) &&
+    runOf(id) !== 0 &&
+    markOf(board(), id)?.kind !== "done";
 
   const select = (id: TabId) => {
     setActive(id);
     showPage(undefined);
     setDrawer(false);
+  };
+
+  const [moving, setMoving] = createSignal<ReadonlySet<TabId>>(new Set());
+  const setMovingTab = (id: TabId, on: boolean) => {
+    setMoving((all) => {
+      const next = new Set(all);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  };
+  const continueOn = (id: TabId, account: Account) => {
+    if (moving().has(id)) return;
+    setMovingTab(id, true);
+    const initialRun = runOf(id);
+    batch(() => {
+      setRun(id, 0);
+      setBoard((b) => cleared(b, id));
+      setAlert(id, undefined);
+      select(id);
+    });
+    const restart = () => {
+      setMovingTab(id, false);
+      setRun(id, initialRun + 1);
+    };
+    continueOnAccount(id, account.id).then(
+      () => {
+        setTree(moveToAccount(tree(), id, account));
+        restart();
+      },
+      (error: unknown) => {
+        setAlert(id, `Could not continue on ${account.name}: ${String(error)}`);
+        restart();
+      },
+    );
   };
 
   const openSetupTab = (launch: Tab) => {
@@ -340,6 +401,9 @@ export function App() {
               statuses={statuses}
               active={shown()}
               mark={(id) => markOf(board(), id)}
+              running={isRunning}
+              moving={(id) => moving().has(id)}
+              onContinue={continueOn}
               onSelect={select}
               onClose={close}
               onRename={(id, title) => setTree(renameTab(tree(), id, title))}
@@ -445,6 +509,28 @@ export function App() {
                   </div>
                 )}
               </Show>
+              <Show
+                when={(() => {
+                  const id = shown();
+                  return id === undefined ? undefined : alerts().get(id);
+                })()}
+              >
+                {(alert) => (
+                  <div class="tab-alert" role="alert">
+                    <span>{alert()}</span>
+                    <span class="spacer" />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const id = shown();
+                        if (id !== undefined) setAlert(id, undefined);
+                      }}
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                )}
+              </Show>
               <div class="stage">
                 <For each={startedIds()}>
                   {(id) => (
@@ -454,17 +540,19 @@ export function App() {
                           class="tab-view"
                           classList={{ shown: shown() === id }}
                         >
-                          <TerminalView
-                            tab={id}
-                            spec={tab().launch.spec}
-                            pastesImages={tab().launch.pastesImages}
-                            input={tab().launch.input}
-                            active={shown() === id}
-                            onState={(state) =>
-                              setBoard((b) => reported(b, id, state, shown()))
-                            }
-                            onExit={() => setBoard((b) => exited(b, id))}
-                          />
+                          <Show when={runOf(id)} keyed>
+                            <TerminalView
+                              tab={id}
+                              spec={tab().launch.spec}
+                              pastesImages={tab().launch.pastesImages}
+                              input={tab().launch.input}
+                              active={shown() === id}
+                              onState={(state) =>
+                                setBoard((b) => reported(b, id, state, shown()))
+                              }
+                              onExit={() => setBoard((b) => exited(b, id))}
+                            />
+                          </Show>
                         </div>
                       )}
                     </Show>
