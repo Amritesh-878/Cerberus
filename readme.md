@@ -110,10 +110,18 @@ When nothing matches, Cerberus prints the close names and exits with 1. A name t
 two projects or tabs lists them and exits with 1 too; rename one to tell them apart. Bad usage
 exits with 2. Only project names, folders and tab titles are printed, never chat content.
 
-The installer does not put `cerberus` on `PATH` yet; call it by its full path
-(`%LOCALAPPDATA%\Cerberus\cerberus.exe`). A release build is a windowed program, so a shell does
-not wait for it and its messages and exit code are lost; the debug build that `npm run tauri dev`
-makes (`src-tauri\target\debug\cerberus.exe`) is a console program and shows both.
+`cerberus open` runs a small console command, not the app itself: the app is a windowed program,
+so a shell would not wait for it or see what it prints. With no Cerberus running, the command
+starts the app on the tab and exits with 0. Typing `cerberus` alone starts or brings forward the
+app.
+
+- **Installed:** the installer puts the console command beside the app as `cerberus.com` and adds
+  its folder (`%LOCALAPPDATA%\Cerberus`) to your user `PATH`, so `cerberus open` works in a new
+  shell. Windows tries `.com` before `.exe`, so `cerberus` finds the command, which starts
+  `cerberus.exe`. Uninstalling removes both.
+- **Dev build:** `cargo build` in `src-tauri` makes `target\debug\cerberus-cli.exe` beside
+  `cerberus.exe`; run it by its path, for example
+  `src-tauri\target\debug\cerberus-cli.exe open alpha/planner`.
 
 ### The session board
 
