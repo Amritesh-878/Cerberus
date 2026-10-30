@@ -23,13 +23,25 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": [
+      "nsis"
+    ],
+    "publisher": "Amritesh-878",
+    "homepage": "https://github.com/Amritesh-878/Cerberus",
+    "category": "DeveloperTool",
+    "shortDescription": "A fast Windows terminal built around Claude Code",
+    "license": "MIT",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    }
   }
 }
