@@ -82,6 +82,7 @@ pub fn pty_spawn(
     let exit_events = events.clone();
     let state_events = events.clone();
     let running = Arc::clone(&app.state::<Arc<RunningTabs>>());
+    let exit_running = Arc::clone(&running);
     if let Some(tab) = tab {
         running.started(tab);
     }
@@ -94,7 +95,7 @@ pub fn pty_spawn(
         move |exit_code| {
             drop(stop);
             if let Some(tab) = tab {
-                running.ended(tab);
+                exit_running.ended(tab);
             }
             if let Ok(body) = (Exited { exit_code }).body() {
                 let _ = exit_events.send(body);
@@ -105,12 +106,16 @@ pub fn pty_spawn(
         Ok(id) => id,
         Err(e) => {
             if let Some(tab) = tab {
-                app.state::<Arc<RunningTabs>>().ended(tab);
+                running.ended(tab);
             }
             return Err(e.into());
         }
     };
-    if let (Some(config_dir), Some(pid)) = (claude_home, manager.pid(id)) {
+    let pid = manager.pid(id);
+    if let (Some(tab), Some(pid)) = (tab, pid) {
+        running.spawned(tab, pid);
+    }
+    if let (Some(config_dir), Some(pid)) = (claude_home, pid) {
         let watched = Watched {
             config_dir,
             pid,
@@ -129,8 +134,13 @@ pub fn pty_spawn(
             }
         };
         // Without a watcher the tab still works; it only loses its board mark and resume.
-        if let Err(e) = watch(watched, stopped, on_session, on_state) {
-            eprintln!("could not watch tab {tab:?}: {e}");
+        match watch(watched, stopped, on_session, on_state) {
+            Ok(watcher) => {
+                if let Some(tab) = tab {
+                    running.watching(tab, watcher);
+                }
+            }
+            Err(e) => eprintln!("could not watch tab {tab:?}: {e}"),
         }
     }
     Ok(Spawned { id, resume })
@@ -250,7 +260,6 @@ pub fn tree_save(saved: State<'_, Saved>, tree: SavedTree) -> Result<(), TreeErr
     saved.save(tree)
 }
 
-/// Copies the tab's chat to `account`; on success the webview reopens the tab there, which resumes it.
 #[tauri::command(async)]
 pub fn continue_on_account(
     accounts: State<'_, Accounts>,
