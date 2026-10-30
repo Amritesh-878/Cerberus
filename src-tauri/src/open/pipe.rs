@@ -5,6 +5,9 @@ use std::io::{self, BufRead, BufReader, Read, Write};
 const MOST_REQUEST: u64 = 16 * 1024;
 // Askers that never write could otherwise pile up threads and handles without end.
 const MOST_ASKERS: usize = 8;
+// A real asker writes its line at once; one still silent by then is cut off and frees its slot.
+#[cfg(windows)]
+const DEADLINE: std::time::Duration = std::time::Duration::from_secs(2);
 
 /// Per Windows session, so two people signed in at once each reach their own app.
 pub fn name(identifier: &str) -> String {
@@ -81,6 +84,15 @@ pub fn serve(
     name: &str,
     answer: impl Fn(&[String]) -> (i32, String) + Send + Sync + 'static,
 ) -> io::Result<()> {
+    serve_within(name, DEADLINE, answer)
+}
+
+#[cfg(windows)]
+fn serve_within(
+    name: &str,
+    deadline: std::time::Duration,
+    answer: impl Fn(&[String]) -> (i32, String) + Send + Sync + 'static,
+) -> io::Result<()> {
     let mut waiting = listen(name, true)?;
     let name = name.to_owned();
     let answer = std::sync::Arc::new(answer);
@@ -108,15 +120,30 @@ pub fn serve(
                 continue;
             };
             let answer = std::sync::Arc::clone(&answer);
-            std::thread::spawn(move || {
+            let worker = std::thread::spawn(move || {
                 let _slot = slot;
                 if let Err(e) = reply(pipe, &*answer) {
                     eprintln!("could not answer cerberus open: {e}");
                 }
             });
+            cut_off_after(worker, deadline);
         }
     });
     Ok(())
+}
+
+/// Ends a worker's blocked pipe read or write once `deadline` passes, so it returns and frees its slot.
+#[cfg(windows)]
+fn cut_off_after(worker: std::thread::JoinHandle<()>, deadline: std::time::Duration) {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::System::IO::CancelSynchronousIo;
+    std::thread::spawn(move || {
+        std::thread::sleep(deadline);
+        if !worker.is_finished() {
+            // The handle stays valid while `worker` is held; a worker with nothing pending just fails the call.
+            unsafe { CancelSynchronousIo(worker.as_raw_handle()) };
+        }
+    });
 }
 
 /// One of the `MOST_ASKERS` answers allowed at once, given back when dropped.
@@ -278,6 +305,23 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(25));
             ask(&name, &["open".to_owned()]).ok().flatten()
         });
+        assert_eq!(answer, Some((0, "answered".to_owned())));
+    }
+
+    #[test]
+    fn silent_askers_are_cut_off_so_a_real_one_gets_through_while_they_stay() {
+        let name = unique();
+        serve_within(&name, std::time::Duration::from_millis(100), |_| {
+            (0, "answered".to_owned())
+        })
+        .unwrap();
+        let _stalled: Vec<File> = (0..MOST_ASKERS)
+            .map(|_| connect(&name).unwrap().unwrap())
+            .collect();
+
+        std::thread::sleep(std::time::Duration::from_millis(400));
+        let answer = ask(&name, &["open".to_owned()]).unwrap();
+
         assert_eq!(answer, Some((0, "answered".to_owned())));
     }
 
