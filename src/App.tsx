@@ -228,8 +228,18 @@ export function App() {
     setDrawer(false);
   };
 
-  // Stops the tab, has the core copy its chat, then starts it again on whichever account it ends on.
+  const [moving, setMoving] = createSignal<ReadonlySet<TabId>>(new Set());
+  const setMovingTab = (id: TabId, on: boolean) => {
+    setMoving((all) => {
+      const next = new Set(all);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  };
   const continueOn = (id: TabId, account: Account) => {
+    if (moving().has(id)) return;
+    setMovingTab(id, true);
     const initialRun = runOf(id);
     batch(() => {
       setRun(id, 0);
@@ -238,6 +248,7 @@ export function App() {
       select(id);
     });
     const restart = () => {
+      setMovingTab(id, false);
       setRun(id, initialRun + 1);
     };
     continueOnAccount(id, account.id).then(
@@ -391,6 +402,7 @@ export function App() {
               active={shown()}
               mark={(id) => markOf(board(), id)}
               running={isRunning}
+              moving={(id) => moving().has(id)}
               onContinue={continueOn}
               onSelect={select}
               onClose={close}

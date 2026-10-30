@@ -50,6 +50,7 @@ export function Sidebar(props: {
   active: TabId | undefined;
   mark: (id: TabId) => Mark | undefined;
   running: (id: TabId) => boolean;
+  moving: (id: TabId) => boolean;
   onContinue: (id: TabId, account: Account) => void;
   onSelect: (id: TabId) => void;
   onClose: (id: TabId) => void;
@@ -143,10 +144,14 @@ export function Sidebar(props: {
                       status={(id) => statusText(props.statuses.get(id))}
                       active={props.active === row.tab.id}
                       mark={props.mark(row.tab.id)}
-                      shortcut={limitShortcut(
-                        props.mark(row.tab.id),
-                        targetsOf(row.tab),
-                      )}
+                      shortcut={
+                        props.moving(row.tab.id)
+                          ? undefined
+                          : limitShortcut(
+                              props.mark(row.tab.id),
+                              targetsOf(row.tab),
+                            )
+                      }
                       renaming={renaming() === row.tab.id}
                       onMenu={(at) => {
                         if (targetsOf(row.tab).length > 0)
@@ -184,6 +189,7 @@ export function Sidebar(props: {
             title={open().tab.title}
             targets={targetsOf(open().tab)}
             running={props.running(open().tab.id)}
+            busy={props.moving(open().tab.id)}
             at={open().at}
             chosen={open().chosen}
             onContinue={(account) => {
