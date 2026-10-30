@@ -112,13 +112,12 @@ exits with 2. Only project names, folders and tab titles are printed, never chat
 
 `cerberus open` runs a small console command, not the app itself: the app is a windowed program,
 so a shell would not wait for it or see what it prints. With no Cerberus running, the command
-starts the app on the tab and exits with 0. Typing `cerberus` alone starts or brings forward the
-app.
+starts the app on the tab and exits with 0. Run with no arguments, it starts the app or brings it
+forward.
 
-- **Installed:** the installer puts the console command beside the app as `cerberus.com` and adds
-  its folder (`%LOCALAPPDATA%\Cerberus`) to your user `PATH`, so `cerberus open` works in a new
-  shell. Windows tries `.com` before `.exe`, so `cerberus` finds the command, which starts
-  `cerberus.exe`. Uninstalling removes both.
+- **Installed:** the installer puts the console command beside the app as `cerberus-cli.exe`, in
+  `%LOCALAPPDATA%\Cerberus`. The installer does not add that folder to `PATH` yet, so run it by
+  its path: `& "$env:LOCALAPPDATA\Cerberus\cerberus-cli.exe" open alpha/planner`.
 - **Dev build:** `cargo build` in `src-tauri` makes `target\debug\cerberus-cli.exe` beside
   `cerberus.exe`; run it by its path, for example
   `src-tauri\target\debug\cerberus-cli.exe open alpha/planner`.
