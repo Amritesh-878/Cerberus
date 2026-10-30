@@ -126,12 +126,10 @@ struct Slot(std::sync::Arc<std::sync::atomic::AtomicUsize>);
 #[cfg(windows)]
 impl Slot {
     fn take(busy: &std::sync::Arc<std::sync::atomic::AtomicUsize>) -> Option<Self> {
-        use std::sync::atomic::Ordering;
-        busy.fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
-            (n < MOST_ASKERS).then_some(n + 1)
-        })
-        .ok()
-        .map(|_| Self(std::sync::Arc::clone(busy)))
+        // Counted first and given back by `Drop` when full; `fetch_update` is deprecated on newer toolchains.
+        let slot = Self(std::sync::Arc::clone(busy));
+        let before = busy.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+        (before < MOST_ASKERS).then_some(slot)
     }
 }
 
