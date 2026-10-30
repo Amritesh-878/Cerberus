@@ -18,6 +18,8 @@ use crate::handover::RunningTabs;
 use crate::pty::PtyManager;
 use crate::saved::Saved;
 
+pub use crate::open::console;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let context = tauri::generate_context!();
