@@ -1,0 +1,78 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+
+      - run: cargo fmt --check
+        working-directory: src-tauri
+      - run: cargo clippy --all-targets -- -D warnings
+        working-directory: src-tauri
+      - run: cargo test
+        working-directory: src-tauri
+
+      - name: Check the tag matches the app version
+        if: github.event_name == 'push'
+        shell: pwsh
+        run: |
+          $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          if ($env:GITHUB_REF_NAME -ne "v$version") {
+            throw "Tag $env:GITHUB_REF_NAME does not match version $version in tauri.conf.json"
+          }
+
+      - run: npx tauri build
+
+      - name: Hash the installer
+        id: installer
+        shell: pwsh
+        run: |
+          $exe = @(Get-Item src-tauri/target/release/bundle/nsis/*-setup.exe)
+          if ($exe.Count -ne 1) { throw "Expected one installer, found $($exe.Count)" }
+          $exe = $exe[0]
+          $hash = (Get-FileHash $exe.FullName -Algorithm SHA256).Hash.ToLower()
+          [IO.File]::WriteAllText("$($exe.FullName).sha256", "$hash  $($exe.Name)`n")
+          "path=$($exe.FullName)" >> $env:GITHUB_OUTPUT
+          "$($exe.Name): $([math]::Round($exe.Length / 1MB, 2)) MB, sha256 $hash" >> $env:GITHUB_STEP_SUMMARY
+
+      - name: Draft the release
+        if: github.event_name == 'push'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INSTALLER: ${{ steps.installer.outputs.path }}
+        run: >
+          gh release create $env:GITHUB_REF_NAME --draft --verify-tag
+          --title "Cerberus $env:GITHUB_REF_NAME" --generate-notes
+          "$env:INSTALLER" "$env:INSTALLER.sha256"
