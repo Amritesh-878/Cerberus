@@ -73,26 +73,39 @@ fn allow_focus(pipe: &File) {
 #[cfg(not(windows))]
 fn allow_focus(_pipe: &File) {}
 
-/// Answers each request on its own thread, one at a time, for as long as the app runs.
+/// Listens for as long as the app runs; each asker gets its own thread, so a stalled one holds up nobody.
 #[cfg(windows)]
 pub fn serve(
     name: &str,
-    answer: impl Fn(&[String]) -> (i32, String) + Send + 'static,
+    answer: impl Fn(&[String]) -> (i32, String) + Send + Sync + 'static,
 ) -> io::Result<()> {
-    let mut first = Some(listen(name, true)?);
+    let mut waiting = listen(name, true)?;
     let name = name.to_owned();
+    let answer = std::sync::Arc::new(answer);
     std::thread::spawn(move || {
         loop {
-            let pipe = match first.take().map_or_else(|| listen(&name, false), Ok) {
-                Ok(pipe) => pipe,
+            let pipe = accept(waiting);
+            // The next instance exists before this one can close, so an asker never finds the name missing.
+            waiting = match listen(&name, false) {
+                Ok(next) => next,
                 Err(e) => {
                     eprintln!("cerberus open stopped listening: {e}");
                     return;
                 }
             };
-            if let Err(e) = reply(pipe, &answer) {
-                eprintln!("could not answer cerberus open: {e}");
-            }
+            let pipe = match pipe {
+                Ok(pipe) => pipe,
+                Err(e) => {
+                    eprintln!("a cerberus open asker left early: {e}");
+                    continue;
+                }
+            };
+            let answer = std::sync::Arc::clone(&answer);
+            std::thread::spawn(move || {
+                if let Err(e) = reply(pipe, &*answer) {
+                    eprintln!("could not answer cerberus open: {e}");
+                }
+            });
         }
     });
     Ok(())
@@ -101,7 +114,7 @@ pub fn serve(
 #[cfg(not(windows))]
 pub fn serve(
     _name: &str,
-    _answer: impl Fn(&[String]) -> (i32, String) + Send + 'static,
+    _answer: impl Fn(&[String]) -> (i32, String) + Send + Sync + 'static,
 ) -> io::Result<()> {
     Ok(())
 }
@@ -149,12 +162,13 @@ fn listen(name: &str, first: bool) -> io::Result<Listening> {
 #[cfg(windows)]
 struct Listening(File);
 
+/// Waits for the next asker.
 #[cfg(windows)]
-fn reply(pipe: Listening, answer: &impl Fn(&[String]) -> (i32, String)) -> io::Result<()> {
+fn accept(pipe: Listening) -> io::Result<File> {
     use std::os::windows::io::AsRawHandle;
     use windows_sys::Win32::Foundation::ERROR_PIPE_CONNECTED;
     use windows_sys::Win32::System::Pipes::ConnectNamedPipe;
-    let Listening(mut pipe) = pipe;
+    let Listening(pipe) = pipe;
     let connected = unsafe { ConnectNamedPipe(pipe.as_raw_handle(), std::ptr::null_mut()) };
     if connected == 0 {
         let e = io::Error::last_os_error();
@@ -163,6 +177,11 @@ fn reply(pipe: Listening, answer: &impl Fn(&[String]) -> (i32, String)) -> io::R
             return Err(e);
         }
     }
+    Ok(pipe)
+}
+
+#[cfg(windows)]
+fn reply(mut pipe: File, answer: &dyn Fn(&[String]) -> (i32, String)) -> io::Result<()> {
     let mut line = String::new();
     BufReader::new((&pipe).take(MOST_REQUEST)).read_line(&mut line)?;
     let args: Vec<String> = serde_json::from_str(&line)?;
@@ -202,6 +221,17 @@ mod tests {
 
         assert_eq!(first, Some((2, "open|a b\nc".to_owned())));
         assert_eq!(second, Some((1, "open".to_owned())));
+    }
+
+    #[test]
+    fn an_asker_that_never_writes_holds_up_nobody() {
+        let name = unique();
+        serve(&name, |_| (0, "answered".to_owned())).unwrap();
+        let _stalled = connect(&name).unwrap().unwrap();
+
+        let answer = ask(&name, &["open".to_owned()]).unwrap();
+
+        assert_eq!(answer, Some((0, "answered".to_owned())));
     }
 
     #[test]
