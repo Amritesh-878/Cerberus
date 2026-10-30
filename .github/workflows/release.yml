@@ -6,17 +6,19 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  release:
+  build:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@v7
         with:
@@ -55,7 +57,6 @@ jobs:
       - run: npx tauri build
 
       - name: Hash the installer
-        id: installer
         shell: pwsh
         run: |
           $exe = @(Get-Item src-tauri/target/release/bundle/nsis/*-setup.exe)
@@ -63,16 +64,34 @@ jobs:
           $exe = $exe[0]
           $hash = (Get-FileHash $exe.FullName -Algorithm SHA256).Hash.ToLower()
           [IO.File]::WriteAllText("$($exe.FullName).sha256", "$hash  $($exe.Name)`n")
-          "path=$($exe.FullName)" >> $env:GITHUB_OUTPUT
           "$($exe.Name): $([math]::Round($exe.Length / 1MB, 2)) MB, sha256 $hash" >> $env:GITHUB_STEP_SUMMARY
 
-      - name: Draft the release
+      - name: Hand the installer to the release job
         if: github.event_name == 'push'
-        shell: pwsh
+        uses: actions/upload-artifact@v7
+        with:
+          name: installer
+          path: |
+            src-tauri/target/release/bundle/nsis/*-setup.exe
+            src-tauri/target/release/bundle/nsis/*-setup.exe.sha256
+          retention-days: 1
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: installer
+          path: installer
+
+      - name: Draft the release
         env:
           GH_TOKEN: ${{ github.token }}
-          INSTALLER: ${{ steps.installer.outputs.path }}
         run: >
-          gh release create $env:GITHUB_REF_NAME --draft --verify-tag
-          --title "Cerberus $env:GITHUB_REF_NAME" --generate-notes
-          "$env:INSTALLER" "$env:INSTALLER.sha256"
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft --verify-tag
+          --title "Cerberus $GITHUB_REF_NAME" --generate-notes installer/*
