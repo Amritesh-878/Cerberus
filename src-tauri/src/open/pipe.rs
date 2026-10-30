@@ -132,16 +132,18 @@ fn serve_within(
     Ok(())
 }
 
-/// Ends a worker's blocked pipe read or write once `deadline` passes, so it returns and frees its slot.
+/// Ends a worker's blocked pipe calls once `deadline` passes, so it returns and frees its slot.
 #[cfg(windows)]
 fn cut_off_after(worker: std::thread::JoinHandle<()>, deadline: std::time::Duration) {
     use std::os::windows::io::AsRawHandle;
     use windows_sys::Win32::System::IO::CancelSynchronousIo;
     std::thread::spawn(move || {
         std::thread::sleep(deadline);
-        if !worker.is_finished() {
+        // Repeated, since a worker between calls has nothing to cancel yet and may block next.
+        while !worker.is_finished() {
             // The handle stays valid while `worker` is held; a worker with nothing pending just fails the call.
             unsafe { CancelSynchronousIo(worker.as_raw_handle()) };
+            std::thread::sleep(std::time::Duration::from_millis(50));
         }
     });
 }
@@ -320,6 +322,29 @@ mod tests {
             .collect();
 
         std::thread::sleep(std::time::Duration::from_millis(400));
+        let answer = ask(&name, &["open".to_owned()]).unwrap();
+
+        assert_eq!(answer, Some((0, "answered".to_owned())));
+    }
+
+    #[test]
+    fn askers_that_never_read_the_answer_are_cut_off_too() {
+        let name = unique();
+        // Slower than the deadline, so the first cancel finds nothing pending and the write blocks after.
+        serve_within(&name, std::time::Duration::from_millis(100), |_| {
+            std::thread::sleep(std::time::Duration::from_millis(150));
+            (0, "answered".to_owned())
+        })
+        .unwrap();
+        let _deaf: Vec<File> = (0..MOST_ASKERS)
+            .map(|_| {
+                let mut pipe = connect(&name).unwrap().unwrap();
+                writeln!(pipe, r#"["open"]"#).unwrap();
+                pipe
+            })
+            .collect();
+
+        std::thread::sleep(std::time::Duration::from_millis(600));
         let answer = ask(&name, &["open".to_owned()]).unwrap();
 
         assert_eq!(answer, Some((0, "answered".to_owned())));
