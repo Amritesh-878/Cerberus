@@ -11,12 +11,14 @@ import {
 } from "solid-js";
 
 import {
+  type Account,
   accountColor,
   type AccountId,
   type Profiles,
   statusText,
 } from "./accounts";
 import { type Mark, resetText } from "./board";
+import { continueTargets, limitShortcut } from "./carry";
 import {
   ChevronIcon,
   ClockIcon,
@@ -28,6 +30,7 @@ import {
   SearchIcon,
 } from "./icons";
 import type { Statuses } from "./statuses";
+import { type MenuPlace, TabMenu } from "./TabMenu";
 import type { TabAccount } from "./tab";
 import {
   groups,
@@ -46,6 +49,8 @@ export function Sidebar(props: {
   statuses: Statuses;
   active: TabId | undefined;
   mark: (id: TabId) => Mark | undefined;
+  running: (id: TabId) => boolean;
+  onContinue: (id: TabId, account: Account) => void;
   onSelect: (id: TabId) => void;
   onClose: (id: TabId) => void;
   onRename: (id: TabId, title: string) => void;
@@ -58,6 +63,13 @@ export function Sidebar(props: {
   const [search, setSearch] = createSignal("");
   const [renaming, setRenaming] = createSignal<TabId>();
   const [folded, setFolded] = createSignal<ReadonlySet<ProjectId>>(new Set());
+  const [menu, setMenu] = createSignal<{
+    tab: TreeTab;
+    at: MenuPlace;
+    chosen?: Account;
+  }>();
+  const targetsOf = (tab: TreeTab) =>
+    continueTargets(tab, props.profiles.accounts, props.statuses.get);
 
   // The account's current name, so a rename in Accounts reaches tabs already open.
   const accountOf = (tab: TreeTab): TabAccount | null => {
@@ -131,7 +143,18 @@ export function Sidebar(props: {
                       status={(id) => statusText(props.statuses.get(id))}
                       active={props.active === row.tab.id}
                       mark={props.mark(row.tab.id)}
+                      shortcut={limitShortcut(
+                        props.mark(row.tab.id),
+                        targetsOf(row.tab),
+                      )}
                       renaming={renaming() === row.tab.id}
+                      onMenu={(at) => {
+                        if (targetsOf(row.tab).length > 0)
+                          setMenu({ tab: row.tab, at });
+                      }}
+                      onShortcut={(account, at) => {
+                        setMenu({ tab: row.tab, at, chosen: account });
+                      }}
                       onSelect={() => {
                         props.onSelect(row.tab.id);
                       }}
@@ -155,6 +178,25 @@ export function Sidebar(props: {
           <p class="hint tree-empty">No tabs match.</p>
         </Show>
       </nav>
+      <Show when={menu()}>
+        {(open) => (
+          <TabMenu
+            title={open().tab.title}
+            targets={targetsOf(open().tab)}
+            running={props.running(open().tab.id)}
+            at={open().at}
+            chosen={open().chosen}
+            onContinue={(account) => {
+              const id = open().tab.id;
+              setMenu(undefined);
+              props.onContinue(id, account);
+            }}
+            onDismiss={() => {
+              setMenu(undefined);
+            }}
+          />
+        )}
+      </Show>
       <footer class="sidebar-foot">
         <button
           type="button"
@@ -187,11 +229,14 @@ function TabRow(props: {
   status: (id: AccountId) => string;
   active: boolean;
   mark: Mark | undefined;
+  shortcut: Account | undefined;
   renaming: boolean;
   onSelect: () => void;
   onClose: () => void;
   onStartRename: () => void;
   onRenamed: (title: string | undefined) => void;
+  onMenu: (at: MenuPlace) => void;
+  onShortcut: (account: Account, at: MenuPlace) => void;
 }) {
   const tab = () => props.row.tab;
   const icon = () => (
@@ -205,75 +250,105 @@ function TabRow(props: {
     </Show>
   );
 
+  const resets = () =>
+    props.mark?.kind === "limited" && props.mark.resetsAt !== null
+      ? resetText(props.mark.resetsAt)
+      : undefined;
+
   return (
-    <div
-      class="tab-row"
-      classList={{
-        sub: props.row.sub,
-        last: props.row.last,
-        active: props.active,
-        done: props.mark?.kind === "done",
-        waiting: props.mark?.kind === "waiting",
-      }}
-    >
-      <Show
-        when={props.renaming}
-        fallback={
-          <button
-            type="button"
-            class="tab-select"
-            aria-current={props.active ? "page" : undefined}
-            title="Double-click or F2 to rename"
-            onClick={() => {
-              props.onSelect();
-            }}
-            onDblClick={() => {
-              props.onStartRename();
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "F2") props.onStartRename();
-            }}
-          >
-            {icon()}
-            <span class="tab-text">
-              <span class="tab-title">{tab().title}</span>
-            </span>
-            <StateMark mark={props.mark} />
-            <Show when={props.account}>
-              {(account) => (
-                <span
-                  title={`${account().name} · ${props.status(account().id)}`}
-                >
-                  <AccountDot id={account().id} />
-                </span>
-              )}
-            </Show>
-          </button>
-        }
-      >
-        <div class="tab-select">
-          {icon()}
-          <span class="tab-text">
-            <RenameField
-              title={tab().title}
-              label="Tab name"
-              onDone={props.onRenamed}
-            />
-          </span>
-        </div>
-      </Show>
-      <button
-        type="button"
-        class="icon-button close"
-        aria-label={`Close ${tab().title}`}
-        title="Close (Ctrl+Shift+W)"
-        onClick={() => {
-          props.onClose();
+    <>
+      <div
+        class="tab-row"
+        onContextMenu={(event) => {
+          event.preventDefault();
+          props.onMenu({ x: event.clientX, y: event.clientY });
+        }}
+        classList={{
+          sub: props.row.sub,
+          last: props.row.last,
+          active: props.active,
+          done: props.mark?.kind === "done",
+          waiting: props.mark?.kind === "waiting",
         }}
       >
-        <CloseIcon />
-      </button>
-    </div>
+        <Show
+          when={props.renaming}
+          fallback={
+            <button
+              type="button"
+              class="tab-select"
+              aria-current={props.active ? "page" : undefined}
+              title="Double-click or F2 to rename"
+              onClick={() => {
+                props.onSelect();
+              }}
+              onDblClick={() => {
+                props.onStartRename();
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "F2") props.onStartRename();
+              }}
+            >
+              {icon()}
+              <span class="tab-text">
+                <span class="tab-title">{tab().title}</span>
+              </span>
+              <StateMark mark={props.mark} />
+              <Show when={props.account}>
+                {(account) => (
+                  <span
+                    title={`${account().name} · ${props.status(account().id)}`}
+                  >
+                    <AccountDot id={account().id} />
+                  </span>
+                )}
+              </Show>
+            </button>
+          }
+        >
+          <div class="tab-select">
+            {icon()}
+            <span class="tab-text">
+              <RenameField
+                title={tab().title}
+                label="Tab name"
+                onDone={props.onRenamed}
+              />
+            </span>
+          </div>
+        </Show>
+        <button
+          type="button"
+          class="icon-button close"
+          aria-label={`Close ${tab().title}`}
+          title="Close (Ctrl+Shift+W)"
+          onClick={() => {
+            props.onClose();
+          }}
+        >
+          <CloseIcon />
+        </button>
+      </div>
+      <Show when={props.shortcut}>
+        {(account) => (
+          <button
+            type="button"
+            class="limit-continue"
+            classList={{ sub: props.row.sub }}
+            onClick={(event) => {
+              const box = event.currentTarget.getBoundingClientRect();
+              props.onShortcut(account(), { x: box.left, y: box.bottom + 4 });
+            }}
+          >
+            {resets() === undefined
+              ? "Limited"
+              : `Limited until ${resets() ?? ""}`}
+            {" · continue on "}
+            {account().name}
+          </button>
+        )}
+      </Show>
+    </>
   );
 }
 
