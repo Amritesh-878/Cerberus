@@ -1,12 +1,15 @@
 use std::path::PathBuf;
-use std::sync::mpsc;
+use std::sync::{Arc, mpsc};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
-use tauri::State;
 use tauri::ipc::{Channel, InvokeResponseBody, IpcResponse};
+use tauri::{AppHandle, Manager, State};
 
-use crate::accounts::{AccountId, Accounts, AccountsError, AuthStatus, Candidate, Profiles};
+use crate::accounts::{
+    AccountId, Accounts, AccountsError, AuthState, AuthStatus, Candidate, Profiles,
+};
+use crate::handover::{ContinueError, RunningTabs, continue_chat};
 use crate::programs::{Finder, ProgramChoice};
 use crate::pty::{PtyError, PtyManager, SessionId, SpawnRequest};
 use crate::saved::{Loaded, Saved, SavedTree, TabId, TreeError};
@@ -47,9 +50,9 @@ pub fn list_programs() -> Vec<ProgramChoice> {
 /// Output arrives on `events` as raw bytes, a Claude tab's state as `{ state }`, and the exit as `{ exitCode }`.
 #[tauri::command(async)]
 pub fn pty_spawn(
+    app: AppHandle,
     manager: State<'_, PtyManager>,
     accounts: State<'_, Accounts>,
-    saved: State<'_, Saved>,
     mut request: SpawnRequest,
     account: Option<AccountId>,
     tab: Option<TabId>,
@@ -63,6 +66,7 @@ pub fn pty_spawn(
         .cwd
         .clone()
         .unwrap_or_else(|| accounts.home().to_string_lossy().into_owned());
+    let saved = app.state::<Saved>();
     let mut resume = Resume::New;
     if let Some(home) = &claude_home {
         let session = tab.and_then(|t| saved.session_of(t));
@@ -77,7 +81,11 @@ pub fn pty_spawn(
     let (stop, stopped) = mpsc::channel::<()>();
     let exit_events = events.clone();
     let state_events = events.clone();
-    let id = manager.spawn(
+    let running = Arc::clone(&app.state::<Arc<RunningTabs>>());
+    if let Some(tab) = tab {
+        running.started(tab);
+    }
+    let spawned = manager.spawn(
         &request,
         move |bytes| {
             // A send fails only once the webview is gone, and then nobody is left to show it.
@@ -85,11 +93,23 @@ pub fn pty_spawn(
         },
         move |exit_code| {
             drop(stop);
+            if let Some(tab) = tab {
+                running.ended(tab);
+            }
             if let Ok(body) = (Exited { exit_code }).body() {
                 let _ = exit_events.send(body);
             }
         },
-    )?;
+    );
+    let id = match spawned {
+        Ok(id) => id,
+        Err(e) => {
+            if let Some(tab) = tab {
+                app.state::<Arc<RunningTabs>>().ended(tab);
+            }
+            return Err(e.into());
+        }
+    };
     if let (Some(config_dir), Some(pid)) = (claude_home, manager.pid(id)) {
         let watched = Watched {
             config_dir,
@@ -228,4 +248,17 @@ pub fn tree_load(saved: State<'_, Saved>) -> Result<Loaded, TreeError> {
 #[tauri::command(async)]
 pub fn tree_save(saved: State<'_, Saved>, tree: SavedTree) -> Result<(), TreeError> {
     saved.save(tree)
+}
+
+/// Copies the tab's chat to `account`; on success the webview reopens the tab there, which resumes it.
+#[tauri::command(async)]
+pub fn continue_on_account(
+    accounts: State<'_, Accounts>,
+    saved: State<'_, Saved>,
+    running: State<'_, Arc<RunningTabs>>,
+    tab: TabId,
+    account: AccountId,
+) -> Result<(), ContinueError> {
+    let signed_in = |id| Ok(accounts.status(id)?.state == AuthState::LoggedIn);
+    continue_chat(&saved, &accounts, &running, signed_in, tab, account)
 }

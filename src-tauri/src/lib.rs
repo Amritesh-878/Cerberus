@@ -1,15 +1,19 @@
 mod accounts;
 mod commands;
+mod handover;
 mod job;
 mod programs;
 mod pty;
 mod saved;
 mod sessions;
 
+use std::sync::Arc;
+
 use tauri::webview::PageLoadEvent;
 use tauri::{Emitter, Manager, RunEvent};
 
 use crate::accounts::Accounts;
+use crate::handover::RunningTabs;
 use crate::pty::PtyManager;
 use crate::saved::Saved;
 
@@ -22,6 +26,7 @@ pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(PtyManager::default())
+        .manage(Arc::new(RunningTabs::default()))
         .setup(|app| {
             let paths = app.path();
             let config_dir = paths.app_config_dir()?;
@@ -60,6 +65,7 @@ pub fn run() {
             commands::account_status,
             commands::tree_load,
             commands::tree_save,
+            commands::continue_on_account,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
