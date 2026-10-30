@@ -40,6 +40,7 @@ pub fn run() {
             if let open::Command::Open(spec) = &command {
                 open::request(app.handle(), spec);
             }
+            open::listen(app.handle());
             Ok(())
         })
         // A reload drops the page that owned every session, so nothing could close them later.
