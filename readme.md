@@ -23,7 +23,7 @@ PowerShell.
 The installer is not code-signed yet, so Windows SmartScreen may warn on first run: choose
 **More info**, then **Run anyway**.
 
-Uninstall from **Settings > Apps**. Your accounts, settings and saved tabs in
+Uninstall from **Settings > Apps**. Your accounts and settings in
 `%APPDATA%\com.cerberus.terminal` are kept unless you tick the box to delete the app data.
 
 **winget:** coming soon.
