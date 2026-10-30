@@ -23,6 +23,10 @@ PowerShell.
 The installer is not code-signed yet, so Windows SmartScreen may warn on first run: choose
 **More info**, then **Run anyway**.
 
+The installer adds its folder to your user `PATH`, so `cerberus open <project>[/<tab>]` works
+from any terminal opened after the install; terminals already open keep the old `PATH`.
+Uninstalling removes it again.
+
 Uninstall from **Settings > Apps**. Your accounts and settings in
 `%APPDATA%\com.cerberus.terminal` are kept unless you tick the box to delete the app data.
 
