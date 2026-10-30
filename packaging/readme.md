@@ -45,7 +45,7 @@ Submit only after the release is published, from a copy outside the repo:
    - The URL downloads, and `Get-FileHash` of the download matches `<sha256>`.
    - `winget settings --enable LocalManifestFiles` (admin, once), then
      `winget install --manifest <folder>` installs it, it starts, and
-     `winget uninstall Amritesh-878.Cerberus` removes it.
+     `winget uninstall --manifest <folder>` removes it.
 4. Submit: `wingetcreate submit --prtitle "New package: Amritesh-878.Cerberus version <version>" <folder>`.
    It asks for a GitHub sign-in (or takes `--token`) and opens a PR on `microsoft/winget-pkgs`.
 
