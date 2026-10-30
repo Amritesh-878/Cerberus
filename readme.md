@@ -11,6 +11,23 @@ Built with Claude Code.
 
 **Status:** early. Projects and tabs run side by side; saving them across restarts comes next.
 
+## Install
+
+Download `Cerberus_<version>_x64-setup.exe` from
+[Releases](https://github.com/Amritesh-878/Cerberus/releases) and run it. It installs for your
+user only, with no admin prompt, on 64-bit Windows 10 or 11. Tabs run
+[Claude Code](https://code.claude.com/docs/en/setup), which is installed separately. Each
+release lists the installer's SHA-256 beside it; compare it with `Get-FileHash <file>` in
+PowerShell.
+
+The installer is not code-signed yet, so Windows SmartScreen may warn on first run: choose
+**More info**, then **Run anyway**.
+
+Uninstall from **Settings > Apps**. Your accounts, settings and saved tabs in
+`%APPDATA%\com.cerberus.terminal` are kept unless you tick the box to delete the app data.
+
+**winget:** coming soon.
+
 ## Using it
 
 ### First run
