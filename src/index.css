@@ -217,7 +217,8 @@ button {
   border-radius: 6px;
 }
 
-.confirm-actions .danger {
+.confirm-actions .danger,
+.confirm-actions .go {
   color: var(--bg);
   background: var(--accent);
   border-color: var(--accent);

@@ -87,7 +87,7 @@ export function TabMenu(props: {
               <div class="confirm-actions">
                 <button
                   type="button"
-                  class="primary"
+                  class="go"
                   onClick={() => {
                     props.onContinue(account());
                   }}
