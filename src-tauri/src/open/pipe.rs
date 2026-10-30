@@ -3,6 +3,8 @@ use std::io::{self, BufRead, BufReader, Read, Write};
 
 // A request is a handful of names; a longer one is not from Cerberus.
 const MOST_REQUEST: u64 = 16 * 1024;
+// Askers that never write could otherwise pile up threads and handles without end.
+const MOST_ASKERS: usize = 8;
 
 /// Per Windows session, so two people signed in at once each reach their own app.
 pub fn name(identifier: &str) -> String {
@@ -82,6 +84,7 @@ pub fn serve(
     let mut waiting = listen(name, true)?;
     let name = name.to_owned();
     let answer = std::sync::Arc::new(answer);
+    let busy = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
     std::thread::spawn(move || {
         loop {
             let pipe = accept(waiting);
@@ -100,8 +103,13 @@ pub fn serve(
                     continue;
                 }
             };
+            let Some(slot) = Slot::take(&busy) else {
+                // Closing the pipe turns this asker away with an error, and keeps the listener free.
+                continue;
+            };
             let answer = std::sync::Arc::clone(&answer);
             std::thread::spawn(move || {
+                let _slot = slot;
                 if let Err(e) = reply(pipe, &*answer) {
                     eprintln!("could not answer cerberus open: {e}");
                 }
@@ -109,6 +117,29 @@ pub fn serve(
         }
     });
     Ok(())
+}
+
+/// One of the `MOST_ASKERS` answers allowed at once, given back when dropped.
+#[cfg(windows)]
+struct Slot(std::sync::Arc<std::sync::atomic::AtomicUsize>);
+
+#[cfg(windows)]
+impl Slot {
+    fn take(busy: &std::sync::Arc<std::sync::atomic::AtomicUsize>) -> Option<Self> {
+        use std::sync::atomic::Ordering;
+        busy.fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
+            (n < MOST_ASKERS).then_some(n + 1)
+        })
+        .ok()
+        .map(|_| Self(std::sync::Arc::clone(busy)))
+    }
+}
+
+#[cfg(windows)]
+impl Drop for Slot {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
+    }
 }
 
 #[cfg(not(windows))]
@@ -231,6 +262,24 @@ mod tests {
 
         let answer = ask(&name, &["open".to_owned()]).unwrap();
 
+        assert_eq!(answer, Some((0, "answered".to_owned())));
+    }
+
+    #[test]
+    fn askers_past_the_limit_are_turned_away_and_slots_come_back() {
+        let name = unique();
+        serve(&name, |_| (0, "answered".to_owned())).unwrap();
+        let stalled: Vec<File> = (0..MOST_ASKERS)
+            .map(|_| connect(&name).unwrap().unwrap())
+            .collect();
+
+        assert!(ask(&name, &["open".to_owned()]).is_err());
+
+        drop(stalled);
+        let answer = (0..40).find_map(|_| {
+            std::thread::sleep(std::time::Duration::from_millis(25));
+            ask(&name, &["open".to_owned()]).ok().flatten()
+        });
         assert_eq!(answer, Some((0, "answered".to_owned())));
     }
 
