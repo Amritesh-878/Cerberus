@@ -190,16 +190,20 @@ fn an_unknown_tab_lists_the_close_titles() {
     );
 }
 
+fn no_app(_: &[String]) -> io::Result<Option<(i32, String)>> {
+    Ok(None)
+}
+
 #[test]
 fn a_start_runs_the_app_without_reading_the_tree() {
-    let checked = check(&[], || panic!("read the tree for a plain start"));
+    let checked = check(&[], no_app, || panic!("read the tree for a plain start"));
 
     assert_eq!(checked, Checked::Run(Command::Start, None));
 }
 
 #[test]
 fn a_match_runs_the_app_and_names_what_it_opens() {
-    let checked = check(&args("open alpha/planner"), || Ok(tree()));
+    let checked = check(&args("open alpha/planner"), no_app, || Ok(tree()));
 
     assert_eq!(
         checked,
@@ -212,9 +216,9 @@ fn a_match_runs_the_app_and_names_what_it_opens() {
 
 #[test]
 fn a_miss_exits_with_one() {
-    let unknown = check(&args("open nowhere"), || Ok(tree()));
-    let ambiguous = check(&args("open shared"), || Ok(tree()));
-    let unreadable = check(&args("open alpha"), || Err(TreeError::InUse));
+    let unknown = check(&args("open nowhere"), no_app, || Ok(tree()));
+    let ambiguous = check(&args("open shared"), no_app, || Ok(tree()));
+    let unreadable = check(&args("open alpha"), no_app, || Err(TreeError::InUse));
 
     assert!(matches!(unknown, Checked::Exit(MISSED, _)));
     assert!(matches!(ambiguous, Checked::Exit(MISSED, _)));
@@ -229,7 +233,56 @@ fn a_miss_exits_with_one() {
 
 #[test]
 fn bad_usage_exits_with_two_without_reading_the_tree() {
-    let checked = check(&args("open"), || panic!("read the tree for bad usage"));
+    let checked = check(&args("open"), no_app, || {
+        panic!("read the tree for bad usage")
+    });
 
     assert_eq!(checked, Checked::Exit(BAD_USAGE, USAGE.to_owned()));
+}
+
+#[test]
+fn a_running_app_answers_instead_of_the_file() {
+    let mut asked = Vec::new();
+    let checked = check(
+        &args("open alpha/brand new"),
+        |args| {
+            asked = args.to_vec();
+            Ok(Some((0, "Opening alpha / brand new".to_owned())))
+        },
+        || panic!("read the file while an app answered"),
+    );
+
+    assert_eq!(asked, args("open alpha/brand new"));
+    assert_eq!(
+        checked,
+        Checked::Exit(0, "Opening alpha / brand new".to_owned())
+    );
+}
+
+#[test]
+fn a_running_app_that_finds_nothing_exits_with_its_code() {
+    let checked = check(
+        &args("open nowhere"),
+        |_| Ok(Some((MISSED, "No project matches \"nowhere\".".to_owned()))),
+        || panic!("read the file while an app answered"),
+    );
+
+    assert!(matches!(checked, Checked::Exit(MISSED, _)));
+}
+
+#[test]
+fn an_app_that_cannot_be_reached_is_a_miss() {
+    let checked = check(
+        &args("open alpha"),
+        |_| Err(io::Error::other("pipe broke")),
+        || Ok(tree()),
+    );
+
+    assert_eq!(
+        checked,
+        Checked::Exit(
+            MISSED,
+            "could not reach the running Cerberus: pipe broke".to_owned()
+        )
+    );
 }

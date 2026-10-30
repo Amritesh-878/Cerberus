@@ -1,10 +1,11 @@
 pub mod launch;
+mod pipe;
 
-use std::fmt;
+use std::{fmt, io};
 
 use serde::Serialize;
 
-pub use launch::{Pending, from_command_line, on_second_launch, request};
+pub use launch::{Pending, from_command_line, listen, on_second_launch, request};
 
 use crate::saved::{ProjectId, SavedProject, SavedTab, SavedTree, TabId, TreeError};
 
@@ -289,20 +290,35 @@ pub enum Checked {
 pub const MISSED: i32 = 1;
 pub const BAD_USAGE: i32 = 2;
 
-/// The saved tree is read only for `open`, so a plain start never touches the file early.
-pub fn check(args: &[String], read: impl FnOnce() -> Result<SavedTree, TreeError>) -> Checked {
+pub fn opening(found: &Found<'_>) -> String {
+    format!("Opening {found}")
+}
+
+/// A running app answers from its live tree; only without one is the saved file read.
+pub fn check(
+    args: &[String],
+    ask: impl FnOnce(&[String]) -> io::Result<Option<(i32, String)>>,
+    read: impl FnOnce() -> Result<SavedTree, TreeError>,
+) -> Checked {
     let Some(command) = parse(args) else {
         return Checked::Exit(BAD_USAGE, USAGE.to_owned());
     };
     let Command::Open(spec) = &command else {
         return Checked::Run(command, None);
     };
+    match ask(args) {
+        Ok(Some((code, message))) => return Checked::Exit(code, message),
+        Ok(None) => {}
+        Err(e) => {
+            return Checked::Exit(MISSED, format!("could not reach the running Cerberus: {e}"));
+        }
+    }
     let tree = match read() {
         Ok(tree) => tree,
         Err(e) => return Checked::Exit(MISSED, e.to_string()),
     };
     let note = match resolve(&tree, spec) {
-        Ok(found) => format!("Opening {found}"),
+        Ok(found) => opening(&found),
         Err(miss) => return Checked::Exit(MISSED, miss.to_string()),
     };
     Checked::Run(command, Some(note))
