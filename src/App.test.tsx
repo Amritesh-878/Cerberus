@@ -505,3 +505,28 @@ test("an unreadable accounts file offers to start fresh", async () => {
 
   expect(root.querySelector("h1")?.textContent).toBe("Set up Cerberus");
 });
+
+test("the sidebar edge resizes the sidebar and saves the width with the prefs", async () => {
+  const widths: unknown[] = [];
+  const root = await renderApp(() => ({ ...SAVED, sidebarWidth: 300 }), {
+    set_sidebar_width: (args: unknown) => {
+      widths.push(field(args, "width"));
+      return { ...SAVED, sidebarWidth: field(args, "width") };
+    },
+  });
+  const app = root.querySelector<HTMLElement>(".app");
+  const edge = root.querySelector(".sidebar-edge");
+  expect(app?.style.getPropertyValue("--sidebar-width")).toBe("300px");
+
+  edge?.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }),
+  );
+  await settle();
+  expect(app?.style.getPropertyValue("--sidebar-width")).toBe("316px");
+
+  edge?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+  await settle();
+
+  expect(widths).toEqual([316, 248]);
+  expect(app?.style.getPropertyValue("--sidebar-width")).toBe("248px");
+});

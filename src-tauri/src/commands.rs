@@ -238,6 +238,14 @@ pub fn set_start_folder(
 }
 
 #[tauri::command(async)]
+pub fn set_sidebar_width(
+    accounts: State<'_, Accounts>,
+    width: u32,
+) -> Result<Profiles, AccountsError> {
+    accounts.set_sidebar_width(width)
+}
+
+#[tauri::command(async)]
 pub fn set_shell(accounts: State<'_, Accounts>, shell: String) -> Result<Profiles, AccountsError> {
     accounts.set_shell(shell)
 }

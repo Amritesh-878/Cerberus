@@ -21,6 +21,7 @@ import {
   pickFolder,
   type Profiles,
   resetProfiles,
+  setSidebarWidth,
   statusText,
 } from "./accounts";
 import { AccountsScreen } from "./AccountsScreen";
@@ -44,6 +45,7 @@ import { fromSaved, loadTree, onWriteStatus, saveTree, toSaved } from "./saved";
 import { AccountDot, Sidebar } from "./Sidebar";
 import { createStatuses } from "./statuses";
 import { type Tab, tabFor } from "./tab";
+import { SidebarEdge } from "./SidebarEdge";
 import { TerminalView } from "./Terminal";
 import {
   addProject,
@@ -63,6 +65,7 @@ import {
   type Tree,
 } from "./tree";
 import { Walkthrough } from "./Walkthrough";
+import { SIDEBAR_DEFAULT } from "./widths";
 
 type Page = "walkthrough" | "accounts";
 
@@ -103,6 +106,15 @@ export function App() {
   const [active, setActive] = createSignal<TabId>();
   const [opening, setOpening] = createSignal<Opening>();
   const [panelOpen, setPanelOpen] = createSignal(false);
+  // Held while dragging, so the edge follows the pointer before the saved value comes back.
+  const [dragged, setDragged] = createSignal<number>();
+  const sidebarWidth = () =>
+    dragged() ?? profiles()?.sidebarWidth ?? SIDEBAR_DEFAULT;
+  const saveWidth = () => {
+    setSidebarWidth(sidebarWidth()).then(changed, (error: unknown) => {
+      console.error("could not save the sidebar width:", error);
+    });
+  };
   const [drawer, setDrawer] = createSignal(false);
   const [tabsClosed, setTabsClosed] = createSignal(0);
   const [board, setBoard] = createSignal<Board>(new Map());
@@ -407,7 +419,13 @@ export function App() {
           <div
             class="app"
             classList={{ drawer: drawer(), "panel-open": panelOpen() }}
+            style={{ "--sidebar-width": `${String(sidebarWidth())}px` }}
           >
+            <SidebarEdge
+              width={sidebarWidth()}
+              onWidth={setDragged}
+              onDone={saveWidth}
+            />
             <Sidebar
               tree={tree()}
               profiles={loaded()}

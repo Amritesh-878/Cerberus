@@ -40,6 +40,7 @@ export const EMPTY: Profiles = {
   defaultAccount: null,
   shell: null,
   startFolder: null,
+  sidebarWidth: null,
   revision: 0,
 };
 
@@ -51,6 +52,7 @@ export const SAVED: Profiles = {
   defaultAccount: 1,
   shell: null,
   startFolder: null,
+  sidebarWidth: null,
   revision: 0,
 };
 
