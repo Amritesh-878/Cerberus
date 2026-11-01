@@ -40,7 +40,9 @@ taken).
 ### Projects and tabs
 
 The sidebar lists projects, each a folder. **New project** opens the Windows folder picker, and
-the folder's name becomes the project's name. Under each project sit its tabs:
+the folder's name becomes the project's name. Drag the sidebar's right edge to resize it, or
+double-click the edge to reset it; the width is saved with your settings. Under each project sit
+its tabs:
 
 - A **planner** is a Claude Code tab at the top of a project.
 - A **sub-tab** sits under a planner, one level down: a Claude Code coder or a shell.
