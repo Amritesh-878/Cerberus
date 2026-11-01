@@ -90,7 +90,8 @@ impl Db {
         let version: i64 = connection.query_row("PRAGMA user_version", [], |row| row.get(0))?;
         match usize::try_from(version) {
             Ok(0) => Ok(SavedTree::default()),
-            Ok(done) if done == MIGRATIONS.len() => Ok(Self(connection).load()?.tree),
+            // Read as it is: an older file is migrated only by the app that opens it to write.
+            Ok(done) if done <= MIGRATIONS.len() => Ok(Self(connection).load_version(done)?.tree),
             _ => Err(TreeError::UnknownVersion(version)),
         }
     }
@@ -120,6 +121,12 @@ impl Db {
     }
 
     pub fn load(&self) -> Result<Snapshot, TreeError> {
+        self.load_version(MIGRATIONS.len())
+    }
+
+    fn load_version(&self, version: usize) -> Result<Snapshot, TreeError> {
+        // Version 1 has no `ended` column, so its tabs read as not ended.
+        let ended_column = if version >= 2 { "ended" } else { "0" };
         let projects = self
             .0
             .prepare("SELECT id, name, folder FROM projects ORDER BY sort")?
@@ -135,10 +142,10 @@ impl Db {
         let mut ended = HashSet::new();
         let tabs = self
             .0
-            .prepare(
-                "SELECT id, project_id, parent_id, title, program, cwd, account_id, session_id, ended
-                 FROM tabs ORDER BY sort",
-            )?
+            .prepare(&format!(
+                "SELECT id, project_id, parent_id, title, program, cwd, account_id, session_id, {ended_column}
+                 FROM tabs ORDER BY sort"
+            ))?
             .query_map([], |row| {
                 let tab = SavedTab {
                     id: row.get(0)?,
@@ -293,6 +300,33 @@ mod tests {
     }
 
     #[test]
+    fn a_version_1_file_reads_while_unmigrated_and_stays_version_1() {
+        let dir = TestDir::new();
+        let path = dir.path().join("tree.db");
+        {
+            let first = Connection::open(&path).unwrap();
+            first.execute_batch(MIGRATIONS[0]).unwrap();
+            first
+                .execute_batch(
+                    "INSERT INTO projects VALUES (1, 'app', 'C:/work/app', 0);
+                     INSERT INTO tabs VALUES (3, 1, NULL, 'planner', 'claude', NULL, 1, NULL, 0);
+                     INSERT INTO meta VALUES ('next_id', 4);",
+                )
+                .unwrap();
+            first.pragma_update(None, "user_version", 1).unwrap();
+        }
+
+        let tree = Db::read_unlocked(&path).unwrap();
+
+        assert_eq!(tree.tabs.len(), 1);
+        let version: i64 = Connection::open(&path)
+            .unwrap()
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, 1);
+    }
+
+    #[test]
     fn a_new_file_is_migrated_to_the_latest_version() {
         let db = Db::in_memory().unwrap();
 
@@ -381,5 +415,6 @@ mod tests {
             "a newer file was set aside"
         );
         assert!(saved.save(two_projects()).is_err());
+        assert!(!saved.set_ended(3, true), "a flag was kept with saving off");
     }
 }
