@@ -109,6 +109,23 @@ test("a later request switches tabs and a project alone returns to its last tab"
   expect(activeTitle(root)).toBe("coder");
 });
 
+test("a request closes an open new tab picker and shows the tab", async () => {
+  const requests = opening();
+  const root = await renderApp(() => SAVED, requests.core);
+  await settle();
+  requests.queued.push(target(8, null));
+  await emitEvent("open-request");
+  await settle();
+  expect(root.querySelector(".new-tab")).not.toBeNull();
+
+  requests.queued.push(target(2, 6));
+  await emitEvent("open-request");
+  await settle();
+
+  expect(root.querySelector(".new-tab")).toBeNull();
+  expect(activeTitle(root)).toBe("site");
+});
+
 test("a project with no tabs opens the new tab picker for it", async () => {
   const requests = opening(target(8, null));
 
