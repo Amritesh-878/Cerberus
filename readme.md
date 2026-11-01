@@ -110,7 +110,7 @@ shows, logs or stores anything else from a transcript.
 
 ### Continuing a chat on another account
 
-Right-click a Claude Code tab and pick **Continue on <account>…** to carry its chat to another
+Right-click a Claude Code tab and pick **Continue on `<account>`…** to carry its chat to another
 account, for example when one has hit its usage limit. A limited tab offers the same thing on its
 row: "Limited until 6:40pm · continue on work". If the chat is running, Cerberus asks before
 closing it.
