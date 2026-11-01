@@ -321,8 +321,11 @@ mod tests {
             .map(|_| connect(&name).unwrap().unwrap())
             .collect();
 
-        std::thread::sleep(std::time::Duration::from_millis(400));
-        let answer = ask(&name, &["open".to_owned()]).unwrap();
+        // Real pipes need real time, so it polls up to 4 s rather than betting on one sleep.
+        let answer = (0..160).find_map(|_| {
+            std::thread::sleep(std::time::Duration::from_millis(25));
+            ask(&name, &["open".to_owned()]).ok().flatten()
+        });
 
         assert_eq!(answer, Some((0, "answered".to_owned())));
     }
