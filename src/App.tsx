@@ -123,9 +123,9 @@ export function App() {
           changed(saved);
         },
         (error: unknown) => {
-          widthWaiting = undefined;
           setWidthError(String(error));
-          setDragged(undefined);
+          // A newer width still waiting gets its own try; with none, fall back to the saved one.
+          if (widthWaiting === undefined) setDragged(undefined);
         },
       )
       .finally(() => {

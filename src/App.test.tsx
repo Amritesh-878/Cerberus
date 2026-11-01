@@ -586,3 +586,35 @@ test("a width that could not be saved says so and falls back to the saved one", 
       ?.style.getPropertyValue("--sidebar-width"),
   ).toBe("300px");
 });
+
+test("a newer width still saves after an earlier save fails", async () => {
+  const widths: unknown[] = [];
+  const replies: ((ok: boolean) => void)[] = [];
+  const root = await renderApp(() => ({ ...SAVED, sidebarWidth: 300 }), {
+    set_sidebar_width: (args: unknown) => {
+      widths.push(field(args, "width"));
+      return new Promise((resolve, reject) => {
+        replies.push((ok) => {
+          if (ok) resolve({ ...SAVED, sidebarWidth: field(args, "width") });
+          else reject(new Error("busy (fake)"));
+        });
+      });
+    },
+  });
+
+  stepRight(root);
+  stepRight(root);
+  await settle();
+  replies.shift()?.(false);
+  await settle();
+  expect(widths).toEqual([316, 332]);
+
+  replies.shift()?.(true);
+  await settle();
+  expect(root.querySelector(".save-error")).toBeNull();
+  expect(
+    root
+      .querySelector<HTMLElement>(".app")
+      ?.style.getPropertyValue("--sidebar-width"),
+  ).toBe("332px");
+});
