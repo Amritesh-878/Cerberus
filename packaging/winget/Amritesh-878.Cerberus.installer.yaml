@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.10.0.schema.json
+PackageIdentifier: Amritesh-878.Cerberus
+PackageVersion: <version>
+Platform:
+  - Windows.Desktop
+InstallerType: nullsoft
+Scope: user
+InstallModes:
+  - interactive
+  - silent
+UpgradeBehavior: install
+ReleaseDate: <release-date>
+AppsAndFeaturesEntries:
+  - DisplayName: Cerberus
+    Publisher: Amritesh-878
+    ProductCode: Cerberus
+Installers:
+  - Architecture: x64
+    InstallerUrl: https://github.com/Amritesh-878/Cerberus/releases/download/v<version>/Cerberus_<version>_x64-setup.exe
+    InstallerSha256: <sha256>
+ManifestType: installer
+ManifestVersion: 1.10.0
