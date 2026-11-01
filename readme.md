@@ -9,7 +9,7 @@ run side by side and a chat can continue on another account. Claude Code is the 
 
 Built with Claude Code.
 
-**Status:** early. Projects and tabs run side by side; saving them across restarts comes next.
+**Status:** early. Projects and tabs run side by side and are saved across restarts.
 
 ## Using it
 
@@ -58,15 +58,55 @@ touched.
 
 Every tab keeps running while another shows, with its scrollback. Closing a tab (its ×, or
 Ctrl+Shift+W) ends that tab's program and anything it started, and no other tab's. Closing the
-window ends every program the app started.
+window ends every tab's program. A window started from a tab, such as an editor opened with
+`code .` in a shell tab, stays open, as in Windows Terminal. A crash or a forced kill ends
+everything the app started, those windows included: Cerberus runs in a Windows job that ends with
+it, and lets go of that job only on a normal close.
 
 | Keys | Does |
 |---|---|
 | Ctrl+Tab, Ctrl+Shift+Tab | Next or previous tab, in sidebar order |
 | Ctrl+Shift+T | New tab in the current project |
 | Ctrl+Shift+W | Close the current tab |
+| Ctrl+Shift+A | Next tab whose chat is waiting on you |
 
-These miss Claude Code's own keys (Ctrl+T, Ctrl+C, Ctrl+V, Alt+V, Shift+Tab).
+These miss Claude Code's own keys (Ctrl+T, Ctrl+C, Ctrl+V, Alt+V, Shift+Tab, Ctrl+Shift+C) and
+WebView2's Ctrl+Shift+J.
+
+### Restarts and resuming
+
+Projects and tabs are saved as you change them, in `tree.db` in the app's folder
+(`%APPDATA%\com.cerberus.terminal`). After a restart, or a crash, the sidebar comes back as it
+was: names, accounts, folders and order. Nothing starts until you open a tab, so twenty saved
+tabs cost nothing until you use them.
+
+Opening a saved Claude Code tab runs `claude --resume` with that tab's chat, in its folder and
+under its account, and the tab says "Resuming chat…" while it loads. Cerberus learns the chat
+from Claude Code's `sessions` file for the tab's process, and follows it to the new chat after
+`/clear`. A chat is saved once it has its first message; a tab whose chat file has since been
+deleted starts a new chat and says so. Shell tabs start fresh in their folder. Setup tabs, such
+as signing an account in, are not saved.
+
+If a save fails, the bar shows "Tabs not saved" and Cerberus retries every two seconds. Only one
+Cerberus at a time saves tabs: a second copy opened alongside runs with saving off and says so.
+A `tree.db` that cannot be read is renamed to `tree.db.bad` (or `.bad2` and so on), and Cerberus
+starts with no saved tabs and says where the old file went.
+
+### The session board
+
+Each Claude Code tab's row shows what its chat is doing:
+
+| Mark | Means |
+|---|---|
+| A small spinner | Working on a reply |
+| A white dot, and the title in bold | Finished while you were on another tab, so it is waiting on you. Opening the tab clears it. |
+| A clock and a time | The last turn hit a usage limit; the time is when it resets |
+| A dimmed title | The program exited |
+| Nothing | Idle |
+
+The state comes from Claude Code's `sessions` file. The limit comes from the last record of the
+chat's transcript, of which Cerberus reads only the error type and the reset time; it never
+shows, logs or stores anything else from a transcript.
 
 A tab under an account other than the default gets `CLAUDE_CONFIG_DIR` set to its folder, so
 `claude` there, or typed in a shell tab, runs on that account. The default account leaves the

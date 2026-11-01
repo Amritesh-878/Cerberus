@@ -40,9 +40,10 @@ export function pasteInput(
   return hasImage ? IMAGE_PASTE_KEY : undefined;
 }
 
-export type Shortcut = "nextTab" | "previousTab" | "newTab" | "closeTab";
+export type Shortcut =
+  "nextTab" | "previousTab" | "newTab" | "closeTab" | "nextWaiting";
 
-/** Cerberus's own keys, chosen to miss Claude Code's: Ctrl+T, Ctrl+C, Ctrl+V, Alt+V, Shift+Tab. */
+/** Cerberus's own keys, chosen to miss Claude Code's (Ctrl+T, Ctrl+C, Ctrl+V, Alt+V, Shift+Tab) and WebView2's Ctrl+Shift+J. */
 export function shortcutFor(chord: KeyChord): Shortcut | undefined {
   if (!chord.ctrlKey || chord.altKey || chord.metaKey) return undefined;
   const key = chord.key.toLowerCase();
@@ -50,5 +51,6 @@ export function shortcutFor(chord: KeyChord): Shortcut | undefined {
   if (!chord.shiftKey) return undefined;
   if (key === "t") return "newTab";
   if (key === "w") return "closeTab";
+  if (key === "a") return "nextWaiting";
   return undefined;
 }

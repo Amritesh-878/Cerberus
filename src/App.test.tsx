@@ -1,87 +1,23 @@
-import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { render } from "solid-js/web";
 import { afterEach, expect, test } from "vitest";
 
 import type { Account, Profiles } from "./accounts";
-import { App } from "./App";
-import type { ProgramChoice } from "./pty";
+import {
+  activeTitle,
+  CHOICES,
+  cleanup,
+  click,
+  EMPTY,
+  field,
+  press,
+  ptyCore,
+  renderApp,
+  SAVED,
+  settle,
+  settled,
+  sidebarTitles,
+} from "./harness";
 
-const CHOICES: ProgramChoice[] = [
-  {
-    id: "claude",
-    label: "Claude Code",
-    program: String.raw`C:\bin\claude.exe`,
-    args: [],
-    pastesImages: true,
-    isShell: false,
-  },
-  {
-    id: "powershell",
-    label: "PowerShell",
-    program: String.raw`C:\ps\powershell.exe`,
-    args: ["-NoLogo"],
-    pastesImages: false,
-    isShell: true,
-  },
-];
-
-const EMPTY: Profiles = {
-  accounts: [],
-  defaultAccount: null,
-  shell: null,
-  startFolder: null,
-  revision: 0,
-};
-
-const SAVED: Profiles = {
-  accounts: [
-    { id: 0, name: "personal", configDir: String.raw`C:\h\.claude` },
-    { id: 1, name: "work", configDir: String.raw`C:\h\.claude-work` },
-  ],
-  defaultAccount: 1,
-  shell: null,
-  startFolder: null,
-  revision: 0,
-};
-
-let dispose: (() => void) | undefined;
-
-afterEach(() => {
-  dispose?.();
-  document.body.innerHTML = "";
-  clearMocks();
-});
-
-async function settled(): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, 0));
-}
-
-async function renderApp(
-  profiles: () => Profiles,
-  core: Record<string, (args: unknown) => unknown> = {},
-): Promise<HTMLElement> {
-  mockIPC((cmd, args) => {
-    if (cmd in core) return core[cmd]?.(args);
-    switch (cmd) {
-      case "list_programs":
-        return CHOICES;
-      case "load_profiles":
-        return profiles();
-      case "detect_accounts":
-        return [];
-      case "account_status":
-        return { state: "loggedIn", summary: "user@example.com · Pro" };
-      default:
-        return null;
-    }
-  });
-  const root = document.createElement("div");
-  document.body.append(root);
-  dispose = render(() => <App />, root);
-  await settled();
-  await settled();
-  return root;
-}
+afterEach(cleanup);
 
 test("a first run with no accounts opens the walkthrough", async () => {
   const root = await renderApp(() => EMPTY, {
@@ -92,19 +28,6 @@ test("a first run with no accounts opens the walkthrough", async () => {
   expect(root.querySelector("h1")?.textContent).toBe("Set up Cerberus");
   expect(root.textContent).toContain("Claude Code isn't installed yet");
 });
-
-function button(root: ParentNode, text: string): HTMLButtonElement {
-  const found = [...root.querySelectorAll("button")].find(
-    (b) =>
-      b.textContent.trim() === text || b.getAttribute("aria-label") === text,
-  );
-  if (!found) throw new Error(`no ${text} button`);
-  return found;
-}
-
-function click(root: ParentNode, text: string): void {
-  button(root, text).click();
-}
 
 test("the walkthrough's last step asks only which account new tabs use", async () => {
   const root = await renderApp(() => EMPTY);
@@ -170,11 +93,6 @@ test("a default account saved after leaving the accounts screen reaches the new 
   expect(pressedAccount(root)).toBe("personal");
 });
 
-async function settle(): Promise<void> {
-  await settled();
-  await settled();
-}
-
 async function newProject(root: HTMLElement): Promise<void> {
   click(root, "New project");
   await settle();
@@ -190,26 +108,6 @@ function pressedAccount(root: HTMLElement): string | undefined {
   return newTabBox(root)
     .querySelector('.choices button[aria-pressed="true"]')
     ?.textContent.trim();
-}
-
-// A core whose sessions get ids 1, 2, 3 in order and whose spawns and kills are recorded.
-function ptyCore() {
-  const spawned: unknown[] = [];
-  const killed: unknown[] = [];
-  return {
-    spawned,
-    killed,
-    core: {
-      "plugin:dialog|open": () => String.raw`C:\code\alpha`,
-      pty_spawn: (args: unknown) => {
-        spawned.push(args);
-        return spawned.length;
-      },
-      pty_kill: (args: unknown) => {
-        killed.push(field(args, "id"));
-      },
-    },
-  };
 }
 
 async function openTabs(
@@ -234,19 +132,6 @@ async function firstTab(
   await newProject(root);
   click(newTabBox(root), program);
   await settle();
-}
-
-function sidebarTitles(root: HTMLElement): string[] {
-  return [...root.querySelectorAll(".tab-row")].map((row) => {
-    const indent = row.classList.contains("sub") ? "  " : "";
-    return indent + (row.querySelector(".tab-title")?.textContent ?? "");
-  });
-}
-
-function activeTitle(root: HTMLElement): string | undefined {
-  return (
-    root.querySelector(".tab-row.active .tab-title")?.textContent ?? undefined
-  );
 }
 
 test("a new tab starts in its project's folder under the account picked", async () => {
@@ -312,12 +197,6 @@ test("closing a tab ends only its own session and shows the next tab", async () 
   expect(activeTitle(root)).toBe("Claude Code · work");
 });
 
-function press(key: string, mods: KeyboardEventInit = {}): void {
-  window.dispatchEvent(
-    new KeyboardEvent("keydown", { key, bubbles: true, ...mods }),
-  );
-}
-
 test("Ctrl+Tab and Ctrl+Shift+Tab step through the tabs and wrap", async () => {
   const root = await renderApp(() => SAVED, ptyCore().core);
   await firstTab(root, "Shell");
@@ -353,11 +232,6 @@ test("a tab renamed in the sidebar keeps its terminal", async () => {
   expect(pty.spawned).toHaveLength(1);
   expect(pty.killed).toEqual([]);
 });
-
-function field(args: unknown, key: string): unknown {
-  if (typeof args !== "object" || args === null) return undefined;
-  return Object.entries(args).find(([k]) => k === key)?.[1];
-}
 
 // A core that keeps one list, raises the revision on every save and can hold an import's reply.
 function accountsCore(start: Profiles) {

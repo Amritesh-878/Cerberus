@@ -279,6 +279,17 @@ impl Accounts {
         Ok(env_dir(&self.home, dir))
     }
 
+    /// The folder Claude Code uses for this account, where `sessions/` and `projects/` live.
+    pub fn claude_home(&self, account: Option<AccountId>) -> Result<PathBuf, AccountsError> {
+        Ok(self
+            .claude_config_dir(account)?
+            .unwrap_or_else(|| self.home.join(".claude")))
+    }
+
+    pub fn home(&self) -> &Path {
+        &self.home
+    }
+
     pub fn status(&self, id: AccountId) -> Result<AuthStatus, AccountsError> {
         let config_dir = self.claude_config_dir(Some(id))?;
         let claude = Finder::from_env().find("claude");
