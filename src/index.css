@@ -305,9 +305,19 @@ button {
   position: absolute;
   top: 50%;
   right: 4px;
-  background: inherit;
+  pointer-events: none;
+  background: var(--side);
   opacity: 0;
   transform: translateY(-50%);
+}
+
+/* Opaque in the row's own colour, so a shown button hides what it covers. */
+.tab-row:hover .close {
+  background: var(--hover);
+}
+
+.tab-row.active .close {
+  background: var(--selected);
 }
 
 /* A program that exited: the row stays, quieter. */
@@ -365,7 +375,16 @@ button {
 
 .tab-row:hover .close,
 .tab-row .close:focus-visible {
+  pointer-events: auto;
   opacity: 1;
+}
+
+/* With no hover to reveal it, a touch screen shows the close button on the active row. */
+@media (hover: none) {
+  .tab-row.active .close {
+    pointer-events: auto;
+    opacity: 1;
+  }
 }
 
 .tab-row.sub {
