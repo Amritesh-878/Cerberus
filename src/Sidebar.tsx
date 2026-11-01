@@ -50,8 +50,12 @@ export function Sidebar(props: {
   active: TabId | undefined;
   mark: (id: TabId) => Mark | undefined;
   running: (id: TabId) => boolean;
-  moving: (id: TabId) => boolean;
+  /** The account a tab's chat is moving to, while the move is under way. */
+  movingTo: (id: TabId) => string | undefined;
+  /** The tab's chat ended, so it runs the shell until Resume chat. */
+  ended: (id: TabId) => boolean;
   onContinue: (id: TabId, account: Account) => void;
+  onResume: (id: TabId) => void;
   onSelect: (id: TabId) => void;
   onClose: (id: TabId) => void;
   onRename: (id: TabId, title: string) => void;
@@ -144,8 +148,10 @@ export function Sidebar(props: {
                       status={(id) => statusText(props.statuses.get(id))}
                       active={props.active === row.tab.id}
                       mark={props.mark(row.tab.id)}
+                      ended={props.ended(row.tab.id)}
+                      movingTo={props.movingTo(row.tab.id)}
                       shortcut={
-                        props.moving(row.tab.id)
+                        props.movingTo(row.tab.id) !== undefined
                           ? undefined
                           : limitShortcut(
                               props.mark(row.tab.id),
@@ -154,7 +160,10 @@ export function Sidebar(props: {
                       }
                       renaming={renaming() === row.tab.id}
                       onMenu={(at) => {
-                        if (targetsOf(row.tab).length > 0)
+                        if (
+                          targetsOf(row.tab).length > 0 ||
+                          props.ended(row.tab.id)
+                        )
                           setMenu({ tab: row.tab, at });
                       }}
                       onShortcut={(account, at) => {
@@ -189,7 +198,13 @@ export function Sidebar(props: {
             title={open().tab.title}
             targets={targetsOf(open().tab)}
             running={props.running(open().tab.id)}
-            busy={props.moving(open().tab.id)}
+            busy={props.movingTo(open().tab.id) !== undefined}
+            ended={props.ended(open().tab.id)}
+            onResume={() => {
+              const id = open().tab.id;
+              setMenu(undefined);
+              props.onResume(id);
+            }}
             at={open().at}
             chosen={open().chosen}
             onContinue={(account) => {
@@ -235,6 +250,8 @@ function TabRow(props: {
   status: (id: AccountId) => string;
   active: boolean;
   mark: Mark | undefined;
+  ended: boolean;
+  movingTo: string | undefined;
   shortcut: Account | undefined;
   renaming: boolean;
   onSelect: () => void;
@@ -245,13 +262,15 @@ function TabRow(props: {
   onShortcut: (account: Account, at: MenuPlace) => void;
 }) {
   const tab = () => props.row.tab;
+  // An ended chat's tab runs the shell, so it shows as one until Resume chat.
+  const program = () => (props.ended ? "shell" : tab().launch.program);
   const icon = () => (
     <Show
       when={!props.row.sub}
-      fallback={<ProgramIcon program={tab().launch.program} size={13} />}
+      fallback={<ProgramIcon program={program()} size={13} />}
     >
       <span class="badge">
-        <ProgramIcon program={tab().launch.program} size={15} />
+        <ProgramIcon program={program()} size={15} />
       </span>
     </Show>
   );
@@ -335,6 +354,13 @@ function TabRow(props: {
           <CloseIcon />
         </button>
       </div>
+      <Show when={props.movingTo}>
+        {(to) => (
+          <p class="moving-line" classList={{ sub: props.row.sub }}>
+            Moving to {to()}…
+          </p>
+        )}
+      </Show>
       <Show when={props.shortcut}>
         {(account) => (
           <button

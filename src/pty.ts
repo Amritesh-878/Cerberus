@@ -28,17 +28,19 @@ export interface Size {
 
 export interface SessionHandlers {
   output: (bytes: Uint8Array) => void;
-  exit: (code: number | null) => void;
+  /** `ended`: a Claude chat ended by itself, so the core runs the shell when the tab starts again. */
+  exit: (code: number | null, ended: boolean) => void;
   /** A Claude tab's chat state; other programs report none. */
   state?: (state: LiveState) => void;
 }
 
 interface Exited {
   exitCode: number | null;
+  ended?: boolean;
 }
 
-/** `missing`: the tab's saved chat is gone, so a new one started. */
-export type Resume = "new" | "resuming" | "missing";
+/** `missing`: the saved chat is gone, so a new one started; `ended`: the chat ended, so the shell runs. */
+export type Resume = "new" | "resuming" | "missing" | "ended";
 
 interface Spawned {
   id: number;
@@ -74,7 +76,7 @@ export class PtySession {
         if (!this.#ended) handlers.state?.(event);
       } else {
         this.#ended = true;
-        handlers.exit(event.exitCode);
+        handlers.exit(event.exitCode, event.ended ?? false);
       }
     });
     const { account, ...request } = spec;

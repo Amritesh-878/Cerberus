@@ -41,7 +41,14 @@ import { shortcutFor } from "./keys";
 import { type Launch, NewTab } from "./NewTab";
 import { followOpenRequests } from "./open";
 import { listPrograms } from "./pty";
-import { fromSaved, loadTree, onWriteStatus, saveTree, toSaved } from "./saved";
+import {
+  fromSaved,
+  loadTree,
+  onWriteStatus,
+  resumeChat,
+  saveTree,
+  toSaved,
+} from "./saved";
 import { AccountDot, Sidebar } from "./Sidebar";
 import { createStatuses } from "./statuses";
 import { type Tab, tabFor } from "./tab";
@@ -142,6 +149,17 @@ export function App() {
   const [drawer, setDrawer] = createSignal(false);
   const [tabsClosed, setTabsClosed] = createSignal(0);
   const [board, setBoard] = createSignal<Board>(new Map());
+  // Tabs whose chat ended; the core runs the shell in them until Resume chat.
+  const [ended, setEnded] = createSignal<ReadonlySet<TabId>>(new Set());
+  const markEnded = (id: TabId, on: boolean) => {
+    setEnded((all) => {
+      if (all.has(id) === on) return all;
+      const next = new Set(all);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  };
 
   // Nothing is saved until the saved tree is in, or an early save would replace it with an empty one.
   const [restored, setRestored] = createSignal(false);
@@ -156,6 +174,7 @@ export function App() {
       (loaded) => {
         if (untrack(restored)) return;
         setTree(fromSaved(loaded.tree, ready, choices));
+        setEnded(new Set(loaded.ended));
         setTreeNotice(loaded.notice ?? undefined);
         setRestored(true);
       },
@@ -257,6 +276,7 @@ export function App() {
   const isRunning = (id: TabId) =>
     started().has(id) &&
     runOf(id) !== 0 &&
+    !ended().has(id) &&
     markOf(board(), id)?.kind !== "done";
 
   const select = (id: TabId) => {
@@ -265,18 +285,21 @@ export function App() {
     setDrawer(false);
   };
 
-  const [moving, setMoving] = createSignal<ReadonlySet<TabId>>(new Set());
-  const setMovingTab = (id: TabId, on: boolean) => {
+  // The account each moving tab's chat is going to, shown on its row and pane until it restarts.
+  const [moving, setMoving] = createSignal<ReadonlyMap<TabId, string>>(
+    new Map(),
+  );
+  const setMovingTab = (id: TabId, to: string | undefined) => {
     setMoving((all) => {
-      const next = new Set(all);
-      if (on) next.add(id);
-      else next.delete(id);
+      const next = new Map(all);
+      if (to === undefined) next.delete(id);
+      else next.set(id, to);
       return next;
     });
   };
   const continueOn = (id: TabId, account: Account) => {
     if (moving().has(id)) return;
-    setMovingTab(id, true);
+    setMovingTab(id, account.name);
     const initialRun = runOf(id);
     batch(() => {
       setRun(id, 0);
@@ -285,7 +308,7 @@ export function App() {
       select(id);
     });
     const restart = () => {
-      setMovingTab(id, false);
+      setMovingTab(id, undefined);
       setRun(id, initialRun + 1);
     };
     continueOnAccount(id, account.id).then(
@@ -296,6 +319,23 @@ export function App() {
       (error: unknown) => {
         setAlert(id, `Could not continue on ${account.name}: ${String(error)}`);
         restart();
+      },
+    );
+  };
+
+  const resume = (id: TabId) => {
+    resumeChat(id).then(
+      () => {
+        batch(() => {
+          markEnded(id, false);
+          setBoard((b) => cleared(b, id));
+          setAlert(id, undefined);
+          setRun(id, runOf(id) + 1);
+          select(id);
+        });
+      },
+      (error: unknown) => {
+        setAlert(id, `Could not resume the chat: ${String(error)}`);
       },
     );
   };
@@ -457,8 +497,10 @@ export function App() {
               active={shown()}
               mark={(id) => markOf(board(), id)}
               running={isRunning}
-              moving={(id) => moving().has(id)}
+              movingTo={(id) => moving().get(id)}
+              ended={(id) => ended().has(id)}
               onContinue={continueOn}
+              onResume={resume}
               onSelect={select}
               onClose={close}
               onRename={(id, title) => setTree(renameTab(tree(), id, title))}
@@ -602,7 +644,17 @@ export function App() {
                           class="tab-view"
                           classList={{ shown: shown() === id }}
                         >
-                          <Show when={runOf(id)} keyed>
+                          <Show
+                            when={runOf(id)}
+                            keyed
+                            fallback={
+                              <Show when={moving().get(id)}>
+                                {(to) => (
+                                  <p class="pane-note">Moving to {to()}…</p>
+                                )}
+                              </Show>
+                            }
+                          >
                             <TerminalView
                               tab={id}
                               spec={tab().launch.spec}
@@ -613,6 +665,10 @@ export function App() {
                                 setBoard((b) => reported(b, id, state, shown()))
                               }
                               onExit={() => setBoard((b) => exited(b, id))}
+                              onEnded={() => {
+                                markEnded(id, true);
+                                setBoard((b) => cleared(b, id));
+                              }}
                             />
                           </Show>
                         </div>

@@ -26,6 +26,8 @@ export interface Loaded {
   tree: SavedTree;
   /** Set when an unreadable file was set aside and Cerberus started with no saved tabs. */
   notice: string | null;
+  /** Tabs whose chat ended; they start as the shell until Resume chat. */
+  ended: TabId[];
 }
 
 export function loadTree(): Promise<Loaded> {
@@ -34,6 +36,11 @@ export function loadTree(): Promise<Loaded> {
 
 export function saveTree(tree: SavedTree): Promise<void> {
   return invoke("tree_save", { tree });
+}
+
+/** Lets the tab start `claude --resume` again; the caller restarts the tab. */
+export function resumeChat(tab: TabId): Promise<void> {
+  return invoke("resume_chat", { tab });
 }
 
 /** Hears each change in whether the disk holds the latest tree: the error, or `null` once it does. */

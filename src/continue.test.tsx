@@ -244,3 +244,38 @@ test("while a move is under way the tab's menu offers nothing, so it moves once"
   await settle();
   expect(app.pty.spawned.map((s) => field(s, "account"))).toEqual([0]);
 });
+
+test("a moving chat says where it is going on its row and in its pane until it restarts", async () => {
+  const app = core();
+  let finish: (() => void) | undefined;
+  const root = await renderApp(() => SAVED, {
+    ...app.core,
+    continue_on_account: (args: unknown) => {
+      app.continued.push(args);
+      return new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+    },
+  });
+  await open(root, "Claude Code · work");
+
+  await openMenu(root, "Claude Code · work");
+  click(root.querySelector(".tab-menu") ?? root, "Continue on personal…");
+  await settle();
+  click(root.querySelector(".menu-confirm") ?? root, "Continue");
+  await settle();
+
+  expect(root.querySelector(".moving-line")?.textContent).toBe(
+    "Moving to personal…",
+  );
+  expect(root.querySelector(".tab-view .pane-note")?.textContent).toBe(
+    "Moving to personal…",
+  );
+
+  finish?.();
+  await settle();
+
+  expect(root.querySelector(".moving-line")).toBeNull();
+  expect(root.querySelector(".pane-note")).toBeNull();
+  expect(app.pty.spawned).toHaveLength(2);
+});

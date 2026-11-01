@@ -574,6 +574,25 @@ button {
   color: var(--text);
 }
 
+.moving-line {
+  width: calc(100% - 16px);
+  margin: -4px 8px 4px;
+  padding: 2px 0;
+  font-size: 11px;
+  color: var(--accent);
+  overflow-wrap: anywhere;
+}
+
+.moving-line.sub {
+  width: calc(100% - 30px);
+  margin-left: 22px;
+}
+
+.pane-note {
+  margin: auto;
+  color: var(--dim);
+}
+
 .tab-menu {
   width: 240px;
   padding: 6px;
