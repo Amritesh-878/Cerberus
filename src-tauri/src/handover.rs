@@ -133,28 +133,39 @@ impl RunningTabs {
                 tabs.get(&tab).is_some_and(|p| p.live > 0)
             })
             .unwrap_or_else(PoisonError::into_inner);
-        let Some(procs) = tabs.remove(&tab) else {
+        let Some(procs) = tabs.get_mut(&tab) else {
             return true;
         };
-        drop(tabs);
         if procs.live > 0 {
-            lock(&self.tabs).insert(tab, procs);
             return false;
         }
+        // The entry stays in the map, so a start or an end that lands during the waits below still counts.
+        let root = procs.root;
+        let watchers = std::mem::take(&mut procs.watchers);
+        drop(tabs);
         // A wrapper such as `claude.cmd` can exit while the `claude` it started is still writing.
-        if let Some(root) = procs.root {
+        if let Some(root) = root {
             while !(self.probes.below)(root).is_empty() {
                 if Instant::now() >= deadline {
-                    lock(&self.tabs).insert(tab, procs);
+                    lock(&self.tabs)
+                        .entry(tab)
+                        .or_default()
+                        .watchers
+                        .extend(watchers);
                     return false;
                 }
                 thread::sleep(TREE_POLL);
             }
         }
         // A watcher's last poll could still save a newer chat id; joining it first settles which chat moves.
-        for watcher in procs.watchers {
+        for watcher in watchers {
             let _ = watcher.join();
         }
+        let mut tabs = lock(&self.tabs);
+        if tabs.get(&tab).is_some_and(|p| p.live > 0) {
+            return false;
+        }
+        tabs.remove(&tab);
         true
     }
 }
@@ -392,6 +403,51 @@ mod tests {
             Err(ContinueError::Running)
         ));
         assert!(!world.copied(ID).exists());
+    }
+
+    static TREE_HELD: AtomicBool = AtomicBool::new(false);
+
+    type Event = fn(&RunningTabs, TabId);
+
+    fn below_while_held(_: u32) -> Vec<u32> {
+        if TREE_HELD.load(Ordering::SeqCst) {
+            vec![99]
+        } else {
+            Vec::new()
+        }
+    }
+
+    #[test]
+    fn starts_and_ends_during_the_tree_wait_are_counted() {
+        let world = world_with(RunningTabs::with(Probes {
+            below: below_while_held,
+            is_running: nothing_running,
+        }));
+        world.running.started(2);
+        world.running.spawned(2, 7);
+        world.running.ended(2);
+        let during_the_wait = |events: &[Event]| {
+            TREE_HELD.store(true, Ordering::SeqCst);
+            thread::scope(|scope| {
+                scope.spawn(|| {
+                    for event in events {
+                        thread::sleep(Duration::from_millis(30));
+                        event(&world.running, 2);
+                    }
+                    TREE_HELD.store(false, Ordering::SeqCst);
+                });
+                world.continue_to(1, true)
+            })
+        };
+
+        let restarted = during_the_wait(&[RunningTabs::started as Event]);
+        assert!(matches!(restarted, Err(ContinueError::Running)));
+        assert!(!world.copied(ID).exists());
+
+        world.running.ended(2);
+        let ran_and_ended = during_the_wait(&[RunningTabs::started as Event, RunningTabs::ended]);
+        assert!(ran_and_ended.is_ok(), "an end was lost: {ran_and_ended:?}");
+        assert!(world.copied(ID).is_file());
     }
 
     #[test]
