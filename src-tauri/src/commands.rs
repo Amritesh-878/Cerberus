@@ -112,11 +112,10 @@ pub fn pty_spawn(
         },
         move |exit: Exit| {
             drop(stop);
-            let ended = chat_ended(runs_claude, exit) && tab.is_some();
+            // Only a flag that was kept makes the tab a shell; otherwise its next start would run `claude` again.
+            let ended = chat_ended(runs_claude, exit)
+                && tab.is_some_and(|tab| ended_saved.set_ended(tab, true));
             if let Some(tab) = tab {
-                if ended {
-                    ended_saved.set_ended(tab, true);
-                }
                 exit_running.ended(tab);
             }
             let exited = Exited {

@@ -274,21 +274,24 @@ impl Saved {
     }
 
     /// Marks or clears a tab's chat as ended; a tab that is not saved is ignored.
-    pub fn set_ended(&self, tab: TabId, ended: bool) {
-        let Ok(live) = self.live() else { return };
-        let changed = {
+    /// Whether the tab is saved, so the flag is kept; a setup tab or a store with saving off keeps nothing.
+    pub fn set_ended(&self, tab: TabId, ended: bool) -> bool {
+        let Ok(live) = self.live() else { return false };
+        let (known, changed) = {
             let mut snapshot = lock(&live.snapshot);
             let known = snapshot.tree.tabs.iter().any(|t| t.id == tab);
-            known
+            let changed = known
                 && if ended {
                     snapshot.ended.insert(tab)
                 } else {
                     snapshot.ended.remove(&tab)
-                }
+                };
+            (known, changed)
         };
         if changed {
             live.changed();
         }
+        known
     }
 
     pub fn is_ended(&self, tab: TabId) -> bool {
@@ -520,8 +523,8 @@ pub(crate) mod tests {
         let saved = Saved::open(&path, |_| {});
         saved.save(two_projects()).unwrap();
 
-        saved.set_ended(3, true);
-        saved.set_ended(99, true);
+        assert!(saved.set_ended(3, true));
+        assert!(!saved.set_ended(99, true));
         saved.flush();
         drop(saved);
         let restarted = Saved::open(&path, |_| {});
