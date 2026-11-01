@@ -16,6 +16,18 @@ pub enum CarryError {
     OpenOnTarget,
     #[error("could not copy the chat: {0}")]
     Io(#[from] io::Error),
+    #[error(
+        "could not copy the chat, and part of its older copy stays under a .{SET_ASIDE} name: {0}"
+    )]
+    NotRestored(io::Error),
+}
+
+type FileOp<'a> = &'a mut dyn FnMut(&Path, &Path) -> io::Result<()>;
+
+/// The two file operations a copy makes, so tests can make either fail.
+struct Ops<'a> {
+    copy: FileOp<'a>,
+    rename: FileOp<'a>,
 }
 
 /// Copies a chat's transcript and its folder from one config dir to the same project in another.
@@ -26,9 +38,11 @@ pub fn copy_chat(
     id: &str,
     is_running: &dyn Fn(u32) -> bool,
 ) -> Result<(), CarryError> {
-    copy_chat_with(from, to, cwd, id, is_running, &mut |source, target| {
-        fs::copy(source, target).map(|_| ())
-    })
+    let ops = Ops {
+        copy: &mut |source, target| fs::copy(source, target).map(|_| ()),
+        rename: &mut |source, target| fs::rename(source, target),
+    };
+    copy_chat_with(from, to, cwd, id, is_running, ops)
 }
 
 fn copy_chat_with(
@@ -37,7 +51,7 @@ fn copy_chat_with(
     cwd: &str,
     id: &str,
     is_running: &dyn Fn(u32) -> bool,
-    copy: &mut dyn FnMut(&Path, &Path) -> io::Result<()>,
+    ops: Ops<'_>,
 ) -> Result<(), CarryError> {
     if !is_session_id(id) {
         return Err(CarryError::Missing);
@@ -48,69 +62,121 @@ fn copy_chat_with(
         .parent()
         .and_then(Path::file_name)
         .ok_or(CarryError::Missing)?;
-    if open_in(to, id, is_running) {
+    if open_in(to, id, is_running)? {
         return Err(CarryError::OpenOnTarget);
     }
     let target_dir = to.join("projects").join(project);
-    let target = target_dir.join(format!("{id}.jsonl"));
-    let target_folder = target_dir.join(id);
     fs::create_dir_all(&target_dir)?;
     let temp = target_dir.join(format!("{id}.jsonl.{IN_PROGRESS}"));
     let temp_folder = target_dir.join(format!("{id}.{IN_PROGRESS}"));
     remove(&temp, &temp_folder)?;
-    if target.exists() {
-        set_aside(&target_dir, id)?;
-    } else if target_folder.exists() {
-        // A folder with no transcript is what a copy cut short between its two renames leaves.
-        fs::remove_dir_all(&target_folder)?;
-    }
+    let Ops { copy, rename } = ops;
     let source_folder = source.with_file_name(id);
-    let mut folder_moved = false;
     let copied = (|| {
         if source_folder.is_dir() {
             copy_tree(&source_folder, &temp_folder, copy)?;
         }
-        copy(&source, &temp)?;
-        if temp_folder.exists() {
-            fs::rename(&temp_folder, &target_folder)?;
-            folder_moved = true;
-        }
-        // Last, so the transcript, which is what `--resume` looks for, appears only once all is in place.
-        fs::rename(&temp, &target)
+        copy(&source, &temp)
     })();
     if let Err(e) = copied {
         let _ = remove(&temp, &temp_folder);
-        if folder_moved {
-            let _ = fs::remove_dir_all(&target_folder);
-        }
         return Err(e.into());
     }
+    // Every rename is logged, so a failure part way can be undone and the older copy keeps its name.
+    let mut done = Vec::new();
+    let Err(failed) = replace(&target_dir, id, &temp, &temp_folder, rename, &mut done) else {
+        return Ok(());
+    };
+    let undone = undo(&done, rename);
+    let _ = remove(&temp, &temp_folder);
+    match undone {
+        Ok(()) => Err(failed.into()),
+        Err(_) => Err(CarryError::NotRestored(failed)),
+    }
+}
+
+/// Moves any older copy aside, then the new chat in: its folder first, its transcript last.
+fn replace(
+    dir: &Path,
+    id: &str,
+    temp: &Path,
+    temp_folder: &Path,
+    rename: FileOp<'_>,
+    done: &mut Vec<(PathBuf, PathBuf)>,
+) -> io::Result<()> {
+    let target = dir.join(format!("{id}.jsonl"));
+    let target_folder = dir.join(id);
+    if target.exists() {
+        set_aside(dir, id, rename, done)?;
+    } else if target_folder.exists() {
+        // A folder with no transcript is what a copy cut short between its two renames leaves.
+        fs::remove_dir_all(&target_folder)?;
+    }
+    if temp_folder.exists() {
+        logged(rename, temp_folder, &target_folder, done)?;
+    }
+    // Last, so the transcript, which is what `--resume` looks for, appears only once all is in place.
+    logged(rename, temp, &target, done)
+}
+
+fn logged(
+    rename: FileOp<'_>,
+    from: &Path,
+    to: &Path,
+    done: &mut Vec<(PathBuf, PathBuf)>,
+) -> io::Result<()> {
+    rename(from, to)?;
+    done.push((from.to_path_buf(), to.to_path_buf()));
     Ok(())
 }
 
-/// Whether a running `claude` on that config dir has this chat open.
-fn open_in(config_dir: &Path, id: &str, is_running: &dyn Fn(u32) -> bool) -> bool {
-    let Ok(entries) = fs::read_dir(config_dir.join("sessions")) else {
-        return false;
+/// Reverses logged renames, newest first; it tries them all and reports the first that failed.
+fn undo(done: &[(PathBuf, PathBuf)], rename: FileOp<'_>) -> io::Result<()> {
+    let mut first_error = None;
+    for (from, to) in done.iter().rev() {
+        if let Err(e) = rename(to, from) {
+            first_error.get_or_insert(e);
+        }
+    }
+    first_error.map_or(Ok(()), Err)
+}
+
+/// Whether a running `claude` on that config dir has this chat open; only a missing file means "no".
+fn open_in(config_dir: &Path, id: &str, is_running: &dyn Fn(u32) -> bool) -> io::Result<bool> {
+    let entries = match fs::read_dir(config_dir.join("sessions")) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(e) => return Err(e),
     };
-    entries.filter_map(Result::ok).any(|entry| {
-        let path = entry.path();
+    for entry in entries {
+        let path = entry?.path();
         let pid = path
             .file_stem()
             .and_then(|stem| stem.to_str())
             .and_then(|stem| stem.parse::<u32>().ok());
-        let file = fs::read(&path)
-            .ok()
-            .and_then(|bytes| parse_session_file(&bytes));
-        match (pid, file) {
-            (Some(pid), Some(file)) => file.session_id.as_deref() == Some(id) && is_running(pid),
-            _ => false,
+        let Some(pid) = pid else { continue };
+        let bytes = match fs::read(&path) {
+            Ok(bytes) => bytes,
+            // The chat ended between the listing and the read.
+            Err(e) if e.kind() == io::ErrorKind::NotFound => continue,
+            Err(e) => return Err(e),
+        };
+        let has_chat =
+            parse_session_file(&bytes).is_some_and(|file| file.session_id.as_deref() == Some(id));
+        if has_chat && is_running(pid) {
+            return Ok(true);
         }
-    })
+    }
+    Ok(false)
 }
 
 /// Keeps the target's older copy of the chat, and its folder, under the first free `.cerberus-old` name.
-fn set_aside(dir: &Path, id: &str) -> io::Result<()> {
+fn set_aside(
+    dir: &Path,
+    id: &str,
+    rename: FileOp<'_>,
+    done: &mut Vec<(PathBuf, PathBuf)>,
+) -> io::Result<()> {
     let names = |n: u32| -> (PathBuf, PathBuf) {
         let suffix = if n == 1 {
             SET_ASIDE.to_owned()
@@ -128,16 +194,12 @@ fn set_aside(dir: &Path, id: &str) -> io::Result<()> {
         .ok_or_else(|| io::Error::other("no free name to keep the older copy under"))?;
     let current_folder = dir.join(id);
     if current_folder.exists() {
-        fs::rename(&current_folder, folder)?;
+        logged(rename, &current_folder, &folder, done)?;
     }
-    fs::rename(dir.join(format!("{id}.jsonl")), file)
+    logged(rename, &dir.join(format!("{id}.jsonl")), &file, done)
 }
 
-fn copy_tree(
-    from: &Path,
-    to: &Path,
-    copy: &mut dyn FnMut(&Path, &Path) -> io::Result<()>,
-) -> io::Result<()> {
+fn copy_tree(from: &Path, to: &Path, copy: FileOp<'_>) -> io::Result<()> {
     fs::create_dir_all(to)?;
     for entry in fs::read_dir(from)? {
         let entry = entry?;
@@ -353,12 +415,103 @@ mod tests {
             CWD,
             ID,
             &|_| false,
-            &mut failing_second,
+            Ops {
+                copy: &mut failing_second,
+                rename: &mut |a, b| fs::rename(a, b),
+            },
         );
 
         assert!(matches!(result, Err(CarryError::Io(_))));
         let target = dir.path().join("work").join("projects").join(slug(CWD));
         assert_eq!(listing(&target), Vec::<String>::new());
+    }
+
+    /// The target holds an older copy of the chat and its folder, as after a move there and back.
+    fn older_copy_on_work(dir: &TestDir) -> PathBuf {
+        let target = dir.path().join("work").join("projects").join(slug(CWD));
+        fs::create_dir_all(target.join(ID)).unwrap();
+        fs::write(target.join(format!("{ID}.jsonl")), "older copy").unwrap();
+        fs::write(target.join(ID).join("old.txt"), "older folder").unwrap();
+        target
+    }
+
+    /// Copies with renames that fail on the calls numbered in `failing`.
+    fn carry_failing_renames(dir: &TestDir, failing: &[usize]) -> Result<(), CarryError> {
+        let mut calls = 0;
+        let mut rename = |from: &Path, to: &Path| {
+            calls += 1;
+            if failing.contains(&calls) {
+                return Err(io::Error::other("rename refused (fake)"));
+            }
+            fs::rename(from, to)
+        };
+        copy_chat_with(
+            &dir.path().join("personal"),
+            &dir.path().join("work"),
+            CWD,
+            ID,
+            &|_| false,
+            Ops {
+                copy: &mut |a, b| fs::copy(a, b).map(|_| ()),
+                rename: &mut rename,
+            },
+        )
+    }
+
+    #[test]
+    fn a_failed_rename_at_any_step_puts_the_older_copy_back() {
+        // Four renames: the older folder aside, the older file aside, the new folder in, the new file in.
+        for step in 1..=4 {
+            let dir = TestDir::new();
+            chat_in(&dir, "personal", CWD);
+            let target = older_copy_on_work(&dir);
+            let before = listing(&target);
+
+            let result = carry_failing_renames(&dir, &[step]);
+
+            assert!(matches!(result, Err(CarryError::Io(_))), "step {step}");
+            assert_eq!(listing(&target), before, "step {step}");
+            assert_eq!(
+                fs::read_to_string(target.join(format!("{ID}.jsonl"))).unwrap(),
+                "older copy",
+                "step {step}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_put_back_that_fails_part_way_says_so_and_keeps_what_it_could() {
+        let dir = TestDir::new();
+        chat_in(&dir, "personal", CWD);
+        let target = older_copy_on_work(&dir);
+
+        // The new file fails to land, then moving the new folder back out fails too.
+        let result = carry_failing_renames(&dir, &[4, 5]);
+
+        assert!(matches!(result, Err(CarryError::NotRestored(_))));
+        assert_eq!(
+            fs::read_to_string(target.join(format!("{ID}.jsonl"))).unwrap(),
+            "older copy"
+        );
+        assert!(
+            target
+                .join(format!("{ID}.{SET_ASIDE}"))
+                .join("old.txt")
+                .is_file()
+        );
+    }
+
+    #[test]
+    fn an_unreadable_sessions_folder_stops_the_copy() {
+        let dir = TestDir::new();
+        chat_in(&dir, "personal", CWD);
+        fs::create_dir_all(dir.path().join("work")).unwrap();
+        fs::write(dir.path().join("work").join("sessions"), "not a folder").unwrap();
+
+        let result = carry(&dir, CWD);
+
+        assert!(matches!(result, Err(CarryError::Io(_))));
+        assert!(!dir.path().join("work").join("projects").exists());
     }
 
     #[test]
