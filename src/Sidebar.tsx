@@ -29,6 +29,7 @@ import {
   ProgramIcon,
   SearchIcon,
 } from "./icons";
+import { RENAME_KEY } from "./keys";
 import type { Statuses } from "./statuses";
 import { type MenuPlace, TabMenu } from "./TabMenu";
 import type { TabAccount } from "./tab";
@@ -311,7 +312,7 @@ function TabRow(props: {
                 props.onStartRename();
               }}
               onKeyDown={(event) => {
-                if (event.key === "F2") props.onStartRename();
+                if (event.key === RENAME_KEY) props.onStartRename();
               }}
             >
               {icon()}
@@ -480,7 +481,7 @@ function ProjectHeader(props: {
                 if (props.group.project) setRenaming(true);
               }}
               onKeyDown={(event) => {
-                if (event.key === "F2" && props.group.project)
+                if (event.key === RENAME_KEY && props.group.project)
                   setRenaming(true);
               }}
             >

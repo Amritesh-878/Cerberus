@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  KEY_HELP,
   type KeyChord,
   type PastedData,
   pasteInput,
@@ -108,4 +109,21 @@ describe("shortcutFor", () => {
   ])("leaves %s to the terminal", (_name, key) => {
     expect(shortcutFor(key)).toBeUndefined();
   });
+});
+
+test("every chord the start page lists is one Cerberus answers to", () => {
+  const listed = KEY_HELP.flatMap((help) => help.keys.split(" / "));
+  const chords = listed.filter((keys) => keys.includes("+"));
+
+  for (const keys of chords) {
+    const mods = keys.split("+");
+    const key = mods.pop() ?? "";
+    const pressed = chord(key, {
+      ctrlKey: mods.includes("Ctrl"),
+      shiftKey: mods.includes("Shift"),
+    });
+    expect(shortcutFor(pressed), keys).toBeDefined();
+  }
+  expect(chords).toHaveLength(5);
+  expect(listed).toContain("F2");
 });

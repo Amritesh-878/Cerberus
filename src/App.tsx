@@ -36,8 +36,8 @@ import {
   reported,
   startedTabs,
 } from "./board";
-import { CloseIcon, MenuIcon, PanelIcon } from "./icons";
-import { shortcutFor } from "./keys";
+import { AppIcon, CloseIcon, MenuIcon, PanelIcon } from "./icons";
+import { KEY_HELP, shortcutFor } from "./keys";
 import { type Launch, NewTab } from "./NewTab";
 import { followOpenRequests } from "./open";
 import { listPrograms } from "./pty";
@@ -394,6 +394,14 @@ export function App() {
     setTabsClosed((n) => n + 1);
   };
 
+  // The last shown tab's project, else the last project: where the start page opens a new tab.
+  const homeProject = () => {
+    const id = active();
+    const projectId = id === undefined ? undefined : tabById(id)?.projectId;
+    const projects = tree().projects;
+    return projects.find((p) => p.id === projectId) ?? projects.at(-1);
+  };
+
   const newTabIn = (projectId: ProjectId) => {
     const button = document.querySelector(
       `[data-new-tab="${String(projectId)}"]`,
@@ -681,9 +689,14 @@ export function App() {
                     <Switch
                       fallback={
                         <Home
+                          project={homeProject()?.name}
                           hasProjects={tree().projects.length > 0}
                           treeError={treeError()}
                           treeNotice={treeNotice()}
+                          onNewTab={() => {
+                            const project = homeProject();
+                            if (project) newTabIn(project.id);
+                          }}
                           onNewProject={newProject}
                         />
                       }
@@ -768,13 +781,18 @@ export function App() {
 }
 
 function Home(props: {
+  /** The project the last shown tab is in, where the main button opens a new tab. */
+  project: string | undefined;
   hasProjects: boolean;
   treeError: string | undefined;
   treeNotice: string | undefined;
+  onNewTab: () => void;
   onNewProject: () => void;
 }) {
   return (
     <main class="home">
+      <AppIcon />
+      <h1>Cerberus</h1>
       <Show when={props.treeNotice}>
         {(notice) => <p class="hint">{notice()}</p>}
       </Show>
@@ -786,30 +804,62 @@ function Home(props: {
         )}
       </Show>
       <Show
-        when={props.hasProjects}
+        when={props.hasProjects && props.project}
         fallback={
           <>
-            <h1>Add a project</h1>
+            <p class="home-lead">Add a project</p>
             <p class="hint">
               A project is a folder. Its tabs start there, each under the
               account you pick.
             </p>
+            <div class="home-actions">
+              <button
+                type="button"
+                class="primary"
+                onClick={() => {
+                  props.onNewProject();
+                }}
+              >
+                New project
+              </button>
+            </div>
           </>
         }
       >
-        <p class="hint">
-          Pick a tab on the left, or press + beside a project for a new one.
-        </p>
+        {(project) => (
+          <div class="home-actions">
+            <button
+              type="button"
+              class="primary"
+              title={`In ${project()}`}
+              onClick={() => {
+                props.onNewTab();
+              }}
+            >
+              New Claude Code tab
+            </button>
+            <button
+              type="button"
+              class="secondary"
+              onClick={() => {
+                props.onNewProject();
+              }}
+            >
+              New project
+            </button>
+          </div>
+        )}
       </Show>
-      <button
-        type="button"
-        class="primary"
-        onClick={() => {
-          props.onNewProject();
-        }}
-      >
-        New project
-      </button>
+      <dl class="home-keys">
+        <For each={KEY_HELP}>
+          {(help) => (
+            <>
+              <dt>{help.keys}</dt>
+              <dd>{help.does}</dd>
+            </>
+          )}
+        </For>
+      </dl>
     </main>
   );
 }

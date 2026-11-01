@@ -423,3 +423,33 @@ test("a restored tab the core runs as the shell is shown as ended", async () => 
     "The chat ended. Resume chat is in the tab's menu.",
   );
 });
+
+test("the start page offers a new Claude Code tab in the last project, and New project beside it", async () => {
+  const restore = restoring();
+  const root = await renderApp(() => SAVED, restore.core);
+
+  expect(root.querySelector(".home .primary")?.textContent).toBe(
+    "New Claude Code tab",
+  );
+  expect(root.querySelector(".home .secondary")?.textContent).toBe(
+    "New project",
+  );
+  expect(root.querySelector(".home-keys")?.textContent).toContain(
+    "Ctrl+Shift+A",
+  );
+
+  root.querySelector<HTMLButtonElement>(".home .primary")?.click();
+  await settle();
+
+  expect(root.querySelector(".new-tab")?.getAttribute("aria-label")).toBe(
+    "New tab in beta",
+  );
+});
+
+test("with no projects the start page asks for one", async () => {
+  const root = await renderApp(() => SAVED, ptyCore().core);
+
+  expect(root.querySelector(".home-lead")?.textContent).toBe("Add a project");
+  expect(root.querySelector(".home .primary")?.textContent).toBe("New project");
+  expect(root.querySelector(".home .secondary")).toBeNull();
+});
