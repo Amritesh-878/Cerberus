@@ -343,7 +343,8 @@ mod tests {
             ),
         ]);
 
-        let result = run(command, Duration::from_secs(5));
+        // Long enough for a cold CI runner to start PowerShell and write its pid; 5 s was not.
+        let result = run(command, Duration::from_secs(20));
 
         assert!(matches!(result, Err(RunError::TimedOut(_))));
         let pid = std::fs::read_to_string(&pid_file).unwrap();
