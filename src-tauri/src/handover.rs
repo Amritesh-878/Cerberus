@@ -162,7 +162,11 @@ impl RunningTabs {
             let _ = watcher.join();
         }
         let mut tabs = lock(&self.tabs);
-        if tabs.get(&tab).is_some_and(|p| p.live > 0) {
+        // A program that started and ended during the waits left a tree and watchers not yet waited on.
+        if tabs
+            .get(&tab)
+            .is_some_and(|p| p.live > 0 || p.root != root || !p.watchers.is_empty())
+        {
             return false;
         }
         tabs.remove(&tab);
@@ -417,6 +421,12 @@ mod tests {
         }
     }
 
+    fn ran_another_program(running: &RunningTabs, tab: TabId) {
+        running.started(tab);
+        running.spawned(tab, 8);
+        running.ended(tab);
+    }
+
     #[test]
     fn starts_and_ends_during_the_tree_wait_are_counted() {
         let world = world_with(RunningTabs::with(Probes {
@@ -445,6 +455,10 @@ mod tests {
         assert!(!world.copied(ID).exists());
 
         world.running.ended(2);
+        let came_and_went = during_the_wait(&[ran_another_program as Event]);
+        assert!(matches!(came_and_went, Err(ContinueError::Running)));
+        assert!(!world.copied(ID).exists());
+
         let ran_and_ended = during_the_wait(&[RunningTabs::started as Event, RunningTabs::ended]);
         assert!(ran_and_ended.is_ok(), "an end was lost: {ran_and_ended:?}");
         assert!(world.copied(ID).is_file());
