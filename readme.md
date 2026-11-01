@@ -110,6 +110,13 @@ from Claude Code's `sessions` file for the tab's process, and follows it to the 
 deleted starts a new chat and says so. Shell tabs start fresh in their folder. Setup tabs, such
 as signing an account in, are not saved.
 
+When a chat ends, for example with `/exit`, its tab becomes a shell in the same folder and under
+the same account (the shell picked in Accounts), with Claude Code's "Resume this session with"
+line still above the prompt. The tab stays a shell after a restart and starts no `claude`; pick
+**Resume chat** from its right-click menu to bring the chat back with its history. Only a chat
+that ends by itself counts: closing Cerberus, a crash, or moving the chat to another account
+never marks it ended.
+
 If a save fails, the bar shows "Tabs not saved" and Cerberus retries every two seconds. Starting
 Cerberus again brings the open window forward instead of opening a second one. Should a second
 copy start anyway, only the first saves tabs: the second runs with saving off and says so.
@@ -176,7 +183,8 @@ back and forth: when the other account already has an older copy of it, that cop
 it as `<id>.jsonl.cerberus-old` (then `.cerberus-old2` and so on), never deleted. It refuses when
 the other account is signed out, or has that chat open in a running `claude` right now. A tab
 moves one chat at a time, and Cerberus waits for everything its program started to end before
-copying. On any failure the tab stays on its account, still resumable, and says what went wrong.
+copying. While the chat moves, its row and pane say "Moving to `<account>`…". On any failure the
+tab stays on its account, still resumable, and says what went wrong.
 The copy moves files only; Cerberus never reads what is in them.
 
 A tab under an account other than the default gets `CLAUDE_CONFIG_DIR` set to its folder, so
@@ -197,7 +205,7 @@ The programs a tab can run:
 | Git Bash | `bin\bash.exe` under Git's install folder, found from `git` on `PATH` |
 
 Selecting text copies it; Ctrl+V pastes text. In Claude Code, Alt+V or Ctrl+V pastes an image
-from the clipboard. When the program exits the tab stays open with its exit code.
+from the clipboard. When a shell exits the tab stays open with its exit code.
 
 The panel button at the top right opens an empty side panel, kept for later.
 

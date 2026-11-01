@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::time::Duration;
 
@@ -27,7 +27,8 @@ fn unlocked_uri(path: &Path) -> String {
 }
 
 // Forward only: a merged step is never edited, and each one runs once, in order.
-const MIGRATIONS: [&str; 1] = ["
+const MIGRATIONS: [&str; 2] = [
+    "
     CREATE TABLE projects (
         id INTEGER PRIMARY KEY,
         name TEXT NOT NULL,
@@ -49,7 +50,10 @@ const MIGRATIONS: [&str; 1] = ["
         key TEXT PRIMARY KEY,
         value INTEGER NOT NULL
     );
-"];
+",
+    // A chat that ended by itself: its tab comes back as a shell until Resume chat.
+    "ALTER TABLE tabs ADD COLUMN ended INTEGER NOT NULL DEFAULT 0;",
+];
 
 pub struct Db(Connection);
 
@@ -86,7 +90,8 @@ impl Db {
         let version: i64 = connection.query_row("PRAGMA user_version", [], |row| row.get(0))?;
         match usize::try_from(version) {
             Ok(0) => Ok(SavedTree::default()),
-            Ok(done) if done == MIGRATIONS.len() => Ok(Self(connection).load()?.tree),
+            // Read as it is: an older file is migrated only by the app that opens it to write.
+            Ok(done) if done <= MIGRATIONS.len() => Ok(Self(connection).load_version(done)?.tree),
             _ => Err(TreeError::UnknownVersion(version)),
         }
     }
@@ -116,6 +121,12 @@ impl Db {
     }
 
     pub fn load(&self) -> Result<Snapshot, TreeError> {
+        self.load_version(MIGRATIONS.len())
+    }
+
+    fn load_version(&self, version: usize) -> Result<Snapshot, TreeError> {
+        // Version 1 has no `ended` column, so its tabs read as not ended.
+        let ended_column = if version >= 2 { "ended" } else { "0" };
         let projects = self
             .0
             .prepare("SELECT id, name, folder FROM projects ORDER BY sort")?
@@ -128,12 +139,13 @@ impl Db {
             })?
             .collect::<Result<Vec<_>, _>>()?;
         let mut sessions = HashMap::new();
+        let mut ended = HashSet::new();
         let tabs = self
             .0
-            .prepare(
-                "SELECT id, project_id, parent_id, title, program, cwd, account_id, session_id
-                 FROM tabs ORDER BY sort",
-            )?
+            .prepare(&format!(
+                "SELECT id, project_id, parent_id, title, program, cwd, account_id, session_id, {ended_column}
+                 FROM tabs ORDER BY sort"
+            ))?
             .query_map([], |row| {
                 let tab = SavedTab {
                     id: row.get(0)?,
@@ -144,13 +156,16 @@ impl Db {
                     cwd: row.get(5)?,
                     account: row.get(6)?,
                 };
-                Ok((tab, row.get::<_, Option<String>>(7)?))
+                Ok((tab, row.get::<_, Option<String>>(7)?, row.get::<_, bool>(8)?))
             })?
             .collect::<Result<Vec<_>, _>>()?
             .into_iter()
-            .map(|(tab, session)| {
+            .map(|(tab, session, has_ended)| {
                 if let Some(session) = session {
                     sessions.insert(tab.id, session);
+                }
+                if has_ended {
+                    ended.insert(tab.id);
                 }
                 tab
             })
@@ -167,7 +182,11 @@ impl Db {
             next_id: next_id.unwrap_or(1),
         };
         tree.validate()?;
-        Ok(Snapshot { tree, sessions })
+        Ok(Snapshot {
+            tree,
+            sessions,
+            ended,
+        })
     }
 
     /// Replaces everything saved with `snapshot` in one transaction, so a crash keeps the old tree whole.
@@ -182,8 +201,8 @@ impl Db {
                 insert.execute(params![p.id, p.name, p.folder, sort])?;
             }
             let mut insert = tx.prepare(
-                "INSERT INTO tabs (id, project_id, parent_id, title, program, cwd, account_id, session_id, sort)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                "INSERT INTO tabs (id, project_id, parent_id, title, program, cwd, account_id, session_id, ended, sort)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             )?;
             for (sort, t) in (0_i64..).zip(&snapshot.tree.tabs) {
                 insert.execute(params![
@@ -195,6 +214,7 @@ impl Db {
                     t.cwd,
                     t.account,
                     snapshot.sessions.get(&t.id),
+                    snapshot.ended.contains(&t.id),
                     sort
                 ])?;
             }
@@ -227,12 +247,83 @@ mod tests {
         let mut snapshot = Snapshot {
             tree: two_projects(),
             sessions: HashMap::from([(3, SESSION.to_owned())]),
+            ended: HashSet::new(),
         };
         snapshot.tree.tabs.swap(0, 2);
 
         db.write(&snapshot).unwrap();
 
         assert_eq!(db.load().unwrap(), snapshot);
+    }
+
+    #[test]
+    fn an_ended_chat_survives_a_round_trip() {
+        let mut db = Db::in_memory().unwrap();
+        let snapshot = Snapshot {
+            tree: two_projects(),
+            sessions: HashMap::from([(3, SESSION.to_owned())]),
+            ended: HashSet::from([3]),
+        };
+
+        db.write(&snapshot).unwrap();
+
+        assert_eq!(db.load().unwrap(), snapshot);
+    }
+
+    #[test]
+    fn a_file_from_before_ended_chats_migrates_with_none_ended() {
+        let dir = TestDir::new();
+        let path = dir.path().join("tree.db");
+        {
+            let first = Connection::open(&path).unwrap();
+            first.execute_batch(MIGRATIONS[0]).unwrap();
+            first
+                .execute_batch(
+                    "INSERT INTO projects VALUES (1, 'app', 'C:\\work\\app', 0);
+                     INSERT INTO tabs VALUES (3, 1, NULL, 'planner', 'claude', NULL, 1, NULL, 0);
+                     INSERT INTO meta VALUES ('next_id', 4);",
+                )
+                .unwrap();
+            first.pragma_update(None, "user_version", 1).unwrap();
+        }
+
+        let db = Db::open(&path).unwrap();
+
+        let version: i64 = db
+            .connection()
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, 2);
+        let loaded = db.load().unwrap();
+        assert_eq!(loaded.tree.tabs.len(), 1);
+        assert!(loaded.ended.is_empty());
+    }
+
+    #[test]
+    fn a_version_1_file_reads_while_unmigrated_and_stays_version_1() {
+        let dir = TestDir::new();
+        let path = dir.path().join("tree.db");
+        {
+            let first = Connection::open(&path).unwrap();
+            first.execute_batch(MIGRATIONS[0]).unwrap();
+            first
+                .execute_batch(
+                    "INSERT INTO projects VALUES (1, 'app', 'C:/work/app', 0);
+                     INSERT INTO tabs VALUES (3, 1, NULL, 'planner', 'claude', NULL, 1, NULL, 0);
+                     INSERT INTO meta VALUES ('next_id', 4);",
+                )
+                .unwrap();
+            first.pragma_update(None, "user_version", 1).unwrap();
+        }
+
+        let tree = Db::read_unlocked(&path).unwrap();
+
+        assert_eq!(tree.tabs.len(), 1);
+        let version: i64 = Connection::open(&path)
+            .unwrap()
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, 1);
     }
 
     #[test]
@@ -253,6 +344,7 @@ mod tests {
                     ..SavedTree::default()
                 },
                 sessions: HashMap::new(),
+                ended: HashSet::new(),
             }
         );
     }
@@ -264,6 +356,7 @@ mod tests {
         let snapshot = Snapshot {
             tree: two_projects(),
             sessions: HashMap::new(),
+            ended: HashSet::new(),
         };
         Db::open(&path).unwrap().write(&snapshot).unwrap();
 
@@ -281,6 +374,7 @@ mod tests {
         held.write(&Snapshot {
             tree: two_projects(),
             sessions: HashMap::new(),
+            ended: HashSet::new(),
         })
         .unwrap();
 
@@ -321,5 +415,6 @@ mod tests {
             "a newer file was set aside"
         );
         assert!(saved.save(two_projects()).is_err());
+        assert!(!saved.set_ended(3, true), "a flag was kept with saving off");
     }
 }

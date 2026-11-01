@@ -76,6 +76,13 @@ struct Session {
 
 type Sessions = Arc<Mutex<HashMap<SessionId, Arc<Session>>>>;
 
+/// How a program ended: its code, and whether it ended by itself rather than by `kill` or `kill_all`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Exit {
+    pub code: Option<u32>,
+    pub by_itself: bool,
+}
+
 #[derive(Default)]
 pub struct PtyManager {
     sessions: Sessions,
@@ -97,12 +104,12 @@ fn size(cols: u16, rows: u16) -> PtySize {
 }
 
 impl PtyManager {
-    /// Starts `request.program`; output goes to `on_output`, then `on_exit` once with the exit code.
+    /// Starts `request.program`; output goes to `on_output`, then `on_exit` once when it ends.
     pub fn spawn(
         &self,
         request: &SpawnRequest,
         on_output: impl FnMut(Vec<u8>) + Send + 'static,
-        on_exit: impl FnOnce(Option<u32>) + Send + 'static,
+        on_exit: impl FnOnce(Exit) + Send + 'static,
     ) -> Result<SessionId, PtyError> {
         let command = command_for(request)?;
         let pair = native_pty_system()
@@ -160,7 +167,7 @@ impl PtyManager {
         reader: Box<dyn Read + Send>,
         mut child: Box<dyn Child + Send + Sync>,
         on_output: impl FnMut(Vec<u8>) + Send + 'static,
-        on_exit: impl FnOnce(Option<u32>) + Send + 'static,
+        on_exit: impl FnOnce(Exit) + Send + 'static,
     ) -> io::Result<()> {
         let (tx, rx) = mpsc::sync_channel(QUEUED_READS);
         thread::Builder::new().spawn(move || read_into(reader, &tx))?;
@@ -170,13 +177,15 @@ impl PtyManager {
         thread::Builder::new().spawn(move || {
             let code = child.wait().ok().map(|status| status.exit_code());
             // Closing the pseudo-console ends the reader, so all output is sent before the exit.
+            // `kill` and `kill_all` take the session out first, so finding it here means it ended by itself.
             let closed = lock(&sessions).remove(&id);
+            let by_itself = closed.is_some();
             if let Some(session) = closed {
                 end(&session);
             }
             // A panicked pump lost only output; the tab still needs its exit.
             let _ = pump.join();
-            on_exit(code);
+            on_exit(Exit { code, by_itself });
         })?;
         Ok(())
     }
@@ -321,7 +330,7 @@ mod tests {
 
     enum Event {
         Output(Vec<u8>),
-        Exit(Option<u32>),
+        Exit(Exit),
     }
 
     fn start(manager: &PtyManager, program: &str, args: &[&str]) -> (SessionId, Receiver<Event>) {
@@ -341,8 +350,8 @@ mod tests {
                 move |bytes| {
                     let _ = tx.send(Event::Output(bytes));
                 },
-                move |code| {
-                    let _ = exit_tx.send(Event::Exit(code));
+                move |exit| {
+                    let _ = exit_tx.send(Event::Exit(exit));
                 },
             )
             .unwrap();
@@ -355,7 +364,7 @@ mod tests {
         id: SessionId,
         rx: &Receiver<Event>,
         done: impl Fn(&str) -> bool,
-    ) -> (String, Option<Option<u32>>) {
+    ) -> (String, Option<Exit>) {
         let deadline = Instant::now() + TIMEOUT;
         let mut text = String::new();
         while Instant::now() < deadline {
@@ -370,7 +379,7 @@ mod tests {
                         return (text, None);
                     }
                 }
-                Ok(Event::Exit(code)) => return (text, Some(code)),
+                Ok(Event::Exit(exit)) => return (text, Some(exit)),
                 Err(_) => break,
             }
         }
@@ -416,7 +425,13 @@ mod tests {
         let (text, exit) = collect(&manager, id, &rx, |_| false);
 
         assert!(text.contains("hello-pty"), "output was {text:?}");
-        assert_eq!(exit, Some(Some(0)));
+        assert_eq!(
+            exit,
+            Some(Exit {
+                code: Some(0),
+                by_itself: true
+            })
+        );
         assert!(lock(&manager.sessions).is_empty());
     }
 
@@ -456,7 +471,7 @@ mod tests {
         manager.kill(id);
         let (_, exit) = collect(&manager, id, &rx, |_| false);
 
-        assert!(exit.is_some(), "no exit after kill");
+        assert_eq!(exit.map(|e| e.by_itself), Some(false), "no killed exit");
         assert!(matches!(
             manager.write(id, b"x"),
             Err(PtyError::NoSession(_))
@@ -490,8 +505,10 @@ mod tests {
 
         manager.kill_all();
 
-        assert!(collect(&manager, first_id, &first, |_| false).1.is_some());
-        assert!(collect(&manager, second_id, &second, |_| false).1.is_some());
+        for (id, rx) in [(first_id, &first), (second_id, &second)] {
+            let exit = collect(&manager, id, rx, |_| false).1;
+            assert_eq!(exit.map(|e| e.by_itself), Some(false));
+        }
     }
 
     #[test]

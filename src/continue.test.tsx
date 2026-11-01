@@ -244,3 +244,65 @@ test("while a move is under way the tab's menu offers nothing, so it moves once"
   await settle();
   expect(app.pty.spawned.map((s) => field(s, "account"))).toEqual([0]);
 });
+
+test("a moving chat says where it is going on its row and in its pane until it restarts", async () => {
+  const app = core();
+  let finish: (() => void) | undefined;
+  const root = await renderApp(() => SAVED, {
+    ...app.core,
+    continue_on_account: (args: unknown) => {
+      app.continued.push(args);
+      return new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+    },
+  });
+  await open(root, "Claude Code · work");
+
+  await openMenu(root, "Claude Code · work");
+  click(root.querySelector(".tab-menu") ?? root, "Continue on personal…");
+  await settle();
+  click(root.querySelector(".menu-confirm") ?? root, "Continue");
+  await settle();
+
+  expect(root.querySelector(".moving-line")?.textContent).toBe(
+    "Moving to personal…",
+  );
+  expect(root.querySelector(".tab-view .pane-note")?.textContent).toBe(
+    "Moving to personal…",
+  );
+
+  finish?.();
+  await settle();
+
+  expect(root.querySelector(".moving-line")).toBeNull();
+  expect(root.querySelector(".pane-note")).toBeNull();
+  expect(app.pty.spawned).toHaveLength(2);
+});
+
+// The Claude tab is the first row; a move renames it after its new account.
+function showsShell(root: HTMLElement): boolean {
+  return root.querySelector(".tab-row")?.querySelector(".icon-shell") != null;
+}
+
+test.each([
+  ["a move resumes it on the new account", undefined, false],
+  [
+    "a refused move keeps it ended",
+    "the other account already has this chat",
+    true,
+  ],
+])("an ended chat: %s", async (_name, fails, stillEnded) => {
+  const app = core({ fails });
+  const root = await renderApp(() => SAVED, {
+    ...app.core,
+    tree_load: () => ({ tree: TREE, notice: null, ended: [2] }),
+  });
+  expect(showsShell(root)).toBe(true);
+
+  await openMenu(root, "Claude Code · work");
+  click(root.querySelector(".tab-menu") ?? root, "Continue on personal…");
+  await settle();
+
+  expect(showsShell(root)).toBe(stillEnded);
+});

@@ -8,6 +8,8 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::pty::Exit;
+
 pub use crate::sessions::watch::{TabState, Watched, watch};
 
 // Claude Code shortens a longer slug and appends a hash of the full path.
@@ -114,6 +116,13 @@ pub enum Resume {
     Resuming,
     /// The tab had a chat whose transcript is gone, so it starts a new one.
     Missing,
+    /// The tab's chat ended by itself, so it runs the shell until Resume chat.
+    Ended,
+}
+
+/// A Claude chat ends only when `claude` exits by itself; Cerberus stopping it, to close, reload or move, never counts.
+pub fn chat_ended(runs_claude: bool, exit: Exit) -> bool {
+    runs_claude && exit.by_itself
 }
 
 pub fn plan_resume(
@@ -121,7 +130,11 @@ pub fn plan_resume(
     config_dir: &Path,
     cwd: &str,
     saved: Option<&str>,
+    ended: bool,
 ) -> (Vec<String>, Resume) {
+    if ended {
+        return (args.to_vec(), Resume::Ended);
+    }
     match saved {
         None => (args.to_vec(), Resume::New),
         Some(id) if transcript(config_dir, cwd, id).is_some() => {
@@ -278,16 +291,45 @@ mod tests {
         let gone = "a1b2c3d4-0000-4000-8000-000000000001";
 
         assert_eq!(
-            plan_resume(&[], dir.path(), r"C:\work\app", None),
+            plan_resume(&[], dir.path(), r"C:\work\app", None, false),
             (Vec::new(), Resume::New)
         );
         assert_eq!(
-            plan_resume(&[], dir.path(), r"C:\work\app", Some(SESSION)),
+            plan_resume(&[], dir.path(), r"C:\work\app", Some(SESSION), false),
             (resume_args(&[], SESSION), Resume::Resuming)
         );
         assert_eq!(
-            plan_resume(&[], dir.path(), r"C:\work\app", Some(gone)),
+            plan_resume(&[], dir.path(), r"C:\work\app", Some(gone), false),
             (Vec::new(), Resume::Missing)
+        );
+    }
+
+    #[test]
+    fn only_claude_exiting_by_itself_ends_a_chat() {
+        let by_itself = Exit {
+            code: Some(0),
+            by_itself: true,
+        };
+        let stopped = Exit {
+            code: None,
+            by_itself: false,
+        };
+
+        assert!(chat_ended(true, by_itself));
+        assert!(!chat_ended(true, stopped));
+        assert!(!chat_ended(false, by_itself));
+    }
+
+    #[test]
+    fn an_ended_chat_is_not_resumed_even_with_its_transcript() {
+        let dir = TestDir::new();
+        let folder = dir.path().join("projects").join("C--work-app");
+        fs::create_dir_all(&folder).unwrap();
+        fs::write(folder.join(format!("{SESSION}.jsonl")), "{}\n").unwrap();
+
+        assert_eq!(
+            plan_resume(&[], dir.path(), r"C:\work\app", Some(SESSION), true),
+            (Vec::new(), Resume::Ended)
         );
     }
 

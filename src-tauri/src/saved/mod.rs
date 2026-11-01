@@ -138,6 +138,8 @@ impl SavedTree {
 struct Snapshot {
     tree: SavedTree,
     sessions: HashMap<TabId, String>,
+    /// Tabs whose chat ended by itself; they reopen as a shell until Resume chat.
+    ended: HashSet<TabId>,
 }
 
 enum Message {
@@ -162,6 +164,7 @@ impl Store for Db {
 pub struct Loaded {
     pub tree: SavedTree,
     pub notice: Option<String>,
+    pub ended: Vec<TabId>,
 }
 
 struct Live {
@@ -230,9 +233,13 @@ impl Saved {
 
     pub fn load(&self) -> Result<Loaded, TreeError> {
         let live = self.live()?;
+        let snapshot = lock(&live.snapshot);
+        let mut ended: Vec<_> = snapshot.ended.iter().copied().collect();
+        ended.sort_unstable();
         Ok(Loaded {
-            tree: lock(&live.snapshot).tree.clone(),
+            tree: snapshot.tree.clone(),
             notice: live.notice.clone(),
+            ended,
         })
     }
 
@@ -243,6 +250,7 @@ impl Saved {
             let mut snapshot = lock(&live.snapshot);
             let kept: HashSet<_> = tree.tabs.iter().map(|t| t.id).collect();
             snapshot.sessions.retain(|id, _| kept.contains(id));
+            snapshot.ended.retain(|id| kept.contains(id));
             snapshot.tree = tree;
         }
         live.changed();
@@ -263,6 +271,32 @@ impl Saved {
         if changed {
             live.changed();
         }
+    }
+
+    /// Marks or clears a tab's chat as ended; a tab that is not saved is ignored.
+    /// Whether the tab is saved, so the flag is kept; a setup tab or a store with saving off keeps nothing.
+    pub fn set_ended(&self, tab: TabId, ended: bool) -> bool {
+        let Ok(live) = self.live() else { return false };
+        let (known, changed) = {
+            let mut snapshot = lock(&live.snapshot);
+            let known = snapshot.tree.tabs.iter().any(|t| t.id == tab);
+            let changed = known
+                && if ended {
+                    snapshot.ended.insert(tab)
+                } else {
+                    snapshot.ended.remove(&tab)
+                };
+            (known, changed)
+        };
+        if changed {
+            live.changed();
+        }
+        known
+    }
+
+    pub fn is_ended(&self, tab: TabId) -> bool {
+        self.live()
+            .is_ok_and(|live| lock(&live.snapshot).ended.contains(&tab))
     }
 
     pub fn tab(&self, tab: TabId) -> Option<SavedTab> {
@@ -474,11 +508,45 @@ pub(crate) mod tests {
             restarted.load().unwrap(),
             Loaded {
                 tree: two_projects(),
-                notice: None
+                notice: None,
+                ended: Vec::new(),
             }
         );
         assert_eq!(restarted.session_of(6).as_deref(), Some(SESSION));
         assert_eq!(restarted.session_of(3), None);
+    }
+
+    #[test]
+    fn an_ended_chat_stays_ended_across_a_restart_until_cleared() {
+        let dir = TestDir::new();
+        let path = dir.path().join("tree.db");
+        let saved = Saved::open(&path, |_| {});
+        saved.save(two_projects()).unwrap();
+
+        assert!(saved.set_ended(3, true));
+        assert!(!saved.set_ended(99, true));
+        saved.flush();
+        drop(saved);
+        let restarted = Saved::open(&path, |_| {});
+
+        assert!(restarted.is_ended(3));
+        assert_eq!(restarted.load().unwrap().ended, [3]);
+        restarted.set_ended(3, false);
+        assert!(!restarted.is_ended(3));
+    }
+
+    #[test]
+    fn a_closed_tab_forgets_that_its_chat_ended() {
+        let dir = TestDir::new();
+        let saved = Saved::open(&dir.path().join("tree.db"), |_| {});
+        saved.save(two_projects()).unwrap();
+        saved.set_ended(6, true);
+        let mut without = two_projects();
+        without.tabs.retain(|t| t.id != 6);
+
+        saved.save(without).unwrap();
+
+        assert!(!saved.is_ended(6));
     }
 
     #[test]

@@ -338,3 +338,118 @@ test("a resuming tab says so until the chat reports in", async () => {
 
   expect(root.querySelector(".terminal-notice")).toBeNull();
 });
+
+async function openMenu(root: HTMLElement, title: string): Promise<void> {
+  row(root, title).dispatchEvent(
+    new MouseEvent("contextmenu", { bubbles: true, clientX: 20, clientY: 40 }),
+  );
+  await settle();
+}
+
+function menuItems(root: HTMLElement): string[] {
+  return [...root.querySelectorAll(".tab-menu [role=menuitem]")].map((b) =>
+    b.textContent.trim(),
+  );
+}
+
+function shows(root: HTMLElement, title: string, icon: "claude" | "shell") {
+  return row(root, title).querySelector(`.icon-${icon}`) !== null;
+}
+
+test("a chat that ends by itself turns its pane into a shell and offers Resume chat", async () => {
+  const restore = restoring();
+  const root = await renderApp(() => SAVED, restore.core);
+  await open(root, "planner");
+
+  emit(restore.pty.spawned, 0, { exitCode: 0, ended: true });
+  await settle();
+
+  expect(restore.pty.spawned).toHaveLength(2);
+  expect(field(restore.pty.spawned[1], "tab")).toBe(3);
+  expect(root.querySelectorAll(".tab-view > .terminal")).toHaveLength(1);
+  expect(shows(root, "planner", "shell")).toBe(true);
+  expect(row(root, "planner").classList.contains("done")).toBe(false);
+  await openMenu(root, "planner");
+  expect(menuItems(root)[0]).toBe("Resume chat");
+});
+
+test("an exit Cerberus caused leaves the chat as it was", async () => {
+  const restore = restoring();
+  const root = await renderApp(() => SAVED, restore.core);
+  await open(root, "planner");
+
+  emit(restore.pty.spawned, 0, { exitCode: null, ended: false });
+  await settle();
+
+  expect(restore.pty.spawned).toHaveLength(1);
+  expect(shows(root, "planner", "claude")).toBe(true);
+  await openMenu(root, "planner");
+  expect(menuItems(root)).not.toContain("Resume chat");
+});
+
+test("an ended chat comes back as a shell, and Resume chat starts it again", async () => {
+  const restore = restoring();
+  const resumed: unknown[] = [];
+  const root = await renderApp(() => SAVED, {
+    ...restore.core,
+    tree_load: () => ({ tree: TREE, notice: null, ended: [3] }),
+    resume_chat: (args: unknown) => {
+      resumed.push(field(args, "tab"));
+    },
+  });
+  expect(shows(root, "planner", "shell")).toBe(true);
+  await open(root, "planner");
+
+  await openMenu(root, "planner");
+  click(root.querySelector(".tab-menu") ?? root, "Resume chat");
+  await settle();
+
+  expect(resumed).toEqual([3]);
+  expect(restore.pty.spawned).toHaveLength(2);
+  expect(shows(root, "planner", "claude")).toBe(true);
+});
+
+test("a restored tab the core runs as the shell is shown as ended", async () => {
+  const restore = restoring();
+  const root = await renderApp(() => SAVED, {
+    ...restore.core,
+    pty_spawn: () => ({ id: 1, resume: "ended" }),
+  });
+
+  await open(root, "planner");
+
+  expect(shows(root, "planner", "shell")).toBe(true);
+  expect(root.querySelector(".terminal-notice")?.textContent).toBe(
+    "The chat ended. Resume chat is in the tab's menu.",
+  );
+});
+
+test("the start page offers a new Claude Code tab in the last project, and New project beside it", async () => {
+  const restore = restoring();
+  const root = await renderApp(() => SAVED, restore.core);
+
+  expect(root.querySelector(".home .primary")?.textContent).toBe(
+    "New Claude Code tab",
+  );
+  expect(root.querySelector(".home .secondary")?.textContent).toBe(
+    "New project",
+  );
+  expect(root.querySelector(".home-keys")?.textContent).toContain(
+    "Ctrl+Shift+A",
+  );
+
+  root.querySelector<HTMLButtonElement>(".home .primary")?.click();
+  await settle();
+
+  expect(root.querySelector(".new-tab")?.getAttribute("aria-label")).toBe(
+    "New tab in beta",
+  );
+});
+
+test("with no projects the start page asks for one", async () => {
+  const root = await renderApp(() => SAVED, ptyCore().core);
+
+  expect(root.querySelector(".home-lead")?.textContent).toBe("Add a project");
+  expect(root.querySelector(".home .primary")?.textContent).toBe("New project");
+  expect(root.querySelector(".home .secondary")).toBeNull();
+});

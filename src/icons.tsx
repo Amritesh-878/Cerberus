@@ -126,6 +126,27 @@ export function PanelIcon() {
   );
 }
 
+/** The app's mark, a terminal window with three tabs, drawn in the text colour. */
+export function AppIcon(props: { size?: number }) {
+  return (
+    <svg
+      class="app-icon"
+      width={props.size ?? 40}
+      height={props.size ?? 40}
+      viewBox="0 0 40 40"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.6"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="5" y="9" width="30" height="24" rx="3" />
+      <path d="M5 15h30M9 12h4M15 12h4M21 12h4M11 21l4 3-4 3M18 28h6" />
+    </svg>
+  );
+}
+
 export function MenuIcon() {
   return <Stroke d="M3 4.5h10M3 8h10M3 11.5h10" size={16} />;
 }

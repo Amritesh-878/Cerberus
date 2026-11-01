@@ -574,6 +574,25 @@ button {
   color: var(--text);
 }
 
+.moving-line {
+  width: calc(100% - 16px);
+  margin: -4px 8px 4px;
+  padding: 2px 0;
+  font-size: 11px;
+  color: var(--accent);
+  overflow-wrap: anywhere;
+}
+
+.moving-line.sub {
+  width: calc(100% - 30px);
+  margin-left: 22px;
+}
+
+.pane-note {
+  margin: auto;
+  color: var(--dim);
+}
+
 .tab-menu {
   width: 240px;
   padding: 6px;
@@ -664,21 +683,74 @@ button {
 }
 
 .home {
-  display: grid;
-  gap: 12px;
-  justify-items: start;
-  max-width: 420px;
-  padding: 48px 24px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+  justify-content: center;
+  width: min(420px, 100%);
+  min-height: 100%;
+  padding: 32px 16px;
   margin: 0 auto;
+  text-align: center;
+}
+
+.home .app-icon {
+  color: var(--faint);
 }
 
 .home h1 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 600;
+  margin: 0 0 6px;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--dim);
+  letter-spacing: 0.02em;
 }
 
 .home p {
+  margin: 0;
+}
+
+.home-lead {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.home-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 8px;
+}
+
+.home-actions .primary,
+.home-actions .secondary {
+  width: auto;
+  height: 34px;
+  padding: 0 16px;
+  margin: 0;
+  font-size: 13px;
+}
+
+.home-keys {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 6px 16px;
+  margin: 28px 0 0;
+  font-size: 12px;
+  color: var(--dim);
+  text-align: left;
+}
+
+.home-keys dt {
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 11px;
+  text-align: right;
+}
+
+.home-keys dd {
   margin: 0;
 }
 
@@ -806,12 +878,6 @@ button {
 
 .primary:hover:not(:disabled) {
   filter: brightness(1.08);
-}
-
-.home .primary {
-  width: auto;
-  padding: 0 20px;
-  margin-top: 8px;
 }
 
 .secondary {

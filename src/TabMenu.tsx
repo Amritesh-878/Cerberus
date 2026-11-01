@@ -18,7 +18,10 @@ export function TabMenu(props: {
   at: MenuPlace;
   /** Set when opened from a limited row's shortcut, which goes straight to that account. */
   chosen?: Account;
+  /** The tab's chat ended, so the menu offers to start it again. */
+  ended: boolean;
   onContinue: (account: Account) => void;
+  onResume: () => void;
   onDismiss: () => void;
 }) {
   // Read once: the shortcut opens the menu already at its confirm step.
@@ -88,24 +91,38 @@ export function TabMenu(props: {
         <Show
           when={confirming()}
           fallback={
-            <For each={props.targets}>
-              {(target) => (
+            <>
+              <Show when={props.ended}>
                 <button
                   type="button"
                   role="menuitem"
-                  disabled={!target.signedIn || props.busy}
-                  title={target.signedIn ? undefined : "Signed out"}
+                  disabled={props.busy}
                   onClick={() => {
-                    pick(target.account);
+                    props.onResume();
                   }}
                 >
-                  Continue on {target.account.name}…
-                  <Show when={!target.signedIn}>
-                    <span class="menu-note">signed out</span>
-                  </Show>
+                  Resume chat
                 </button>
-              )}
-            </For>
+              </Show>
+              <For each={props.targets}>
+                {(target) => (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={!target.signedIn || props.busy}
+                    title={target.signedIn ? undefined : "Signed out"}
+                    onClick={() => {
+                      pick(target.account);
+                    }}
+                  >
+                    Continue on {target.account.name}…
+                    <Show when={!target.signedIn}>
+                      <span class="menu-note">signed out</span>
+                    </Show>
+                  </button>
+                )}
+              </For>
+            </>
           }
         >
           {(account) => (

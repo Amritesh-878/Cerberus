@@ -219,6 +219,8 @@ fn continue_within(
         .cwd
         .unwrap_or_else(|| accounts.home().to_string_lossy().into_owned());
     copy_chat(&from, &to, &cwd, &id, &running.probes.is_running)?;
+    // The chat goes on under the new account, so the tab resumes it there instead of opening the shell.
+    saved.set_ended(tab, false);
     Ok(())
 }
 
@@ -499,6 +501,18 @@ mod tests {
         ));
         drop(first);
         assert!(world.continue_to(1, true).is_ok());
+    }
+
+    #[test]
+    fn a_moved_chat_is_no_longer_ended_and_a_refused_one_still_is() {
+        let world = world();
+        assert!(world.saved.set_ended(2, true));
+
+        assert!(world.continue_to(1, false).is_err());
+        assert!(world.saved.is_ended(2));
+
+        world.continue_to(1, true).unwrap();
+        assert!(!world.saved.is_ended(2));
     }
 
     #[test]
