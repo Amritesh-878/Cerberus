@@ -73,6 +73,7 @@ pub fn run() {
             commands::set_default_account,
             commands::set_start_folder,
             commands::set_shell,
+            commands::set_sidebar_width,
             commands::account_status,
             commands::tree_load,
             commands::tree_save,

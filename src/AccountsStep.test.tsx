@@ -13,6 +13,7 @@ const EMPTY: Profiles = {
   defaultAccount: null,
   shell: null,
   startFolder: null,
+  sidebarWidth: null,
   revision: 0,
 };
 

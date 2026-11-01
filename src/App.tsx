@@ -21,6 +21,7 @@ import {
   pickFolder,
   type Profiles,
   resetProfiles,
+  setSidebarWidth,
   statusText,
 } from "./accounts";
 import { AccountsScreen } from "./AccountsScreen";
@@ -44,6 +45,7 @@ import { fromSaved, loadTree, onWriteStatus, saveTree, toSaved } from "./saved";
 import { AccountDot, Sidebar } from "./Sidebar";
 import { createStatuses } from "./statuses";
 import { type Tab, tabFor } from "./tab";
+import { SidebarEdge } from "./SidebarEdge";
 import { TerminalView } from "./Terminal";
 import {
   addProject,
@@ -63,6 +65,7 @@ import {
   type Tree,
 } from "./tree";
 import { Walkthrough } from "./Walkthrough";
+import { SIDEBAR_DEFAULT } from "./widths";
 
 type Page = "walkthrough" | "accounts";
 
@@ -103,6 +106,39 @@ export function App() {
   const [active, setActive] = createSignal<TabId>();
   const [opening, setOpening] = createSignal<Opening>();
   const [panelOpen, setPanelOpen] = createSignal(false);
+  // Held while dragging, so the edge follows the pointer before the saved value comes back.
+  const [dragged, setDragged] = createSignal<number>();
+  const sidebarWidth = () =>
+    dragged() ?? profiles()?.sidebarWidth ?? SIDEBAR_DEFAULT;
+  const [widthError, setWidthError] = createSignal<string>();
+  // One save in flight; a newer width waits, and only the latest is sent, so saves land in order.
+  let widthSaving = false;
+  let widthWaiting: number | undefined;
+  const sendWidth = (width: number) => {
+    widthSaving = true;
+    setSidebarWidth(width)
+      .then(
+        (saved) => {
+          setWidthError(undefined);
+          changed(saved);
+        },
+        (error: unknown) => {
+          setWidthError(String(error));
+          // A newer width still waiting gets its own try; with none, fall back to the saved one.
+          if (widthWaiting === undefined) setDragged(undefined);
+        },
+      )
+      .finally(() => {
+        widthSaving = false;
+        const next = widthWaiting;
+        widthWaiting = undefined;
+        if (next !== undefined) sendWidth(next);
+      });
+  };
+  const saveWidth = () => {
+    if (widthSaving) widthWaiting = sidebarWidth();
+    else sendWidth(sidebarWidth());
+  };
   const [drawer, setDrawer] = createSignal(false);
   const [tabsClosed, setTabsClosed] = createSignal(0);
   const [board, setBoard] = createSignal<Board>(new Map());
@@ -407,7 +443,13 @@ export function App() {
           <div
             class="app"
             classList={{ drawer: drawer(), "panel-open": panelOpen() }}
+            style={{ "--sidebar-width": `${String(sidebarWidth())}px` }}
           >
+            <SidebarEdge
+              width={sidebarWidth()}
+              onWidth={setDragged}
+              onDone={saveWidth}
+            />
             <Sidebar
               tree={tree()}
               profiles={loaded()}
@@ -478,6 +520,13 @@ export function App() {
                   {(error) => (
                     <span class="save-error" role="status" title={error()}>
                       Tabs not saved
+                    </span>
+                  )}
+                </Show>
+                <Show when={widthError()}>
+                  {(error) => (
+                    <span class="save-error" role="status" title={error()}>
+                      Sidebar width not saved
                     </span>
                   )}
                 </Show>

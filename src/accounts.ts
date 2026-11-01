@@ -16,6 +16,8 @@ export interface Profiles {
   shell: string | null;
   /** Where New project's folder picker opens; `null` leaves it to Windows. */
   startFolder: string | null;
+  /** In pixels; `null` keeps the default. */
+  sidebarWidth: number | null;
   revision: number;
 }
 
@@ -71,6 +73,10 @@ export function setDefaultAccount(id: AccountId): Promise<Profiles> {
 
 export function setStartFolder(folder: string | null): Promise<Profiles> {
   return invoke<Profiles>("set_start_folder", { folder });
+}
+
+export function setSidebarWidth(width: number): Promise<Profiles> {
+  return invoke<Profiles>("set_sidebar_width", { width });
 }
 
 export function setShell(shell: string): Promise<Profiles> {

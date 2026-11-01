@@ -16,6 +16,8 @@ use crate::programs::Finder;
 
 pub type AccountId = u32;
 
+const SIDEBAR_WIDTHS: std::ops::RangeInclusive<u32> = 200..=560;
+
 const STATUS_TIMEOUT: Duration = Duration::from_secs(15);
 
 #[derive(Debug, thiserror::Error)]
@@ -64,6 +66,9 @@ pub struct Profiles {
     /// The program id the Shell button opens; `None` opens the first shell installed.
     pub shell: Option<String>,
     pub start_folder: Option<PathBuf>,
+    /// In pixels; `None` keeps the app's default.
+    #[serde(default)]
+    pub sidebar_width: Option<u32>,
     // Raised on every save, so the webview can drop a reply that a newer one already replaced.
     #[serde(default)]
     pub revision: u64,
@@ -213,6 +218,14 @@ impl Accounts {
             fs::create_dir_all(&config_dir)?;
             // A missing folder compares by its text, so a link in its path is only seen once it exists.
             p.validate()
+        })
+    }
+
+    pub fn set_sidebar_width(&self, width: u32) -> Result<Profiles, AccountsError> {
+        let width = width.clamp(*SIDEBAR_WIDTHS.start(), *SIDEBAR_WIDTHS.end());
+        self.update(|p| {
+            p.sidebar_width = Some(width);
+            Ok(())
         })
     }
 
@@ -510,6 +523,27 @@ mod tests {
             accounts.load().unwrap().start_folder.as_deref(),
             Some(home.path())
         );
+    }
+
+    #[test]
+    fn the_sidebar_width_is_saved_inside_its_limits() {
+        let home = TestDir::new();
+        let accounts = Accounts::new(&home.path().join("app"), home.path().to_path_buf());
+
+        assert_eq!(accounts.load().unwrap().sidebar_width, None);
+        assert_eq!(
+            accounts.set_sidebar_width(320).unwrap().sidebar_width,
+            Some(320)
+        );
+        assert_eq!(
+            accounts.set_sidebar_width(50).unwrap().sidebar_width,
+            Some(200)
+        );
+        assert_eq!(
+            accounts.set_sidebar_width(9000).unwrap().sidebar_width,
+            Some(560)
+        );
+        assert_eq!(accounts.load().unwrap().sidebar_width, Some(560));
     }
 
     #[test]

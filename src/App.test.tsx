@@ -505,3 +505,116 @@ test("an unreadable accounts file offers to start fresh", async () => {
 
   expect(root.querySelector("h1")?.textContent).toBe("Set up Cerberus");
 });
+
+test("the sidebar edge resizes the sidebar and saves the width with the prefs", async () => {
+  const widths: unknown[] = [];
+  const root = await renderApp(() => ({ ...SAVED, sidebarWidth: 300 }), {
+    set_sidebar_width: (args: unknown) => {
+      widths.push(field(args, "width"));
+      return { ...SAVED, sidebarWidth: field(args, "width") };
+    },
+  });
+  const app = root.querySelector<HTMLElement>(".app");
+  const edge = root.querySelector(".sidebar-edge");
+  expect(app?.style.getPropertyValue("--sidebar-width")).toBe("300px");
+
+  edge?.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }),
+  );
+  await settle();
+  expect(app?.style.getPropertyValue("--sidebar-width")).toBe("316px");
+
+  edge?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+  await settle();
+
+  expect(widths).toEqual([316, 248]);
+  expect(app?.style.getPropertyValue("--sidebar-width")).toBe("248px");
+});
+
+function stepRight(root: HTMLElement): void {
+  root
+    .querySelector(".sidebar-edge")
+    ?.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }),
+    );
+}
+
+test("width saves go one at a time, and only the latest waits", async () => {
+  const widths: unknown[] = [];
+  const replies: (() => void)[] = [];
+  const root = await renderApp(() => ({ ...SAVED, sidebarWidth: 300 }), {
+    set_sidebar_width: (args: unknown) => {
+      widths.push(field(args, "width"));
+      return new Promise((resolve) => {
+        replies.push(() => {
+          resolve({ ...SAVED, sidebarWidth: field(args, "width") });
+        });
+      });
+    },
+  });
+
+  stepRight(root);
+  stepRight(root);
+  stepRight(root);
+  await settle();
+  expect(widths).toEqual([316]);
+
+  replies.shift()?.();
+  await settle();
+  expect(widths).toEqual([316, 348]);
+  replies.shift()?.();
+  await settle();
+  expect(widths).toEqual([316, 348]);
+});
+
+test("a width that could not be saved says so and falls back to the saved one", async () => {
+  const root = await renderApp(() => ({ ...SAVED, sidebarWidth: 300 }), {
+    set_sidebar_width: () => {
+      throw new Error("disk full (fake)");
+    },
+  });
+
+  stepRight(root);
+  await settle();
+
+  expect(root.querySelector(".save-error")?.textContent).toBe(
+    "Sidebar width not saved",
+  );
+  expect(
+    root
+      .querySelector<HTMLElement>(".app")
+      ?.style.getPropertyValue("--sidebar-width"),
+  ).toBe("300px");
+});
+
+test("a newer width still saves after an earlier save fails", async () => {
+  const widths: unknown[] = [];
+  const replies: ((ok: boolean) => void)[] = [];
+  const root = await renderApp(() => ({ ...SAVED, sidebarWidth: 300 }), {
+    set_sidebar_width: (args: unknown) => {
+      widths.push(field(args, "width"));
+      return new Promise((resolve, reject) => {
+        replies.push((ok) => {
+          if (ok) resolve({ ...SAVED, sidebarWidth: field(args, "width") });
+          else reject(new Error("busy (fake)"));
+        });
+      });
+    },
+  });
+
+  stepRight(root);
+  stepRight(root);
+  await settle();
+  replies.shift()?.(false);
+  await settle();
+  expect(widths).toEqual([316, 332]);
+
+  replies.shift()?.(true);
+  await settle();
+  expect(root.querySelector(".save-error")).toBeNull();
+  expect(
+    root
+      .querySelector<HTMLElement>(".app")
+      ?.style.getPropertyValue("--sidebar-width"),
+  ).toBe("332px");
+});

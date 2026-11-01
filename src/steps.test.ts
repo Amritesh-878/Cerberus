@@ -8,6 +8,7 @@ const PROFILES: Profiles = {
   defaultAccount: 0,
   shell: null,
   startFolder: null,
+  sidebarWidth: null,
   revision: 0,
 };
 
