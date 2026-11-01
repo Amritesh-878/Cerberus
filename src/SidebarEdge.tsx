@@ -29,10 +29,11 @@ export function SidebarEdge(props: {
   const set = (width: number) => {
     props.onWidth(clampSidebar(width, windowWidth()));
   };
-  let dragging = false;
+  // The pointer that started the drag; another finger or pen neither moves nor ends it.
+  let dragging: number | undefined;
   const finish = (event: PointerEvent & { currentTarget: HTMLDivElement }) => {
-    if (!dragging) return;
-    dragging = false;
+    if (event.pointerId !== dragging) return;
+    dragging = undefined;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
@@ -52,12 +53,13 @@ export function SidebarEdge(props: {
       title="Drag to resize, double-click to reset"
       onPointerDown={(event) => {
         event.preventDefault();
-        dragging = true;
+        if (dragging !== undefined) return;
+        dragging = event.pointerId;
         // Captured, so the drag keeps going over the terminal's canvas.
         event.currentTarget.setPointerCapture(event.pointerId);
       }}
       onPointerMove={(event) => {
-        if (dragging) set(event.clientX);
+        if (event.pointerId === dragging) set(event.clientX);
       }}
       onPointerUp={finish}
       onPointerCancel={finish}
