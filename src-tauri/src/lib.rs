@@ -63,6 +63,7 @@ pub fn run() {
             commands::pty_resize,
             commands::pty_ack,
             commands::pty_kill,
+            commands::resume_chat,
             commands::load_profiles,
             commands::reset_profiles,
             commands::detect_accounts,

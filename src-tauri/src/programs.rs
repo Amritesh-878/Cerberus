@@ -17,6 +17,16 @@ pub struct ProgramChoice {
     pub is_shell: bool,
 }
 
+/// The shell the Shell button opens: the saved choice when installed, else the first shell installed.
+pub fn pick_shell(choices: Vec<ProgramChoice>, saved: Option<&str>) -> Option<ProgramChoice> {
+    let mut shells: Vec<_> = choices
+        .into_iter()
+        .filter(|c| c.is_shell && c.program.is_some())
+        .collect();
+    let at = shells.iter().position(|c| Some(c.id) == saved).unwrap_or(0);
+    (at < shells.len()).then(|| shells.swap_remove(at))
+}
+
 pub struct Finder {
     dirs: Vec<PathBuf>,
     exts: Vec<String>,
@@ -191,6 +201,30 @@ mod tests {
             f.git_bash(),
             Some(PathBuf::from(r"C:\Program Files\Git\bin\bash.exe"))
         );
+    }
+
+    #[test]
+    fn the_saved_shell_is_picked_when_installed_else_the_first_one() {
+        let f = finder(
+            &[r"C:\w", r"D:\Git\cmd"],
+            &[
+                r"C:\w\powershell.exe",
+                r"D:\Git\cmd\git.exe",
+                r"D:\Git\bin\bash.exe",
+            ],
+        );
+        let id = |pick: Option<ProgramChoice>| pick.map(|c| c.id);
+
+        assert_eq!(
+            id(pick_shell(f.choices(), Some("git-bash"))),
+            Some("git-bash")
+        );
+        assert_eq!(
+            id(pick_shell(f.choices(), Some("gone"))),
+            Some("powershell")
+        );
+        assert_eq!(id(pick_shell(f.choices(), None)), Some("powershell"));
+        assert_eq!(id(pick_shell(finder(&[], &[]).choices(), None)), None);
     }
 
     #[test]

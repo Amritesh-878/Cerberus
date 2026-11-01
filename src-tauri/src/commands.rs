@@ -10,15 +10,17 @@ use crate::accounts::{
     AccountId, Accounts, AccountsError, AuthState, AuthStatus, Candidate, Profiles,
 };
 use crate::handover::{ContinueError, RunningTabs, continue_chat};
-use crate::programs::{Finder, ProgramChoice};
-use crate::pty::{PtyError, PtyManager, SessionId, SpawnRequest};
+use crate::programs::{Finder, ProgramChoice, pick_shell};
+use crate::pty::{Exit, PtyError, PtyManager, SessionId, SpawnRequest};
 use crate::saved::{Loaded, Saved, SavedTree, TabId, TreeError};
-use crate::sessions::{Resume, TabState, Watched, is_claude, plan_resume, watch};
+use crate::sessions::{Resume, TabState, Watched, chat_ended, is_claude, plan_resume, watch};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Exited {
     exit_code: Option<u32>,
+    /// A Claude tab's chat ended by itself, not by Cerberus stopping it, so the tab becomes a shell.
+    ended: bool,
 }
 
 #[derive(Serialize)]
@@ -34,6 +36,8 @@ pub enum SpawnError {
     Accounts(#[from] AccountsError),
     #[error(transparent)]
     Pty(#[from] PtyError),
+    #[error("the chat ended, and no shell is installed to open in its place")]
+    NoShell,
 }
 
 impl Serialize for SpawnError {
@@ -47,7 +51,7 @@ pub fn list_programs() -> Vec<ProgramChoice> {
     Finder::from_env().choices()
 }
 
-/// Output arrives on `events` as raw bytes, a Claude tab's state as `{ state }`, and the exit as `{ exitCode }`.
+/// Output arrives on `events` as raw bytes, a Claude tab's state as `{ state }`, and the exit as `{ exitCode, ended }`.
 #[tauri::command(async)]
 pub fn pty_spawn(
     app: AppHandle,
@@ -59,7 +63,7 @@ pub fn pty_spawn(
     events: Channel<InvokeResponseBody>,
 ) -> Result<Spawned, SpawnError> {
     request.claude_config_dir = accounts.claude_config_dir(account)?;
-    let claude_home = is_claude(&request.program)
+    let mut claude_home = is_claude(&request.program)
         .then(|| accounts.claude_home(account))
         .transpose()?;
     let cwd = request
@@ -70,8 +74,22 @@ pub fn pty_spawn(
     let mut resume = Resume::New;
     if let Some(home) = &claude_home {
         let session = tab.and_then(|t| saved.session_of(t));
-        (request.args, resume) = plan_resume(&request.args, home, &cwd, session.as_deref());
+        let ended = tab.is_some_and(|t| saved.is_ended(t));
+        (request.args, resume) = plan_resume(&request.args, home, &cwd, session.as_deref(), ended);
     }
+    if resume == Resume::Ended {
+        let shell = pick_shell(
+            Finder::from_env().choices(),
+            accounts.load()?.shell.as_deref(),
+        );
+        let (program, args) = shell
+            .and_then(|s| Some((s.program?, s.args)))
+            .ok_or(SpawnError::NoShell)?;
+        (request.program, request.args) = (program, args);
+        claude_home = None;
+    }
+    let runs_claude = claude_home.is_some();
+    let ended_saved = Saved::clone(&saved);
     let started_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .ok()
@@ -92,12 +110,20 @@ pub fn pty_spawn(
             // A send fails only once the webview is gone, and then nobody is left to show it.
             let _ = events.send(InvokeResponseBody::Raw(bytes));
         },
-        move |exit_code| {
+        move |exit: Exit| {
             drop(stop);
+            let ended = chat_ended(runs_claude, exit) && tab.is_some();
             if let Some(tab) = tab {
+                if ended {
+                    ended_saved.set_ended(tab, true);
+                }
                 exit_running.ended(tab);
             }
-            if let Ok(body) = (Exited { exit_code }).body() {
+            let exited = Exited {
+                exit_code: exit.code,
+                ended,
+            };
+            if let Ok(body) = exited.body() {
                 let _ = exit_events.send(body);
             }
         },
@@ -144,6 +170,12 @@ pub fn pty_spawn(
         }
     }
     Ok(Spawned { id, resume })
+}
+
+/// Lets an ended chat's tab run `claude --resume` again the next time it starts.
+#[tauri::command(async)]
+pub fn resume_chat(saved: State<'_, Saved>, tab: TabId) {
+    saved.set_ended(tab, false);
 }
 
 #[tauri::command(async)]
