@@ -43,6 +43,8 @@ impl Serialize for ContinueError {
 #[derive(Default)]
 struct TabProcs {
     live: usize,
+    /// Counts every start, so a program that came and went while a move waited is still noticed.
+    starts: u64,
     /// The tab's last program, kept after it exits so anything it left running can be waited for.
     root: Option<u32>,
     watchers: Vec<JoinHandle<()>>,
@@ -96,7 +98,10 @@ impl RunningTabs {
     }
 
     pub fn started(&self, tab: TabId) {
-        lock(&self.tabs).entry(tab).or_default().live += 1;
+        let mut tabs = lock(&self.tabs);
+        let procs = tabs.entry(tab).or_default();
+        procs.live += 1;
+        procs.starts += 1;
     }
 
     pub fn spawned(&self, tab: TabId, pid: u32) {
@@ -141,6 +146,7 @@ impl RunningTabs {
         }
         // The entry stays in the map, so a start or an end that lands during the waits below still counts.
         let root = procs.root;
+        let starts = procs.starts;
         let watchers = std::mem::take(&mut procs.watchers);
         drop(tabs);
         // A wrapper such as `claude.cmd` can exit while the `claude` it started is still writing.
@@ -162,10 +168,10 @@ impl RunningTabs {
             let _ = watcher.join();
         }
         let mut tabs = lock(&self.tabs);
-        // A program that started and ended during the waits left a tree and watchers not yet waited on.
+        // A program that started during the waits may have left a tree or a watcher not waited on.
         if tabs
             .get(&tab)
-            .is_some_and(|p| p.live > 0 || p.root != root || !p.watchers.is_empty())
+            .is_some_and(|p| p.live > 0 || p.starts != starts)
         {
             return false;
         }
@@ -421,12 +427,6 @@ mod tests {
         }
     }
 
-    fn ran_another_program(running: &RunningTabs, tab: TabId) {
-        running.started(tab);
-        running.spawned(tab, 8);
-        running.ended(tab);
-    }
-
     #[test]
     fn starts_and_ends_during_the_tree_wait_are_counted() {
         let world = world_with(RunningTabs::with(Probes {
@@ -455,12 +455,13 @@ mod tests {
         assert!(!world.copied(ID).exists());
 
         world.running.ended(2);
-        let came_and_went = during_the_wait(&[ran_another_program as Event]);
+        // Ended before its pid was read, so it left no root or watcher behind.
+        let came_and_went = during_the_wait(&[RunningTabs::started as Event, RunningTabs::ended]);
         assert!(matches!(came_and_went, Err(ContinueError::Running)));
         assert!(!world.copied(ID).exists());
 
-        let ran_and_ended = during_the_wait(&[RunningTabs::started as Event, RunningTabs::ended]);
-        assert!(ran_and_ended.is_ok(), "an end was lost: {ran_and_ended:?}");
+        let quiet = during_the_wait(&[]);
+        assert!(quiet.is_ok(), "an end was lost: {quiet:?}");
         assert!(world.copied(ID).is_file());
     }
 
