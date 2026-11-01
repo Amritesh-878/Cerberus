@@ -1,4 +1,11 @@
-import { clampSidebar, SIDEBAR_DEFAULT } from "./widths";
+import { createSignal, onCleanup, onMount } from "solid-js";
+
+import {
+  clampSidebar,
+  SIDEBAR_DEFAULT,
+  SIDEBAR_MIN,
+  sidebarMax,
+} from "./widths";
 
 const STEPS: Record<string, number> = { ArrowLeft: -16, ArrowRight: 16 };
 
@@ -7,8 +14,29 @@ export function SidebarEdge(props: {
   onWidth: (width: number) => void;
   onDone: () => void;
 }) {
+  const [windowWidth, setWindowWidth] = createSignal(innerWidth);
+  onMount(() => {
+    const onResize = () => {
+      setWindowWidth(innerWidth);
+    };
+    window.addEventListener("resize", onResize);
+    onCleanup(() => {
+      window.removeEventListener("resize", onResize);
+    });
+  });
+  // What the window lets the sidebar show; a width saved in a wider window can be more.
+  const shown = () => clampSidebar(props.width, windowWidth());
   const set = (width: number) => {
-    props.onWidth(clampSidebar(width, innerWidth));
+    props.onWidth(clampSidebar(width, windowWidth()));
+  };
+  let dragging = false;
+  const finish = (event: PointerEvent & { currentTarget: HTMLDivElement }) => {
+    if (!dragging) return;
+    dragging = false;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    props.onDone();
   };
 
   return (
@@ -17,23 +45,22 @@ export function SidebarEdge(props: {
       role="separator"
       aria-orientation="vertical"
       aria-label="Sidebar width"
-      aria-valuenow={props.width}
+      aria-valuemin={SIDEBAR_MIN}
+      aria-valuemax={sidebarMax(windowWidth())}
+      aria-valuenow={shown()}
       tabIndex={0}
       title="Drag to resize, double-click to reset"
       onPointerDown={(event) => {
         event.preventDefault();
+        dragging = true;
         // Captured, so the drag keeps going over the terminal's canvas.
         event.currentTarget.setPointerCapture(event.pointerId);
       }}
       onPointerMove={(event) => {
-        if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-          set(event.clientX);
-        }
+        if (dragging) set(event.clientX);
       }}
-      onPointerUp={(event) => {
-        event.currentTarget.releasePointerCapture(event.pointerId);
-        props.onDone();
-      }}
+      onPointerUp={finish}
+      onPointerCancel={finish}
       onDblClick={() => {
         set(SIDEBAR_DEFAULT);
         props.onDone();
@@ -42,7 +69,7 @@ export function SidebarEdge(props: {
         const step = STEPS[event.key];
         if (step === undefined) return;
         event.preventDefault();
-        set(props.width + step);
+        set(shown() + step);
         props.onDone();
       }}
     />
