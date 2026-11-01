@@ -279,3 +279,30 @@ test("a moving chat says where it is going on its row and in its pane until it r
   expect(root.querySelector(".pane-note")).toBeNull();
   expect(app.pty.spawned).toHaveLength(2);
 });
+
+// The Claude tab is the first row; a move renames it after its new account.
+function showsShell(root: HTMLElement): boolean {
+  return root.querySelector(".tab-row")?.querySelector(".icon-shell") != null;
+}
+
+test.each([
+  ["a move resumes it on the new account", undefined, false],
+  [
+    "a refused move keeps it ended",
+    "the other account already has this chat",
+    true,
+  ],
+])("an ended chat: %s", async (_name, fails, stillEnded) => {
+  const app = core({ fails });
+  const root = await renderApp(() => SAVED, {
+    ...app.core,
+    tree_load: () => ({ tree: TREE, notice: null, ended: [2] }),
+  });
+  expect(showsShell(root)).toBe(true);
+
+  await openMenu(root, "Claude Code · work");
+  click(root.querySelector(".tab-menu") ?? root, "Continue on personal…");
+  await settle();
+
+  expect(showsShell(root)).toBe(stillEnded);
+});

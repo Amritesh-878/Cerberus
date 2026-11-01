@@ -314,6 +314,7 @@ export function App() {
     continueOnAccount(id, account.id).then(
       () => {
         setTree(moveToAccount(tree(), id, account));
+        markEnded(id, false);
         restart();
       },
       (error: unknown) => {
