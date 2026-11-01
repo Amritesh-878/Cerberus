@@ -110,10 +110,34 @@ export function App() {
   const [dragged, setDragged] = createSignal<number>();
   const sidebarWidth = () =>
     dragged() ?? profiles()?.sidebarWidth ?? SIDEBAR_DEFAULT;
+  const [widthError, setWidthError] = createSignal<string>();
+  // One save in flight; a newer width waits, and only the latest is sent, so saves land in order.
+  let widthSaving = false;
+  let widthWaiting: number | undefined;
+  const sendWidth = (width: number) => {
+    widthSaving = true;
+    setSidebarWidth(width)
+      .then(
+        (saved) => {
+          setWidthError(undefined);
+          changed(saved);
+        },
+        (error: unknown) => {
+          widthWaiting = undefined;
+          setWidthError(String(error));
+          setDragged(undefined);
+        },
+      )
+      .finally(() => {
+        widthSaving = false;
+        const next = widthWaiting;
+        widthWaiting = undefined;
+        if (next !== undefined) sendWidth(next);
+      });
+  };
   const saveWidth = () => {
-    setSidebarWidth(sidebarWidth()).then(changed, (error: unknown) => {
-      console.error("could not save the sidebar width:", error);
-    });
+    if (widthSaving) widthWaiting = sidebarWidth();
+    else sendWidth(sidebarWidth());
   };
   const [drawer, setDrawer] = createSignal(false);
   const [tabsClosed, setTabsClosed] = createSignal(0);
@@ -496,6 +520,13 @@ export function App() {
                   {(error) => (
                     <span class="save-error" role="status" title={error()}>
                       Tabs not saved
+                    </span>
+                  )}
+                </Show>
+                <Show when={widthError()}>
+                  {(error) => (
+                    <span class="save-error" role="status" title={error()}>
+                      Sidebar width not saved
                     </span>
                   )}
                 </Show>
