@@ -1,5 +1,6 @@
+pub mod carry;
 mod limit;
-mod procs;
+pub mod procs;
 mod watch;
 
 use std::fs;
@@ -220,6 +221,14 @@ mod tests {
         );
         assert_eq!(slug("D:/é"), "D---");
         assert_eq!(slug("C:\\😀"), "C----");
+    }
+
+    #[test]
+    fn a_nested_cwd_with_dots_and_spaces_slugs_every_separator() {
+        assert_eq!(
+            slug(r"C:\Users\u\My Work\app.v2\sub dir\deep"),
+            "C--Users-u-My-Work-app-v2-sub-dir-deep"
+        );
     }
 
     #[test]

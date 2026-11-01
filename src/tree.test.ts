@@ -10,6 +10,7 @@ import {
   folderName,
   groups,
   moveTab,
+  moveToAccount,
   neighbour,
   planners,
   removeProject,
@@ -251,4 +252,24 @@ test("removing a project keeps setup tabs", () => {
   );
 
   expect(removeProject(tree, 1).tabs.map((t) => t.id)).toEqual([7, 8]);
+});
+
+test("a tab moved to another account runs there, and its default title follows", () => {
+  const moved = moveToAccount(sample(), 2, { id: 4, name: "Spare" });
+  const tab = moved.tabs.find((t) => t.id === 2);
+
+  expect(tab?.launch.account).toEqual({ id: 4, name: "Spare" });
+  expect(tab?.launch.spec.account).toBe(4);
+  expect(tab?.title).toBe("Claude Code · Spare");
+  expect(moved.tabs.filter((t) => t.id !== 2)).toEqual(
+    sample().tabs.filter((t) => t.id !== 2),
+  );
+});
+
+test("a renamed tab keeps its name when it moves to another account", () => {
+  const renamed = renameTab(sample(), 2, "planner");
+
+  const moved = moveToAccount(renamed, 2, { id: 4, name: "Spare" });
+
+  expect(moved.tabs.find((t) => t.id === 2)?.title).toBe("planner");
 });

@@ -263,6 +263,12 @@ impl Saved {
         }
     }
 
+    pub fn tab(&self, tab: TabId) -> Option<SavedTab> {
+        let live = self.live().ok()?;
+        let snapshot = lock(&live.snapshot);
+        snapshot.tree.tabs.iter().find(|t| t.id == tab).cloned()
+    }
+
     pub fn session_of(&self, tab: TabId) -> Option<String> {
         let live = self.live().ok()?;
         lock(&live.snapshot).sessions.get(&tab).cloned()
