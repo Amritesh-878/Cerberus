@@ -134,7 +134,8 @@ pastes an image (Cmd+V or Ctrl+V on macOS).
 - Opened from Finder or the Dock, an app gets a short `PATH`. Cerberus reads `PATH` from your
   login shell once at start, so `claude` is found wherever your shell finds it. Tabs get a UTF-8
   locale when macOS gives none.
-- Cerberus's keys use Cmd, so every Ctrl key reaches the terminal. Option works as Meta, so
+- Cerberus's keys use Cmd, so Ctrl keys reach the terminal, except Ctrl+Tab and Ctrl+Shift+Tab,
+  which switch tabs as in Terminal.app. Option works as Meta, so
   Option+B, Option+F and Option+arrows move by word in a shell.
 - If `xattr` isn't an option: open Cerberus once, close the warning, then choose **Open Anyway**
   in **System Settings > Privacy & Security**. (Right-click > Open stopped working in macOS 15.)

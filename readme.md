@@ -1,8 +1,8 @@
 # Cerberus
 
 A terminal for running Claude Code, on Windows with a macOS preview. Every project is a folder in
-the sidebar with its tabs under it, and each tab keeps its Claude Code chat, so a restart or a
-crash never loses one.
+the sidebar with its tabs under it, and each tab keeps its Claude Code chat, so after a restart or
+a crash your tabs come back and their chats resume.
 
 Each Claude Code tab runs the official `claude` CLI. Claude Code is the only AI in it. Built with Claude Code.
 
