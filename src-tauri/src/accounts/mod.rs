@@ -324,6 +324,7 @@ fn same_dir(a: &Path, b: &Path) -> bool {
 }
 
 // Windows paths ignore case, accept either slash, and reach one folder through `..` or a short name.
+#[cfg(windows)]
 fn dir_key(path: &Path) -> String {
     let resolved = fs::canonicalize(path).map_or_else(|_| lexical(path), without_verbatim);
     resolved
@@ -331,6 +332,13 @@ fn dir_key(path: &Path) -> String {
         .replace('/', "\\")
         .trim_end_matches('\\')
         .to_lowercase()
+}
+
+// Kept as spelled, since Claude Code uses the folder exactly as given; links and `..` still resolve.
+#[cfg(not(windows))]
+fn dir_key(path: &Path) -> String {
+    let resolved = fs::canonicalize(path).unwrap_or_else(|_| lexical(path));
+    resolved.to_string_lossy().trim_end_matches('/').to_owned()
 }
 
 fn lexical(path: &Path) -> PathBuf {
@@ -348,6 +356,7 @@ fn lexical(path: &Path) -> PathBuf {
 }
 
 // `canonicalize` returns `\\?\C:\...`, which never equals a path the user typed.
+#[cfg(windows)]
 fn without_verbatim(path: PathBuf) -> PathBuf {
     let text = path.to_string_lossy();
     if let Some(share) = text.strip_prefix(r"\\?\UNC\") {
@@ -461,10 +470,29 @@ mod tests {
             profiles.add("rel", dir(r"h\.claude-rel")),
             Err(AccountsError::RelativeDir(_))
         ));
+        #[cfg(windows)]
         assert!(matches!(
             profiles.add("again", dir("c:/H/.CLAUDE-work/")),
             Err(AccountsError::DuplicateDir(_))
         ));
+        #[cfg(not(windows))]
+        assert!(matches!(
+            profiles.add("again", dir("/h/.claude-work/")),
+            Err(AccountsError::DuplicateDir(_))
+        ));
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn a_folder_spelled_in_another_case_is_another_folder() {
+        let mut profiles = two_accounts();
+
+        profiles.add("other", dir("/h/.CLAUDE-work")).unwrap();
+
+        assert_eq!(
+            env_dir(&dir("/Users/u"), dir("/Users/u/.Claude")),
+            Some(dir("/Users/u/.Claude"))
+        );
     }
 
     #[test]
@@ -576,7 +604,10 @@ mod tests {
         let home = dir(r"C:\Users\u");
 
         assert_eq!(env_dir(&home, dir(r"C:\Users\u\.claude")), None);
+        #[cfg(windows)]
         assert_eq!(env_dir(&home, dir("c:/users/U/.Claude/")), None);
+        #[cfg(not(windows))]
+        assert_eq!(env_dir(&home, dir("/Users/u/.claude/")), None);
         assert_eq!(
             env_dir(&home, dir(r"C:\Users\u\.claude-acc2")),
             Some(dir(r"C:\Users\u\.claude-acc2"))

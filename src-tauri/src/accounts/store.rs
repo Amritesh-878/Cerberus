@@ -213,10 +213,12 @@ mod tests {
 
         add(&store, "two", r"C:\h\.claude-two");
 
-        let files: Vec<_> = fs::read_dir(&app)
+        let mut files: Vec<_> = fs::read_dir(&app)
             .unwrap()
             .map(|e| e.unwrap().file_name())
             .collect();
+        // Listing order is the file system's; APFS does not sort by name.
+        files.sort();
         assert_eq!(files, ["profiles.json", "profiles.json.1.tmp"]);
         assert_eq!(store.load().unwrap().accounts.len(), 2);
     }
