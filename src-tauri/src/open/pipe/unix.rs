@@ -19,11 +19,13 @@ pub fn name(identifier: &str) -> String {
 pub fn connect(name: &str) -> io::Result<Option<UnixStream>> {
     match UnixStream::connect(name) {
         Ok(stream) => Ok(Some(stream)),
-        // A socket file left by an app that crashed refuses, which also means nobody is listening.
+        // A crashed app's socket refuses, and a path too long for `sun_path` cannot be listened on either.
         Err(e)
             if matches!(
                 e.kind(),
-                io::ErrorKind::NotFound | io::ErrorKind::ConnectionRefused
+                io::ErrorKind::NotFound
+                    | io::ErrorKind::ConnectionRefused
+                    | io::ErrorKind::InvalidInput
             ) =>
         {
             Ok(None)
@@ -81,9 +83,9 @@ pub fn cutter(
     })
 }
 
-/// A socket keeps a written reply for the asker after it closes, so there is nothing to wait for.
-pub fn finish(_stream: &UnixStream) -> io::Result<()> {
-    Ok(())
+/// Sends EOF now: the cut-off holds a clone of the socket, so dropping this one would not close it.
+pub fn finish(stream: &UnixStream) -> io::Result<()> {
+    stream.shutdown(Shutdown::Write)
 }
 
 #[cfg(test)]

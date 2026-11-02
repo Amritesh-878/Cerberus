@@ -171,6 +171,18 @@ mod tests {
     }
 
     #[test]
+    fn an_answer_ends_well_before_the_cut_off() {
+        let name = unique();
+        serve(&name, |_| (0, "answered".to_owned())).unwrap();
+        let started = std::time::Instant::now();
+
+        let answer = ask(&name, &["open".to_owned()]).unwrap();
+
+        assert_eq!(answer, Some((0, "answered".to_owned())));
+        assert!(started.elapsed() < DEADLINE / 4, "{:?}", started.elapsed());
+    }
+
+    #[test]
     fn an_asker_that_never_writes_holds_up_nobody() {
         let name = unique();
         serve(&name, |_| (0, "answered".to_owned())).unwrap();
@@ -244,6 +256,14 @@ mod tests {
         serve(&name, |_| (0, String::new())).unwrap();
 
         assert!(serve(&name, |_| (0, String::new())).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_socket_path_too_long_to_listen_on_is_no_answer() {
+        let name = std::env::temp_dir().join("x".repeat(200)).join("open.sock");
+
+        assert_eq!(ask(&name.to_string_lossy(), &[]).unwrap(), None);
     }
 
     #[cfg(unix)]
