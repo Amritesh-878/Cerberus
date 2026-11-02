@@ -210,6 +210,8 @@ function AlertsSetting(props: {
   onProfiles: (profiles: Profiles) => void;
 }) {
   const [error, setError] = createSignal<string>();
+  // One save at a time, so a quick second click is saved after the first and stays.
+  let saving: Promise<void> = Promise.resolve();
 
   return (
     <div class="alerts-setting">
@@ -219,16 +221,20 @@ function AlertsSetting(props: {
           checked={props.profiles.alerts}
           onChange={(event) => {
             const box = event.currentTarget;
-            setAlerts(box.checked)
-              .then((profiles) => {
-                setError(undefined);
-                props.onProfiles(profiles);
-              })
-              .catch((e: unknown) => {
-                // The saved choice did not change, so the box goes back to it.
-                box.checked = props.profiles.alerts;
-                setError(String(e));
-              });
+            const on = box.checked;
+            saving = saving.then(() =>
+              setAlerts(on).then(
+                (profiles) => {
+                  setError(undefined);
+                  props.onProfiles(profiles);
+                },
+                (e: unknown) => {
+                  // The saved choice did not change, so the box goes back to it.
+                  box.checked = props.profiles.alerts;
+                  setError(String(e));
+                },
+              ),
+            );
           }}
         />
         Notify me when a chat in a tab I'm not looking at finishes, hits its
