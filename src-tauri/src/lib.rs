@@ -2,6 +2,9 @@ mod accounts;
 mod commands;
 mod handover;
 mod job;
+#[cfg(unix)]
+mod login_path;
+mod menu;
 mod open;
 mod programs;
 mod pty;
@@ -22,13 +25,15 @@ pub use crate::open::console;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(unix)]
+    login_path::adopt();
     let context = tauri::generate_context!();
     let command = open::from_command_line(&context.config().identifier);
     // Joined before anything starts, so the webview and every tab are in the job too.
     if let Err(e) = job::end_children_with_app() {
         eprintln!("tab programs may outlive a crash: {e}");
     }
-    let app = tauri::Builder::default()
+    let app = menu::with_app_menu(tauri::Builder::default())
         .plugin(tauri_plugin_single_instance::init(open::on_second_launch))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())

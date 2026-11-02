@@ -28,9 +28,47 @@ pub fn descendants(root: u32) -> Vec<u32> {
     below(&pairs, root)
 }
 
-#[cfg(not(windows))]
-pub fn descendants(_root: u32) -> Vec<u32> {
-    Vec::new()
+#[cfg(unix)]
+pub fn descendants(root: u32) -> Vec<u32> {
+    let listed = std::process::Command::new("/bin/ps")
+        .args(["-axo", "pid=,ppid=,pgid="])
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .output();
+    match listed {
+        Ok(out) if out.status.success() => {
+            in_tree(&ps_rows(&String::from_utf8_lossy(&out.stdout)), root)
+        }
+        _ => Vec::new(),
+    }
+}
+
+/// (process, parent, group) rows from `ps -o pid=,ppid=,pgid=`; a line that is not three numbers is skipped.
+#[cfg(any(unix, test))]
+fn ps_rows(listing: &str) -> Vec<(u32, u32, u32)> {
+    listing
+        .lines()
+        .filter_map(|line| {
+            let mut fields = line.split_whitespace().map(str::parse::<u32>);
+            match (fields.next(), fields.next(), fields.next(), fields.next()) {
+                (Some(Ok(pid)), Some(Ok(ppid)), Some(Ok(pgid)), None) => Some((pid, ppid, pgid)),
+                _ => None,
+            }
+        })
+        .collect()
+}
+
+/// Below `root` by parent, plus its group, since an orphan moves to launchd but keeps the group it started in.
+#[cfg(any(unix, test))]
+fn in_tree(rows: &[(u32, u32, u32)], root: u32) -> Vec<u32> {
+    let pairs: Vec<(u32, u32)> = rows.iter().map(|&(pid, ppid, _)| (pid, ppid)).collect();
+    let mut found = below(&pairs, root);
+    for &(pid, _, pgid) in rows {
+        if pgid == root && pid != root && !found.contains(&pid) {
+            found.push(pid);
+        }
+    }
+    found
 }
 
 /// Whether a process with this id is still running.
@@ -54,9 +92,15 @@ pub fn is_running(pid: u32) -> bool {
     }
 }
 
-#[cfg(not(windows))]
-pub fn is_running(_pid: u32) -> bool {
-    false
+#[cfg(unix)]
+pub fn is_running(pid: u32) -> bool {
+    let Ok(pid) = libc::pid_t::try_from(pid) else {
+        return false;
+    };
+    // Signal 0 only checks; EPERM means the process exists under another user.
+    // SAFETY: `kill` with signal 0 sends nothing and touches no memory.
+    let sent = unsafe { libc::kill(pid, 0) };
+    sent == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
 }
 
 /// `pairs` are (process, parent); the walk is breadth first, so nearer processes come first.
@@ -97,6 +141,99 @@ mod tests {
 
         assert!(is_running(std::process::id()));
         assert!(!is_running(child.id()));
+    }
+
+    #[test]
+    fn ps_lines_become_rows_and_odd_lines_are_skipped() {
+        let listing = [
+            "    1     0     1",
+            "  412     1   412",
+            " 9000   412   412",
+            "PID PPID PGID",
+            "",
+            " 77 x 1",
+            " 5 6",
+            " 5 6 7 8",
+        ]
+        .join("\n");
+
+        assert_eq!(
+            ps_rows(&listing),
+            [(1, 0, 1), (412, 1, 412), (9000, 412, 412)]
+        );
+    }
+
+    #[test]
+    fn a_child_whose_parent_exited_is_still_found_by_its_group() {
+        // 500 was the tab's program; 600 outlived it and now hangs off launchd (1), in 500's group.
+        let rows = [
+            (1, 0, 1),
+            (600, 1, 500),
+            (601, 600, 500),
+            (700, 1, 700),
+            (701, 700, 500),
+        ];
+
+        assert_eq!(in_tree(&rows, 500), [600, 601, 701]);
+        assert_eq!(in_tree(&rows, 700), [701]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_program_left_by_a_wrapper_that_exited_is_still_found() {
+        use std::io::BufRead;
+        use std::os::unix::process::CommandExt;
+        // A group leader, as each tab's program is; it leaves sleep running and exits.
+        let mut wrapper = std::process::Command::new("/bin/sh")
+            .args(["-c", "sleep 30 & echo $!"])
+            .stdout(std::process::Stdio::piped())
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let mut line = String::new();
+        std::io::BufReader::new(wrapper.stdout.take().unwrap())
+            .read_line(&mut line)
+            .unwrap();
+        let left: u32 = line.trim().parse().unwrap();
+        wrapper.wait().unwrap();
+
+        let found = descendants(wrapper.id());
+        // SAFETY: plain signal to a test-owned process.
+        unsafe { libc::kill(libc::pid_t::try_from(left).unwrap(), libc::SIGKILL) };
+
+        assert!(found.contains(&left), "{left} not in {found:?}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn this_process_is_running_and_a_finished_one_is_not() {
+        let mut child = std::process::Command::new("/usr/bin/true").spawn().unwrap();
+        child.wait().unwrap();
+
+        assert!(is_running(std::process::id()));
+        assert!(!is_running(child.id()));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_wrappers_real_program_is_found_below_it() {
+        // The trailing `true` keeps sh from replacing itself with sleep.
+        let mut wrapper = std::process::Command::new("/bin/sh")
+            .args(["-c", "sleep 30; true"])
+            .spawn()
+            .unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let mut found = Vec::new();
+        while found.is_empty() && std::time::Instant::now() < deadline {
+            found = descendants(wrapper.id());
+        }
+        for pid in found.iter().chain([&wrapper.id()]) {
+            // SAFETY: plain signal to a test-owned process.
+            unsafe { libc::kill(libc::pid_t::try_from(*pid).unwrap(), libc::SIGKILL) };
+        }
+        let _ = wrapper.wait();
+
+        assert!(!found.is_empty(), "no process found below the wrapper");
     }
 
     #[test]

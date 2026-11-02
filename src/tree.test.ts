@@ -31,7 +31,7 @@ function launch(program: string, account: string | null = "Work"): Tab {
       cwd: null,
       account: account === null ? null : 1,
     },
-    pastesImages: program === "claude",
+    imagePasteKey: program === "claude" ? "\x1bv" : null,
     account: account === null ? null : { id: 1, name: account },
     input: null,
     signIn: false,

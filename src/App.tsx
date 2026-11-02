@@ -38,7 +38,7 @@ import {
   startedTabs,
 } from "./board";
 import { AppIcon, CloseIcon, MenuIcon, PanelIcon } from "./icons";
-import { KEY_HELP, shortcutFor } from "./keys";
+import { keyHelp, shortcutFor } from "./keys";
 import { type Launch, NewTab } from "./NewTab";
 import { createNotifier } from "./notify";
 import { followOpenRequests } from "./open";
@@ -110,6 +110,9 @@ export function App() {
   const [programs, { refetch: recheckPrograms }] = createResource(listPrograms);
   // Solid types a resource error as `any`.
   const programsError = (): unknown => programs.error;
+  // An errored resource throws on `latest`, which would blank the page that should show the error.
+  const programList = () =>
+    programs.state === "errored" ? undefined : programs.latest;
   const statuses = createStatuses();
 
   const [tree, setTree] = createSignal<Tree>(emptyTree());
@@ -171,7 +174,7 @@ export function App() {
   const savedTree = loadTree();
   createEffect(() => {
     const ready = profiles();
-    const choices = programs.state === "errored" ? [] : programs.latest;
+    const choices = programs.state === "errored" ? [] : programList();
     if (!ready || !choices || untrack(restored)) return;
     savedTree.then(
       (loaded) => {
@@ -687,7 +690,7 @@ export function App() {
                             <TerminalView
                               tab={id}
                               spec={tab().launch.spec}
-                              pastesImages={tab().launch.pastesImages}
+                              imagePasteKey={tab().launch.imagePasteKey}
                               input={tab().launch.input}
                               active={shown() === id}
                               onState={(state) => {
@@ -729,7 +732,8 @@ export function App() {
                       <Match when={page() === "walkthrough"}>
                         <Walkthrough
                           profiles={loaded()}
-                          programs={programs.latest ?? []}
+                          programs={programList() ?? []}
+                          programsError={programsError()}
                           statuses={statuses}
                           onProfiles={changed}
                           onOpen={openSetupTab}
@@ -742,7 +746,7 @@ export function App() {
                       <Match when={page() === "accounts"}>
                         <AccountsScreen
                           profiles={loaded()}
-                          programs={programs.latest ?? []}
+                          programs={programList() ?? []}
                           statuses={statuses}
                           alerts={alertsSetting.on()}
                           onAlerts={alertsSetting.save}
@@ -785,7 +789,7 @@ export function App() {
                       project={project()}
                       planners={planners(tree(), project().id)}
                       profiles={loaded()}
-                      programs={programs.latest}
+                      programs={programList()}
                       programsError={programsError()}
                       statuses={statuses}
                       anchor={open().anchor}
@@ -878,7 +882,7 @@ function Home(props: {
         )}
       </Show>
       <dl class="home-keys">
-        <For each={KEY_HELP}>
+        <For each={keyHelp()}>
           {(help) => (
             <>
               <dt>{help.keys}</dt>

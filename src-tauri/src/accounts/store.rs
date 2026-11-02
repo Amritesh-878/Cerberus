@@ -163,7 +163,7 @@ mod tests {
     use std::path::Path;
 
     use super::*;
-    use crate::accounts::testdir::TestDir;
+    use crate::accounts::testdir::{TestDir, native};
 
     fn store_in(dir: &TestDir) -> Store {
         Store::new(dir.path().join("app").join("profiles.json"))
@@ -171,7 +171,7 @@ mod tests {
 
     fn add(store: &Store, name: &str, dir: &str) -> Profiles {
         store
-            .update(|p| p.add(name, PathBuf::from(dir)).map(drop))
+            .update(|p| p.add(name, native(dir)).map(drop))
             .unwrap()
     }
 
@@ -192,7 +192,7 @@ mod tests {
             .update(|p| {
                 p.set_default_account(1)?;
                 p.shell = Some("git-bash".to_owned());
-                p.set_start_folder(Some(PathBuf::from(r"C:\code")))
+                p.set_start_folder(Some(native(r"C:\code")))
             })
             .unwrap();
 
@@ -213,10 +213,12 @@ mod tests {
 
         add(&store, "two", r"C:\h\.claude-two");
 
-        let files: Vec<_> = fs::read_dir(&app)
+        let mut files: Vec<_> = fs::read_dir(&app)
             .unwrap()
             .map(|e| e.unwrap().file_name())
             .collect();
+        // Listing order is the file system's; APFS does not sort by name.
+        files.sort();
         assert_eq!(files, ["profiles.json", "profiles.json.1.tmp"]);
         assert_eq!(store.load().unwrap().accounts.len(), 2);
     }
@@ -239,7 +241,7 @@ mod tests {
         let store = store_in(&dir);
         add(&store, "one", r"C:\h\.claude-one");
 
-        let result = store.update(|p| p.add("ONE", PathBuf::from(r"C:\h\x")).map(drop));
+        let result = store.update(|p| p.add("ONE", native(r"C:\h\x")).map(drop));
 
         assert!(matches!(result, Err(AccountsError::DuplicateName(_))));
         assert_eq!(store.load().unwrap().accounts.len(), 1);
@@ -247,6 +249,9 @@ mod tests {
 
     fn write_raw(dir: &TestDir, text: &str) -> Store {
         let path = dir.path().join("profiles.json");
+        // Fixtures spell folders the Windows way, as JSON escapes them.
+        #[cfg(not(windows))]
+        let text = &text.replace("C:", "").replace(r"\\", "/");
         fs::write(&path, text).unwrap();
         Store::new(path)
     }
@@ -294,7 +299,7 @@ mod tests {
         let saved = store.update(|_| Ok(())).unwrap();
 
         assert_eq!(loaded.shell.as_deref(), Some("powershell"));
-        assert_eq!(loaded.start_folder, Some(PathBuf::from(r"C:\code")));
+        assert_eq!(loaded.start_folder, Some(native(r"C:\code")));
         assert_eq!(saved.revision, loaded.revision + 1);
         assert_eq!(
             Profiles {

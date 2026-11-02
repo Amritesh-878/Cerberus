@@ -22,16 +22,20 @@ export const CHOICES: ProgramChoice[] = [
     label: "Claude Code",
     program: String.raw`C:\bin\claude.exe`,
     args: [],
-    pastesImages: true,
+    imagePasteKey: "\x1bv",
     isShell: false,
+    installCommand: "irm https://claude.ai/install.ps1 | iex",
+    installShell: "powershell",
   },
   {
     id: "powershell",
     label: "PowerShell",
     program: String.raw`C:\ps\powershell.exe`,
     args: ["-NoLogo"],
-    pastesImages: false,
+    imagePasteKey: null,
     isShell: true,
+    installCommand: null,
+    installShell: null,
   },
 ];
 

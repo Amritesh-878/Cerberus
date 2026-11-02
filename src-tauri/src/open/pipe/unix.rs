@@ -1,0 +1,98 @@
+use std::io;
+use std::net::Shutdown;
+use std::os::unix::net::{UnixListener, UnixStream};
+use std::path::Path;
+use std::thread::JoinHandle;
+use std::time::Duration;
+
+pub type Stream = UnixStream;
+
+/// A socket in the app's data folder, which is the user's own, so each user reaches their own app.
+pub fn name(identifier: &str) -> String {
+    let dir = dirs::config_dir().unwrap_or_else(std::env::temp_dir);
+    dir.join(identifier)
+        .join("open.sock")
+        .to_string_lossy()
+        .into_owned()
+}
+
+pub fn connect(name: &str) -> io::Result<Option<UnixStream>> {
+    match UnixStream::connect(name) {
+        Ok(stream) => Ok(Some(stream)),
+        // A crashed app's socket refuses, and a path too long for `sun_path` cannot be listened on either.
+        Err(e)
+            if matches!(
+                e.kind(),
+                io::ErrorKind::NotFound
+                    | io::ErrorKind::ConnectionRefused
+                    | io::ErrorKind::InvalidInput
+            ) =>
+        {
+            Ok(None)
+        }
+        Err(e) => Err(e),
+    }
+}
+
+pub struct Listener(UnixListener);
+
+impl Listener {
+    pub fn bind(name: &str) -> io::Result<Self> {
+        let path = Path::new(name);
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        match UnixListener::bind(path) {
+            Ok(listener) => Ok(Self(listener)),
+            Err(e) if e.kind() == io::ErrorKind::AddrInUse => Self::reclaim(path, e),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Takes over a socket file only when no app answers on it.
+    fn reclaim(path: &Path, in_use: io::Error) -> io::Result<Self> {
+        if connect(&path.to_string_lossy())?.is_some() {
+            return Err(in_use);
+        }
+        std::fs::remove_file(path)?;
+        UnixListener::bind(path).map(Self)
+    }
+
+    /// The outer error stops listening; the inner one is an asker that left early.
+    pub fn accept(&mut self) -> io::Result<io::Result<UnixStream>> {
+        let accepted = self.0.accept().map(|(stream, _)| stream);
+        if accepted.is_err() {
+            // Out of file handles, most likely; a pause keeps the loop from spinning.
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        Ok(accepted)
+    }
+}
+
+/// Shutting the read side wakes a worker waiting on a silent asker; a reply still being made can go out.
+pub fn cutter(
+    stream: &UnixStream,
+    deadline: Duration,
+) -> io::Result<impl Fn(&JoinHandle<()>) + Send + 'static> {
+    // An asker that never reads would otherwise block a long reply's write for good.
+    stream.set_write_timeout(Some(deadline))?;
+    let stream = stream.try_clone()?;
+    Ok(move |_: &JoinHandle<()>| {
+        // Fails only once the asker is gone, and then there is nothing left to wake.
+        let _ = stream.shutdown(Shutdown::Read);
+    })
+}
+
+/// Sends EOF now: the cut-off holds a clone of the socket, so dropping this one would not close it.
+pub fn finish(stream: &UnixStream) -> io::Result<()> {
+    stream.shutdown(Shutdown::Write)
+}
+
+#[cfg(test)]
+pub fn unique_name(n: u32) -> String {
+    let file = format!("cerberus-test-{}-{n}.sock", std::process::id());
+    std::env::temp_dir()
+        .join(file)
+        .to_string_lossy()
+        .into_owned()
+}

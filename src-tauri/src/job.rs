@@ -1,8 +1,8 @@
 use std::io;
-use std::sync::OnceLock;
 
 // A raw handle is not `Sync`, so the job is kept as its integer value.
-static JOB: OnceLock<usize> = OnceLock::new();
+#[cfg(windows)]
+static JOB: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
 
 /// Joins a job that Windows ends with this process on a crash or forced kill, so no tab program outlives it.
 #[cfg(windows)]
@@ -76,6 +76,7 @@ fn set_limits(job: windows_sys::Win32::Foundation::HANDLE, flags: u32) -> io::Re
     Ok(())
 }
 
+// No job objects here: a crash closes each terminal's master side, which hangs up its programs.
 #[cfg(not(windows))]
 pub fn end_children_with_app() -> io::Result<()> {
     Ok(())

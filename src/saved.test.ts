@@ -11,8 +11,10 @@ const CLAUDE: ProgramChoice = {
   label: "Claude Code",
   program: String.raw`C:\bin\claude.exe`,
   args: [],
-  pastesImages: true,
+  imagePasteKey: "\x1bv",
   isShell: false,
+  installCommand: null,
+  installShell: null,
 };
 
 const SHELL: ProgramChoice = {
@@ -20,8 +22,10 @@ const SHELL: ProgramChoice = {
   label: "PowerShell",
   program: String.raw`C:\ps\powershell.exe`,
   args: ["-NoLogo"],
-  pastesImages: false,
+  imagePasteKey: null,
   isShell: true,
+  installCommand: null,
+  installShell: null,
 };
 
 const PROFILES: Profiles = {

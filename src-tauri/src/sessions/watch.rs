@@ -592,4 +592,33 @@ mod tests {
 
         assert_eq!(events, [r#"state {"state":"working"}"#]);
     }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_session_below_a_wrapper_is_found() {
+        let dir = TestDir::new();
+        // The trailing `true` keeps sh from replacing itself with sleep.
+        let mut wrapper = std::process::Command::new("/bin/sh")
+            .args(["-c", "sleep 30; true"])
+            .spawn()
+            .unwrap();
+        let started_ms = now_ms() - 1_000;
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let mut below = Vec::new();
+        while below.is_empty() && Instant::now() < deadline {
+            below = descendants(wrapper.id());
+        }
+        write_session(&dir, below[0], "busy");
+
+        let events = run(watched_in(&dir, wrapper.id(), started_ms), |e| {
+            !e.is_empty()
+        });
+        for pid in below.iter().chain([&wrapper.id()]) {
+            // SAFETY: plain signal to a test-owned process.
+            unsafe { libc::kill(libc::pid_t::try_from(*pid).unwrap(), libc::SIGKILL) };
+        }
+        let _ = wrapper.wait();
+
+        assert_eq!(events, [r#"state {"state":"working"}"#]);
+    }
 }

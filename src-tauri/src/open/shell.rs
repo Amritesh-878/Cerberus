@@ -7,8 +7,11 @@ use crate::saved::{self, TreeError};
 /// The bundle identifier, which names the app's data folder and its pipe; a test ties it to `tauri.conf.json`.
 pub const IDENTIFIER: &str = "com.cerberus.terminal";
 
-/// The app beside the console command, as the installer lays them out.
+/// The app beside the console command, as the installer or the `.app` bundle lays them out.
+#[cfg(windows)]
 const APP: &str = "cerberus.exe";
+#[cfg(not(windows))]
+const APP: &str = "cerberus";
 
 pub fn arguments(all: impl Iterator<Item = String>) -> Vec<String> {
     all.skip(1).collect()
@@ -51,9 +54,7 @@ pub fn console() -> ExitCode {
             exit_code(code)
         }
         Checked::Run(command, note) => {
-            let dir = std::env::current_exe()
-                .ok()
-                .and_then(|exe| exe.parent().map(Path::to_path_buf));
+            let dir = std::env::current_exe().ok().and_then(|exe| app_dir(&exe));
             match dir.map(|dir| start_app(&dir.join(APP), &command)) {
                 Some(Ok(())) => {
                     if let Some(note) = note {
@@ -72,6 +73,13 @@ pub fn console() -> ExitCode {
             }
         }
     }
+}
+
+/// The folder the command really runs from: on macOS it is usually reached through a symlink on PATH.
+fn app_dir(exe: &Path) -> Option<std::path::PathBuf> {
+    #[cfg(unix)]
+    let exe = &std::fs::canonicalize(exe).ok()?;
+    exe.parent().map(Path::to_path_buf)
 }
 
 /// Starts the app on its own, so closing the shell or pressing Ctrl+C leaves it running.
@@ -95,6 +103,8 @@ fn start_app(app: &Path, command: &Command) -> std::io::Result<()> {
             eprintln!("cerberus: could not keep this shell's handles from the app: {e}");
         }
     }
+    #[cfg(unix)]
+    std::os::unix::process::CommandExt::process_group(&mut process, 0);
     process.spawn().map(drop)
 }
 
@@ -177,6 +187,21 @@ mod tests {
             serde_json::from_str(include_str!("../../tauri.conf.json")).unwrap();
 
         assert_eq!(config["identifier"], IDENTIFIER);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlinked_command_finds_the_app_beside_its_target() {
+        let dir = crate::accounts::testdir::TestDir::new();
+        let bundle = dir.path().join("Cerberus.app/Contents/MacOS");
+        std::fs::create_dir_all(&bundle).unwrap();
+        std::fs::write(bundle.join("cerberus-cli"), "").unwrap();
+        let link = dir.path().join("cerberus");
+        std::os::unix::fs::symlink(bundle.join("cerberus-cli"), &link).unwrap();
+
+        let found = app_dir(&link).unwrap();
+
+        assert_eq!(found, std::fs::canonicalize(&bundle).unwrap());
     }
 
     #[test]

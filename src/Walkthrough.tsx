@@ -5,10 +5,9 @@ import { AccountsStep } from "./AccountsStep";
 import type { Profiles } from "./accounts";
 import type { ProgramChoice } from "./pty";
 import type { Statuses } from "./statuses";
-import { installed, type Tab, tabFor } from "./tab";
+import { installed, shellChoice, type Tab, tabFor } from "./tab";
 import {
   finishBlocker,
-  INSTALL_COMMAND,
   nextStep,
   previousStep,
   type Step,
@@ -19,6 +18,7 @@ import {
 interface Props {
   profiles: Profiles;
   programs: ProgramChoice[];
+  programsError: unknown;
   statuses: Statuses;
   onProfiles: (profiles: Profiles) => void;
   onOpen: (tab: Tab) => void;
@@ -42,7 +42,9 @@ export function Walkthrough(props: Props) {
       <Switch>
         <Match when={step() === "install"}>
           <InstallStep
+            profiles={props.profiles}
             programs={props.programs}
+            programsError={props.programsError}
             onOpen={props.onOpen}
             onRecheck={props.onRecheckPrograms}
           />
@@ -96,37 +98,60 @@ export function Walkthrough(props: Props) {
 }
 
 function InstallStep(props: {
+  profiles: Profiles;
   programs: ProgramChoice[];
+  programsError: unknown;
   onOpen: (tab: Tab) => void;
   onRecheck: () => void;
 }) {
   const claude = () => installed(props.programs, "claude");
+  const choice = () => props.programs.find((p) => p.id === "claude");
+  const command = () => choice()?.installCommand ?? null;
+  const named = () => choice()?.installShell ?? null;
+  const shell = () => {
+    const id = named();
+    return id === null
+      ? shellChoice(props.profiles, props.programs)
+      : installed(props.programs, id);
+  };
+  const shellLabel = () => {
+    const id = named();
+    const listed = props.programs.find((p) => p.id === id)?.label;
+    return shell()?.label ?? listed ?? "a terminal";
+  };
   const openInstaller = () => {
-    const shell = installed(props.programs, "powershell");
+    const using = shell();
+    const input = command();
     const tab =
-      shell &&
-      tabFor(shell, { account: null, cwd: null, input: INSTALL_COMMAND });
+      using &&
+      input !== null &&
+      tabFor(using, { account: null, cwd: null, input });
     if (tab) props.onOpen(tab);
   };
 
   return (
     <section>
+      <Show when={props.programsError !== undefined}>
+        <p class="error">
+          Could not list programs: {String(props.programsError)}
+        </p>
+      </Show>
       <Show
         when={claude()}
         fallback={
           <>
             <p>
-              Claude Code isn't installed yet. To install it, run this in
-              PowerShell:
+              Claude Code isn't installed yet. To install it, run this in{" "}
+              {shellLabel()}:
             </p>
-            <pre>{INSTALL_COMMAND}</pre>
+            <pre>{command()}</pre>
             <p>
               <button
                 type="button"
-                disabled={!installed(props.programs, "powershell")}
+                disabled={shell() === undefined || command() === null}
                 onClick={openInstaller}
               >
-                Open in PowerShell
+                Open in {shellLabel()}
               </button>{" "}
               <button
                 type="button"

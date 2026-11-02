@@ -354,13 +354,38 @@ fn same_dir(a: &Path, b: &Path) -> bool {
 }
 
 // Windows paths ignore case, accept either slash, and reach one folder through `..` or a short name.
+#[cfg(windows)]
 fn dir_key(path: &Path) -> String {
-    let resolved = fs::canonicalize(path).map_or_else(|_| lexical(path), without_verbatim);
-    resolved
+    resolved(path)
         .to_string_lossy()
         .replace('/', "\\")
         .trim_end_matches('\\')
         .to_lowercase()
+}
+
+// Kept as spelled, since Claude Code uses the folder exactly as given; links and `..` still resolve.
+#[cfg(not(windows))]
+fn dir_key(path: &Path) -> String {
+    resolved(path)
+        .to_string_lossy()
+        .trim_end_matches('/')
+        .to_owned()
+}
+
+// A folder not made yet resolves through the part that exists, so a link and `..` before it land where they lead.
+fn resolved(path: &Path) -> PathBuf {
+    path.ancestors()
+        .find_map(|known| {
+            let base = fs::canonicalize(known).ok()?;
+            let rest = path.strip_prefix(known).ok()?;
+            Some(lexical(&plain(base).join(rest)))
+        })
+        .unwrap_or_else(|| lexical(path))
+}
+
+#[cfg(not(windows))]
+fn plain(path: PathBuf) -> PathBuf {
+    path
 }
 
 fn lexical(path: &Path) -> PathBuf {
@@ -378,7 +403,8 @@ fn lexical(path: &Path) -> PathBuf {
 }
 
 // `canonicalize` returns `\\?\C:\...`, which never equals a path the user typed.
-fn without_verbatim(path: PathBuf) -> PathBuf {
+#[cfg(windows)]
+fn plain(path: PathBuf) -> PathBuf {
     let text = path.to_string_lossy();
     if let Some(share) = text.strip_prefix(r"\\?\UNC\") {
         PathBuf::from(format!(r"\\{share}"))
@@ -398,6 +424,14 @@ pub(crate) mod testdir {
     use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicU32, Ordering};
     use std::{fs, process};
+
+    /// A fixture path written the Windows way, as this platform spells it: `C:\h\x` is `/h/x` on Unix.
+    pub fn native(path: &str) -> PathBuf {
+        #[cfg(windows)]
+        return PathBuf::from(path);
+        #[cfg(not(windows))]
+        PathBuf::from(path.trim_start_matches("C:").replace('\\', "/"))
+    }
 
     pub struct TestDir(PathBuf);
 
@@ -429,7 +463,7 @@ mod tests {
     use super::*;
 
     fn dir(path: &str) -> PathBuf {
-        PathBuf::from(path)
+        super::testdir::native(path)
     }
 
     fn two_accounts() -> Profiles {
@@ -483,10 +517,29 @@ mod tests {
             profiles.add("rel", dir(r"h\.claude-rel")),
             Err(AccountsError::RelativeDir(_))
         ));
+        #[cfg(windows)]
         assert!(matches!(
             profiles.add("again", dir("c:/H/.CLAUDE-work/")),
             Err(AccountsError::DuplicateDir(_))
         ));
+        #[cfg(not(windows))]
+        assert!(matches!(
+            profiles.add("again", dir("/h/.claude-work/")),
+            Err(AccountsError::DuplicateDir(_))
+        ));
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn a_folder_spelled_in_another_case_is_another_folder() {
+        let mut profiles = two_accounts();
+
+        profiles.add("other", dir("/h/.CLAUDE-work")).unwrap();
+
+        assert_eq!(
+            env_dir(&dir("/Users/u"), dir("/Users/u/.Claude")),
+            Some(dir("/Users/u/.Claude"))
+        );
     }
 
     #[test]
@@ -601,8 +654,10 @@ mod tests {
                 Err(AccountsError::UnknownShell(_))
             ));
         }
-        let saved = accounts.set_shell("git-bash".to_owned()).unwrap();
-        assert_eq!(saved.shell.as_deref(), Some("git-bash"));
+        // A shell every runner of this platform has.
+        let installed = if cfg!(windows) { "git-bash" } else { "bash" };
+        let saved = accounts.set_shell(installed.to_owned()).unwrap();
+        assert_eq!(saved.shell.as_deref(), Some(installed));
     }
 
     #[test]
@@ -610,7 +665,10 @@ mod tests {
         let home = dir(r"C:\Users\u");
 
         assert_eq!(env_dir(&home, dir(r"C:\Users\u\.claude")), None);
+        #[cfg(windows)]
         assert_eq!(env_dir(&home, dir("c:/users/U/.Claude/")), None);
+        #[cfg(not(windows))]
+        assert_eq!(env_dir(&home, dir("/Users/u/.claude/")), None);
         assert_eq!(
             env_dir(&home, dir(r"C:\Users\u\.claude-acc2")),
             Some(dir(r"C:\Users\u\.claude-acc2"))
@@ -723,6 +781,39 @@ mod tests {
 
         assert!(matches!(result, Err(AccountsError::DuplicateDir(_))));
         assert_eq!(accounts.load().unwrap().accounts.len(), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_folder_reached_through_a_symlink_is_a_duplicate() {
+        let home = TestDir::new();
+        let real = home.path().join("real");
+        let link = home.path().join("link");
+        fs::create_dir_all(&real).unwrap();
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        let accounts = Accounts::new(&home.path().join("app"), home.path().to_path_buf());
+        accounts.add("one", real.join(".claude-x")).unwrap();
+        fs::remove_dir(real.join(".claude-x")).unwrap();
+
+        let result = accounts.add("two", link.join(".claude-x"));
+
+        assert!(matches!(result, Err(AccountsError::DuplicateDir(_))));
+        assert_eq!(accounts.load().unwrap().accounts.len(), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_missing_folder_after_a_link_and_dots_is_where_the_link_leads() {
+        let home = TestDir::new();
+        let base = home.path().join("base");
+        let child = home.path().join("other").join("child");
+        fs::create_dir_all(&base).unwrap();
+        fs::create_dir_all(&child).unwrap();
+        std::os::unix::fs::symlink(&child, base.join("link")).unwrap();
+        let spelled = base.join("link").join("..").join("foo");
+
+        assert!(same_dir(&spelled, &home.path().join("other").join("foo")));
+        assert!(!same_dir(&spelled, &base.join("foo")));
     }
 
     #[test]
