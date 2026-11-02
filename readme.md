@@ -1,6 +1,6 @@
 # Cerberus
 
-A fast Windows terminal built around Claude Code. One window holds every project as a tree: a
+A fast terminal for Windows, with a macOS preview, built around Claude Code. One window holds every project as a tree: a
 planner tab per project with coder sub-tabs under it, each tab tied to a folder, a Claude account
 and a saved session, so a crash or a closed window never loses a chat.
 
@@ -32,6 +32,44 @@ Uninstall from **Settings > Apps**. Your accounts and settings in
 
 **winget:** coming soon.
 
+### macOS (Apple silicon, preview)
+
+Download `Cerberus_<version>_aarch64.dmg` from
+[Releases](https://github.com/Amritesh-878/Cerberus/releases), open it and drag Cerberus to
+Applications. Compare the SHA-256 listed beside it with `shasum -a 256 <file>`.
+
+The app is not signed by Apple, so macOS blocks the first launch. Right-click Cerberus in
+Applications, choose **Open**, then **Open** again; or run this once:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/Cerberus.app
+```
+
+There is no installer to put `cerberus` on `PATH`. Link the console command into a folder that
+is on it, for example `~/.local/bin`, where Claude Code's installer puts `claude`:
+
+```sh
+ln -sf /Applications/Cerberus.app/Contents/MacOS/cerberus-cli ~/.local/bin/cerberus
+```
+
+Opened from Finder or the Dock, an app gets a short `PATH` that misses `~/.local/bin` and
+`/opt/homebrew/bin`. Cerberus reads `PATH` from your login shell once at start, so `claude` is
+found wherever your shell finds it. Accounts and settings live in
+`~/Library/Application Support/com.cerberus.terminal`.
+
+How macOS differs from Windows:
+
+- **Shells:** your login shell (`$SHELL`), zsh and bash, each started as a login shell. No
+  PowerShell or Git Bash.
+- **Keys:** the same Ctrl chords as on Windows (Ctrl+Tab, Ctrl+Shift+T and so on), not Cmd.
+  Cmd+V pastes text; in Claude Code, Cmd+V with only an image on the clipboard pastes the image.
+- **Quitting:** Windows ends every program a tab started when Cerberus crashes. On macOS a tab's
+  programs get a hangup when its terminal closes, which ends `claude` and shells; a program that
+  ignores hangups, such as one started with `nohup`, keeps running.
+- **Windows only:** the installer, its `PATH` entry and the uninstaller, and winget.
+
+The macOS build is built and tested in CI; it has not yet been run by hand on a Mac.
+
 ## Using it
 
 ### First run
@@ -39,7 +77,8 @@ Uninstall from **Settings > Apps**. Your accounts and settings in
 The first launch opens a short walkthrough:
 
 1. **Install.** Checks that `claude` is installed. If not, it shows Anthropic's install
-   command and can open it in a PowerShell tab, typed but not run; press Enter to install.
+   command and can open it in a shell tab (PowerShell on Windows, your login shell on macOS),
+   typed but not run; press Enter to install.
 2. **Accounts.** Each account keeps its own sign-in, settings and chats, in its own folder.
    `~/.claude` (the default) and any `~/.claude-<name>` folder Claude Code has used are offered
    for import. A new account needs only a name; its folder is `~/.claude-<name>` unless you
@@ -201,11 +240,13 @@ The programs a tab can run:
 | Program | What runs |
 |---|---|
 | Claude Code | `claude` from `PATH` |
-| PowerShell | `pwsh` from `PATH`, else Windows PowerShell (`powershell.exe`) |
-| Git Bash | `bin\bash.exe` under Git's install folder, found from `git` on `PATH` |
+| PowerShell (Windows) | `pwsh` from `PATH`, else Windows PowerShell (`powershell.exe`) |
+| Git Bash (Windows) | `bin\bash.exe` under Git's install folder, found from `git` on `PATH` |
+| Login shell (macOS) | `$SHELL` with `-l`, when it is not `/bin/zsh` or `/bin/bash` |
+| zsh, bash (macOS) | `/bin/zsh -l`, `/bin/bash -l`; the one that is `$SHELL` comes first |
 
-Selecting text copies it; Ctrl+V pastes text. In Claude Code, Alt+V or Ctrl+V pastes an image
-from the clipboard. When a shell exits the tab stays open with its exit code.
+Selecting text copies it; Ctrl+V (Cmd+V on macOS) pastes text. In Claude Code, Alt+V or Ctrl+V
+(Cmd+V or Ctrl+V on macOS) pastes an image from the clipboard. When a shell exits the tab stays open with its exit code.
 
 The panel button at the top right opens an empty side panel, kept for later.
 
