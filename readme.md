@@ -79,7 +79,8 @@ your OS.
 ```sh
 npm ci              # not npm install, which rewrites the lockfile on Windows
 npm run tauri dev   # run it
-npm run tauri build # Windows installer; on macOS: npm run tauri build -- --bundles dmg
+npm run tauri build # Windows installer
+npm run tauri build -- --bundles dmg   # macOS .dmg
 ```
 
 The gate, in order, where only 0 errors, 0 warnings and every test passing counts:
