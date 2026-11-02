@@ -5,12 +5,13 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 // Frames the value, since rc files may print their own lines around it.
 const MARK: &str = "__CERBERUS_PATH__";
 // An rc file that waits for input or a network call must not hold up the window for long.
 const TIMEOUT: Duration = Duration::from_secs(5);
+const EXIT_POLL: Duration = Duration::from_millis(10);
 
 /// An app opened from Finder or the Dock gets launchd's bare PATH, where `claude` is rarely found.
 pub fn adopt() {
@@ -42,6 +43,7 @@ fn script_for(shell: &Path) -> String {
 }
 
 fn read_within(shell: &Path, timeout: Duration) -> Option<String> {
+    let deadline = Instant::now() + timeout;
     let mut child = Command::new(shell)
         .args(["-ilc", &script_for(shell)])
         .stdin(Stdio::null())
@@ -56,11 +58,16 @@ fn read_within(shell: &Path, timeout: Duration) -> Option<String> {
         let _ = tx.send(read_marked(&mut stdout));
     });
     let answer = rx.recv_timeout(timeout);
-    if answer.is_err()
-        && let Ok(group) = libc::pid_t::try_from(child.id())
-    {
-        // SAFETY: signals the group this function gave the shell; no memory is touched.
-        unsafe { libc::killpg(group, libc::SIGKILL) };
+    // A logout file can block after the answer, so the shell's exit shares the deadline.
+    while matches!(child.try_wait(), Ok(None)) {
+        if Instant::now() >= deadline {
+            if let Ok(group) = libc::pid_t::try_from(child.id()) {
+                // SAFETY: signals the group this function gave the shell; no memory is touched.
+                unsafe { libc::killpg(group, libc::SIGKILL) };
+            }
+            break;
+        }
+        thread::sleep(EXIT_POLL);
     }
     let _ = child.wait();
     parse(&answer.ok()?.ok()?).map(str::to_owned)
@@ -102,8 +109,6 @@ fn merge(login: &str, current: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Instant;
-
     use super::*;
 
     #[test]
@@ -190,6 +195,32 @@ printf '{MARK}/usr/bin{MARK}'
         );
         assert!(
             started.elapsed() < Duration::from_secs(3),
+            "{:?}",
+            started.elapsed()
+        );
+    }
+
+    #[test]
+    fn a_shell_that_blocks_after_answering_still_answers_by_the_deadline() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = crate::accounts::testdir::TestDir::new();
+        let shell = dir.path().join("logout-hangs");
+        let script = format!(
+            "#!/bin/sh
+printf '{MARK}/usr/bin{MARK}'
+sleep 30
+"
+        );
+        std::fs::write(&shell, script).unwrap();
+        std::fs::set_permissions(&shell, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let started = Instant::now();
+
+        assert_eq!(
+            read_within(&shell, Duration::from_millis(500)).as_deref(),
+            Some("/usr/bin")
+        );
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
             "{:?}",
             started.elapsed()
         );
