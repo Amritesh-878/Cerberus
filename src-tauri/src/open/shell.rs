@@ -90,8 +90,30 @@ fn start_app(app: &Path, command: &Command) -> std::io::Result<()> {
         const DETACHED_PROCESS: u32 = 0x0000_0008;
         const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
         process.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
+        keep_own_handles();
     }
     process.spawn().map(drop)
+}
+
+/// Rust starts children with handle inheritance on, so the caller's output pipe (as in
+/// `$x = cerberus open a`) would stay open in the app and keep the caller waiting until it closes.
+#[cfg(windows)]
+fn keep_own_handles() {
+    use windows_sys::Win32::Foundation::{
+        HANDLE_FLAG_INHERIT, INVALID_HANDLE_VALUE, SetHandleInformation,
+    };
+    use windows_sys::Win32::System::Console::{
+        GetStdHandle, STD_ERROR_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE,
+    };
+    for id in [STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE] {
+        // SAFETY: GetStdHandle takes no pointers; SetHandleInformation only reads the handle it returned.
+        unsafe {
+            let handle = GetStdHandle(id);
+            if !handle.is_null() && handle != INVALID_HANDLE_VALUE {
+                SetHandleInformation(handle, HANDLE_FLAG_INHERIT, 0);
+            }
+        }
+    }
 }
 
 #[cfg(test)]
