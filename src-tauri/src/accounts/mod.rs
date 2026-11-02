@@ -326,8 +326,7 @@ fn same_dir(a: &Path, b: &Path) -> bool {
 // Windows paths ignore case, accept either slash, and reach one folder through `..` or a short name.
 #[cfg(windows)]
 fn dir_key(path: &Path) -> String {
-    let resolved = fs::canonicalize(path).map_or_else(|_| lexical(path), without_verbatim);
-    resolved
+    resolved(path)
         .to_string_lossy()
         .replace('/', "\\")
         .trim_end_matches('\\')
@@ -337,8 +336,26 @@ fn dir_key(path: &Path) -> String {
 // Kept as spelled, since Claude Code uses the folder exactly as given; links and `..` still resolve.
 #[cfg(not(windows))]
 fn dir_key(path: &Path) -> String {
-    let resolved = fs::canonicalize(path).unwrap_or_else(|_| lexical(path));
-    resolved.to_string_lossy().trim_end_matches('/').to_owned()
+    resolved(path)
+        .to_string_lossy()
+        .trim_end_matches('/')
+        .to_owned()
+}
+
+// A folder not made yet resolves through the part that exists, so a link and `..` before it land where they lead.
+fn resolved(path: &Path) -> PathBuf {
+    path.ancestors()
+        .find_map(|known| {
+            let base = fs::canonicalize(known).ok()?;
+            let rest = path.strip_prefix(known).ok()?;
+            Some(lexical(&plain(base).join(rest)))
+        })
+        .unwrap_or_else(|| lexical(path))
+}
+
+#[cfg(not(windows))]
+fn plain(path: PathBuf) -> PathBuf {
+    path
 }
 
 fn lexical(path: &Path) -> PathBuf {
@@ -357,7 +374,7 @@ fn lexical(path: &Path) -> PathBuf {
 
 // `canonicalize` returns `\\?\C:\...`, which never equals a path the user typed.
 #[cfg(windows)]
-fn without_verbatim(path: PathBuf) -> PathBuf {
+fn plain(path: PathBuf) -> PathBuf {
     let text = path.to_string_lossy();
     if let Some(share) = text.strip_prefix(r"\\?\UNC\") {
         PathBuf::from(format!(r"\\{share}"))
@@ -738,6 +755,21 @@ mod tests {
 
         assert!(matches!(result, Err(AccountsError::DuplicateDir(_))));
         assert_eq!(accounts.load().unwrap().accounts.len(), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_missing_folder_after_a_link_and_dots_is_where_the_link_leads() {
+        let home = TestDir::new();
+        let base = home.path().join("base");
+        let child = home.path().join("other").join("child");
+        fs::create_dir_all(&base).unwrap();
+        fs::create_dir_all(&child).unwrap();
+        std::os::unix::fs::symlink(&child, base.join("link")).unwrap();
+        let spelled = base.join("link").join("..").join("foo");
+
+        assert!(same_dir(&spelled, &home.path().join("other").join("foo")));
+        assert!(!same_dir(&spelled, &base.join("foo")));
     }
 
     #[test]
