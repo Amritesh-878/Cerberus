@@ -70,8 +70,7 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           app=src-tauri/target/release/bundle/macos/Cerberus.app
-          echo "Contents/MacOS: $(ls $app/Contents/MacOS | tr '
-' ' ')" >> "$GITHUB_STEP_SUMMARY"
+          echo "Contents/MacOS: $(ls $app/Contents/MacOS | xargs)" >> "$GITHUB_STEP_SUMMARY"
           echo "CFBundleExecutable: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' $app/Contents/Info.plist)" >> "$GITHUB_STEP_SUMMARY"
           test -x "$app/Contents/MacOS/cerberus" && test -x "$app/Contents/MacOS/cerberus-cli"
 
