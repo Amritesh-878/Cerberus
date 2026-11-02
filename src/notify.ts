@@ -13,6 +13,7 @@ import {
   alertFor,
   type Board,
   type Change,
+  isQuiet,
   resetText,
 } from "./board";
 import type { TabId, Tree } from "./tree";
@@ -125,17 +126,21 @@ export function createNotifier(
     });
   });
 
+  const view = () => ({
+    shown: app.shown(),
+    focused: focused(),
+    alertsOn: app.alertsOn(),
+  });
   return (tab, change) => {
-    const alert = alertFor(app.board(), tab, change, {
-      shown: app.shown(),
-      focused: focused(),
-      alertsOn: app.alertsOn(),
-    });
-    const toast = alert && toastFor(alert, app.tree(), tab);
-    if (!toast) return;
+    const alert = alertFor(app.board(), tab, change, view());
+    if (!alert) return;
     allowed ??= permitted();
     void allowed.then((ok) => {
-      if (ok) sendNotification({ ...toast, extra: { tab } });
+      // Checked again, since the first permission answer can arrive after you opened the tab.
+      const toast = toastFor(alert, app.tree(), tab);
+      if (ok && toast && !isQuiet(view(), tab)) {
+        sendNotification({ ...toast, extra: { tab } });
+      }
     });
   };
 }

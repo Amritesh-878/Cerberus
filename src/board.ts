@@ -35,6 +35,11 @@ export interface View {
   alertsOn: boolean;
 }
 
+/** Alerts are off, or you are looking at the tab in a focused window. */
+export function isQuiet(view: View, tab: TabId): boolean {
+  return !view.alertsOn || (view.focused && view.shown === tab);
+}
+
 /** Only the end of a turn alerts, so a tab gets at most one per turn and a restored tab none. */
 export function alertFor(
   board: Board,
@@ -42,8 +47,7 @@ export function alertFor(
   change: Change,
   view: View,
 ): Alert | undefined {
-  const seen = view.focused && view.shown === tab;
-  if (!view.alertsOn || seen) return undefined;
+  if (isQuiet(view, tab)) return undefined;
   if (board.get(tab)?.life.state !== "working") return undefined;
   if (change.state === "idle") return { kind: "finished" };
   if (change.state === "limited") {

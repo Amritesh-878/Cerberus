@@ -20,12 +20,14 @@ import type { SavedTree } from "./saved";
 // Permission and sending go through the webview's Notification shim, which only the real app has.
 const desktop = vi.hoisted(() => ({
   granted: true,
+  // Set to hold the permission answer back until the test releases it.
+  answer: undefined as Promise<boolean> | undefined,
   asked: 0,
   sent: [] as unknown[],
 }));
 vi.mock("@tauri-apps/plugin-notification", async (original) => ({
   ...(await original<typeof import("@tauri-apps/plugin-notification")>()),
-  isPermissionGranted: () => Promise.resolve(desktop.granted),
+  isPermissionGranted: () => desktop.answer ?? Promise.resolve(desktop.granted),
   requestPermission: () => {
     desktop.asked += 1;
     return Promise.resolve(desktop.granted ? "granted" : "denied");
@@ -37,6 +39,7 @@ vi.mock("@tauri-apps/plugin-notification", async (original) => ({
 
 beforeEach(() => {
   desktop.granted = true;
+  desktop.answer = undefined;
   desktop.asked = 0;
   desktop.sent = [];
 });
@@ -196,6 +199,25 @@ test("a refused permission is asked for once and then stays quiet", async () => 
   expect(desktop.sent).toEqual([]);
 });
 
+test("an alert still waiting on the permission answer is dropped once you open its tab", async () => {
+  let answer: (granted: boolean) => void = () => undefined;
+  desktop.answer = new Promise((resolve) => {
+    answer = resolve;
+  });
+  const { pty, render } = app();
+  const root = await render();
+  await open(root, "planner");
+  await open(root, "coder");
+
+  emit(pty.spawned, 0, WORKING, IDLE);
+  await settle();
+  await open(root, "planner");
+  answer(true);
+  await settle();
+
+  expect(desktop.sent).toEqual([]);
+});
+
 test("a click for a tab that was closed opens nothing", async () => {
   const { clicks, windowCalls, render } = app();
   const root = await render();
@@ -206,6 +228,44 @@ test("a click for a tab that was closed opens nothing", async () => {
 
   expect(activeTitle(root)).toBe("coder");
   expect(windowCalls).toEqual([]);
+});
+
+test("two quick clicks on the alerts box are saved in order", async () => {
+  const saves: unknown[] = [];
+  const pending: (() => void)[] = [];
+  let saved: Profiles = SAVED;
+  const root = await renderApp(() => saved, {
+    set_alerts: (args: unknown) =>
+      new Promise<Profiles>((resolve) => {
+        saves.push(field(args, "on"));
+        pending.push(() => {
+          saved = {
+            ...saved,
+            alerts: field(args, "on") === true,
+            revision: saves.length,
+          };
+          resolve(saved);
+        });
+      }),
+  });
+  click(root, "Accounts");
+  await settle();
+  const box = root.querySelector<HTMLInputElement>(".alerts-setting input");
+  if (!box) throw new Error("no alerts box");
+
+  box.click();
+  box.click();
+  await settle();
+  expect(saves).toEqual([false]);
+
+  pending.shift()?.();
+  await settle();
+  expect(saves).toEqual([false, true]);
+  pending.shift()?.();
+  await settle();
+
+  expect(saved.alerts).toBe(true);
+  expect(box.checked).toBe(true);
 });
 
 test("the accounts screen turns alerts off and keeps the box in step on a failed save", async () => {
