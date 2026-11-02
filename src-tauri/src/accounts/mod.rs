@@ -681,6 +681,24 @@ mod tests {
         assert_eq!(accounts.load().unwrap().accounts.len(), 1);
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn a_folder_reached_through_a_symlink_is_a_duplicate() {
+        let home = TestDir::new();
+        let real = home.path().join("real");
+        let link = home.path().join("link");
+        fs::create_dir_all(&real).unwrap();
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        let accounts = Accounts::new(&home.path().join("app"), home.path().to_path_buf());
+        accounts.add("one", real.join(".claude-x")).unwrap();
+        fs::remove_dir(real.join(".claude-x")).unwrap();
+
+        let result = accounts.add("two", link.join(".claude-x"));
+
+        assert!(matches!(result, Err(AccountsError::DuplicateDir(_))));
+        assert_eq!(accounts.load().unwrap().accounts.len(), 1);
+    }
+
     #[test]
     fn saved_folders_are_not_offered_again() {
         let home = TestDir::new();

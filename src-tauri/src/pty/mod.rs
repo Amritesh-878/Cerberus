@@ -319,7 +319,7 @@ fn read_into(mut reader: Box<dyn Read + Send>, tx: &SyncSender<Vec<u8>>) {
     }
 }
 
-#[cfg(all(test, windows))]
+#[cfg(test)]
 mod tests {
     use std::sync::mpsc::Receiver;
     use std::time::Instant;
@@ -327,6 +327,37 @@ mod tests {
     use super::*;
 
     const TIMEOUT: Duration = Duration::from_secs(20);
+
+    // The same checks on each platform, through its own shell.
+    #[cfg(windows)]
+    const SHELL: (&str, &[&str]) = ("cmd", &["/q", "/k"]);
+    #[cfg(unix)]
+    const SHELL: (&str, &[&str]) = ("sh", &[]);
+    #[cfg(windows)]
+    const ECHO: (&str, &[&str]) = ("cmd", &["/c", "echo", "hello-pty"]);
+    #[cfg(unix)]
+    const ECHO: (&str, &[&str]) = ("echo", &["hello-pty"]);
+    // The shell expands what was typed, so the echoed keys alone cannot match.
+    #[cfg(windows)]
+    const TYPED: (&[u8], &str) = (b"echo typed-%OS%\r", "typed-Windows_NT");
+    #[cfg(unix)]
+    const TYPED: (&[u8], &str) = (b"echo typed-$((40+2))\r", "typed-42");
+    #[cfg(windows)]
+    const STILL: (&[u8], &str) = (b"echo still-%OS%\r", "still-Windows_NT");
+    #[cfg(unix)]
+    const STILL: (&[u8], &str) = (b"echo still-$((40+2))\r", "still-42");
+    #[cfg(windows)]
+    const SIZE_COMMAND: &[u8] = b"mode con\r";
+    #[cfg(unix)]
+    const SIZE_COMMAND: &[u8] = b"stty size\r";
+    #[cfg(windows)]
+    const NO_FOLDER: &str = r"C:\no\such\folder\cerberus";
+    #[cfg(unix)]
+    const NO_FOLDER: &str = "/no/such/folder/cerberus";
+
+    fn shell(manager: &PtyManager) -> (SessionId, Receiver<Event>) {
+        start(manager, SHELL.0, SHELL.1)
+    }
 
     enum Event {
         Output(Vec<u8>),
@@ -395,7 +426,10 @@ mod tests {
         )
         .unwrap();
         let manager = PtyManager::default();
+        #[cfg(windows)]
         let (id, rx) = start(&manager, "cmd", &["/c", "type", file.to_str().unwrap()]);
+        #[cfg(unix)]
+        let (id, rx) = start(&manager, "cat", &[file.to_str().unwrap()]);
 
         let mut received = 0;
         while let Ok(Event::Output(bytes)) = rx.recv_timeout(Duration::from_secs(1)) {
@@ -420,7 +454,7 @@ mod tests {
     #[test]
     fn output_streams_and_the_exit_code_follows() {
         let manager = PtyManager::default();
-        let (id, rx) = start(&manager, "cmd", &["/c", "echo", "hello-pty"]);
+        let (id, rx) = start(&manager, ECHO.0, ECHO.1);
 
         let (text, exit) = collect(&manager, id, &rx, |_| false);
 
@@ -438,22 +472,22 @@ mod tests {
     #[test]
     fn input_reaches_the_program() {
         let manager = PtyManager::default();
-        let (id, rx) = start(&manager, "cmd", &["/q", "/k"]);
+        let (id, rx) = shell(&manager);
 
-        manager.write(id, b"echo typed-%OS%\r").unwrap();
-        let (text, _) = collect(&manager, id, &rx, |t| t.contains("typed-Windows_NT"));
+        manager.write(id, TYPED.0).unwrap();
+        let (text, _) = collect(&manager, id, &rx, |t| t.contains(TYPED.1));
 
-        assert!(text.contains("typed-Windows_NT"), "output was {text:?}");
+        assert!(text.contains(TYPED.1), "output was {text:?}");
         manager.kill(id);
     }
 
     #[test]
     fn resize_reaches_a_live_session() {
         let manager = PtyManager::default();
-        let (id, rx) = start(&manager, "cmd", &["/q", "/k"]);
+        let (id, rx) = shell(&manager);
 
         manager.resize(id, 101, 33).unwrap();
-        manager.write(id, b"mode con\r").unwrap();
+        manager.write(id, SIZE_COMMAND).unwrap();
         let (text, _) = collect(&manager, id, &rx, |t| t.contains("101") && t.contains("33"));
 
         assert!(
@@ -466,7 +500,7 @@ mod tests {
     #[test]
     fn kill_ends_the_child() {
         let manager = PtyManager::default();
-        let (id, rx) = start(&manager, "cmd", &["/q", "/k"]);
+        let (id, rx) = shell(&manager);
 
         manager.kill(id);
         let (_, exit) = collect(&manager, id, &rx, |_| false);
@@ -482,26 +516,25 @@ mod tests {
     #[test]
     fn killing_one_session_leaves_the_others_running() {
         let manager = PtyManager::default();
-        let (closed_id, closed) = start(&manager, "cmd", &["/q", "/k"]);
-        let (open_id, open) = start(&manager, "cmd", &["/q", "/k"]);
+        let (closed_id, closed) = shell(&manager);
+        let (open_id, open) = shell(&manager);
 
         manager.kill(closed_id);
         let (_, exit) = collect(&manager, closed_id, &closed, |_| false);
-        manager.write(open_id, b"echo still-%OS%\r").unwrap();
-        let (text, open_exit) =
-            collect(&manager, open_id, &open, |t| t.contains("still-Windows_NT"));
+        manager.write(open_id, STILL.0).unwrap();
+        let (text, open_exit) = collect(&manager, open_id, &open, |t| t.contains(STILL.1));
 
         assert!(exit.is_some(), "no exit after kill");
         assert_eq!(open_exit, None, "the other session ended");
-        assert!(text.contains("still-Windows_NT"), "output was {text:?}");
+        assert!(text.contains(STILL.1), "output was {text:?}");
         manager.kill(open_id);
     }
 
     #[test]
     fn kill_all_ends_every_session() {
         let manager = PtyManager::default();
-        let (first_id, first) = start(&manager, "cmd", &["/q", "/k"]);
-        let (second_id, second) = start(&manager, "cmd", &["/q", "/k"]);
+        let (first_id, first) = shell(&manager);
+        let (second_id, second) = shell(&manager);
 
         manager.kill_all();
 
@@ -532,9 +565,9 @@ mod tests {
     fn a_missing_folder_is_an_error() {
         let manager = PtyManager::default();
         let request = SpawnRequest {
-            program: "cmd".to_owned(),
+            program: SHELL.0.to_owned(),
             args: Vec::new(),
-            cwd: Some(r"C:\no\such\folder\cerberus".to_owned()),
+            cwd: Some(NO_FOLDER.to_owned()),
             cols: 80,
             rows: 24,
             claude_config_dir: None,
@@ -547,7 +580,7 @@ mod tests {
 
     fn shell_under(claude_config_dir: Option<&str>) -> CommandBuilder {
         command_for(&SpawnRequest {
-            program: "cmd".to_owned(),
+            program: SHELL.0.to_owned(),
             args: Vec::new(),
             cwd: None,
             cols: 80,
@@ -606,6 +639,31 @@ mod tests {
         strip_inherited_session_vars(&mut command);
 
         assert_eq!(env_names(&command), ["NO_COLOR"]);
+    }
+
+    // With no job object on Unix, this is what ends a tab's program when the app dies.
+    #[cfg(unix)]
+    #[test]
+    fn closing_the_terminal_hangs_up_its_program() {
+        let pair = native_pty_system().openpty(size(80, 24)).unwrap();
+        let mut command = CommandBuilder::new("/bin/sh");
+        // The trailing `true` keeps sh in charge, so the hangup reaches a shell and its child.
+        command.args(["-c", "sleep 30; true"]);
+        let mut child = pair.slave.spawn_command(command).unwrap();
+        let pid = child.process_id();
+        drop(pair);
+
+        let deadline = Instant::now() + TIMEOUT;
+        let mut ended = false;
+        while !ended && Instant::now() < deadline {
+            ended = child.try_wait().unwrap().is_some();
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        if !ended {
+            let _ = child.kill();
+        }
+
+        assert!(ended, "pid {pid:?} outlived its terminal");
     }
 
     fn env_names(command: &CommandBuilder) -> Vec<String> {
