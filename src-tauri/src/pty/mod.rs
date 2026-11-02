@@ -251,12 +251,22 @@ fn command_for(request: &SpawnRequest) -> Result<CommandBuilder, PtyError> {
     strip_inherited_session_vars(&mut command);
     command.env("TERM", "xterm-256color");
     command.env("COLORTERM", "truecolor");
+    #[cfg(target_os = "macos")]
+    if lacks_locale(|name| std::env::var_os(name).is_some()) {
+        command.env("LANG", "en_US.UTF-8");
+    }
     match &request.claude_config_dir {
         Some(dir) => command.env("CLAUDE_CONFIG_DIR", dir),
         // An inherited value would move a default-account tab onto another account.
         None => command.env_remove("CLAUDE_CONFIG_DIR"),
     }
     Ok(command)
+}
+
+// An app opened from Finder gets no locale, and then shells and Claude Code mangle anything outside ASCII.
+#[cfg(any(target_os = "macos", test))]
+fn lacks_locale(is_set: impl Fn(&str) -> bool) -> bool {
+    !["LANG", "LC_ALL", "LC_CTYPE"].into_iter().any(is_set)
 }
 
 // Set by a Claude Code session for its own shells; settings such as `CLAUDE_CODE_USE_BEDROCK` are not here.
@@ -664,6 +674,13 @@ mod tests {
         }
 
         assert!(ended, "pid {pid:?} outlived its terminal");
+    }
+
+    #[test]
+    fn a_locale_is_added_only_when_none_is_set() {
+        assert!(lacks_locale(|_| false));
+        assert!(!lacks_locale(|name| name == "LANG"));
+        assert!(!lacks_locale(|name| name == "LC_CTYPE"));
     }
 
     fn env_names(command: &CommandBuilder) -> Vec<String> {
