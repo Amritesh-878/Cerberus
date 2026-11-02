@@ -107,6 +107,9 @@ export function App() {
   const [programs, { refetch: recheckPrograms }] = createResource(listPrograms);
   // Solid types a resource error as `any`.
   const programsError = (): unknown => programs.error;
+  // An errored resource throws on `latest`, which would blank the page that should show the error.
+  const programList = () =>
+    programs.state === "errored" ? undefined : programs.latest;
   const statuses = createStatuses();
 
   const [tree, setTree] = createSignal<Tree>(emptyTree());
@@ -168,7 +171,7 @@ export function App() {
   const savedTree = loadTree();
   createEffect(() => {
     const ready = profiles();
-    const choices = programs.state === "errored" ? [] : programs.latest;
+    const choices = programs.state === "errored" ? [] : programList();
     if (!ready || !choices || untrack(restored)) return;
     savedTree.then(
       (loaded) => {
@@ -705,7 +708,8 @@ export function App() {
                       <Match when={page() === "walkthrough"}>
                         <Walkthrough
                           profiles={loaded()}
-                          programs={programs.latest ?? []}
+                          programs={programList() ?? []}
+                          programsError={programsError()}
                           statuses={statuses}
                           onProfiles={changed}
                           onOpen={openSetupTab}
@@ -718,7 +722,7 @@ export function App() {
                       <Match when={page() === "accounts"}>
                         <AccountsScreen
                           profiles={loaded()}
-                          programs={programs.latest ?? []}
+                          programs={programList() ?? []}
                           statuses={statuses}
                           onProfiles={changed}
                           onOpen={openSetupTab}
@@ -759,7 +763,7 @@ export function App() {
                       project={project()}
                       planners={planners(tree(), project().id)}
                       profiles={loaded()}
-                      programs={programs.latest}
+                      programs={programList()}
                       programsError={programsError()}
                       statuses={statuses}
                       anchor={open().anchor}

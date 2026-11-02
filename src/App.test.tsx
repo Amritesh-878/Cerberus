@@ -90,6 +90,17 @@ test("on Windows the install step opens PowerShell over a saved Git Bash", async
   expect(openButton(root)?.disabled).toBe(false);
 });
 
+test("the install step says why it shows no command when programs cannot be listed", async () => {
+  const root = await renderApp(() => EMPTY, {
+    list_programs: () => {
+      throw new Error("no PATH");
+    },
+  });
+
+  expect(root.textContent).toContain("Could not list programs: Error: no PATH");
+  expect(root.textContent).toContain("Check again");
+});
+
 test("the walkthrough's last step asks only which account new tabs use", async () => {
   const root = await renderApp(() => EMPTY);
 

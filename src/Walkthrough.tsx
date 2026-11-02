@@ -18,6 +18,7 @@ import {
 interface Props {
   profiles: Profiles;
   programs: ProgramChoice[];
+  programsError: unknown;
   statuses: Statuses;
   onProfiles: (profiles: Profiles) => void;
   onOpen: (tab: Tab) => void;
@@ -43,6 +44,7 @@ export function Walkthrough(props: Props) {
           <InstallStep
             profiles={props.profiles}
             programs={props.programs}
+            programsError={props.programsError}
             onOpen={props.onOpen}
             onRecheck={props.onRecheckPrograms}
           />
@@ -98,6 +100,7 @@ export function Walkthrough(props: Props) {
 function InstallStep(props: {
   profiles: Profiles;
   programs: ProgramChoice[];
+  programsError: unknown;
   onOpen: (tab: Tab) => void;
   onRecheck: () => void;
 }) {
@@ -128,6 +131,11 @@ function InstallStep(props: {
 
   return (
     <section>
+      <Show when={props.programsError !== undefined}>
+        <p class="error">
+          Could not list programs: {String(props.programsError)}
+        </p>
+      </Show>
       <Show
         when={claude()}
         fallback={
