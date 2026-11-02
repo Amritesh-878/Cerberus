@@ -76,7 +76,8 @@ jobs:
           echo "CFBundleExecutable: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Contents/Info.plist")" >> "$GITHUB_STEP_SUMMARY"
           codesign --verify --deep "$app"
           echo "codesign: ad-hoc signature verifies" >> "$GITHUB_STEP_SUMMARY"
-          test -x "$app/Contents/MacOS/cerberus" && test -x "$app/Contents/MacOS/cerberus-cli"
+          test -x "$app/Contents/MacOS/cerberus"
+          test -x "$app/Contents/MacOS/cerberus-cli"
           hdiutil detach "$RUNNER_TEMP/dmg"
 
       - name: Hash the installer
@@ -118,8 +119,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           NOTES: >-
             macOS (Apple silicon): the app is not signed by Apple. After copying Cerberus to
-            Applications, right-click it and choose Open once, or run
-            `xattr -dr com.apple.quarantine /Applications/Cerberus.app`.
+            Applications, run `xattr -dr com.apple.quarantine /Applications/Cerberus.app` once,
+            or open it, close the warning and choose Open Anyway in System Settings > Privacy &
+            Security.
         run: >
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft --verify-tag
           --title "Cerberus $GITHUB_REF_NAME" --notes "$NOTES" --generate-notes installer/*

@@ -38,19 +38,27 @@ Download `Cerberus_<version>_aarch64.dmg` from
 [Releases](https://github.com/Amritesh-878/Cerberus/releases), open it and drag Cerberus to
 Applications. Compare the SHA-256 listed beside it with `shasum -a 256 <file>`.
 
-The app is not signed by Apple, so macOS blocks the first launch. Right-click Cerberus in
-Applications, choose **Open**, then **Open** again; or run this once:
+The app is not signed by Apple, so macOS blocks the first launch. Run this once:
 
 ```sh
 xattr -dr com.apple.quarantine /Applications/Cerberus.app
 ```
 
-There is no installer to put `cerberus` on `PATH`. Link the console command into a folder that
-is on it, for example `~/.local/bin`, where Claude Code's installer puts `claude`:
+Or open Cerberus once, close the warning, then choose **Open Anyway** in **System Settings >
+Privacy & Security**. On macOS 14 and earlier, right-click Cerberus and choose **Open** also works;
+macOS 15 removed that.
+
+There is no installer to put `cerberus` on `PATH`. Link the console command into
+`~/.local/bin`, where Claude Code's installer puts `claude`:
 
 ```sh
+mkdir -p ~/.local/bin
 ln -sf /Applications/Cerberus.app/Contents/MacOS/cerberus-cli ~/.local/bin/cerberus
 ```
+
+If `command -v cerberus` then prints nothing, that folder is not on your `PATH` yet: add
+`export PATH="$HOME/.local/bin:$PATH"` to `~/.zshrc` (or `~/.bash_profile` for bash) and open a
+new terminal.
 
 Opened from Finder or the Dock, an app gets a short `PATH` that misses `~/.local/bin` and
 `/opt/homebrew/bin`. Cerberus reads `PATH` from your login shell once at start, so `claude` is
