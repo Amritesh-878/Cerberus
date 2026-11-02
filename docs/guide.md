@@ -1,0 +1,152 @@
+# Cerberus guide
+
+How each part of Cerberus works, in more detail than the [README](../readme.md).
+
+## First run and accounts
+
+The first launch opens a short walkthrough:
+
+1. **Install.** Checks that `claude` is installed. If not, it shows Anthropic's install command and
+   can open it in a shell tab (PowerShell on Windows, your login shell on macOS), typed but not
+   run: press Enter to install.
+2. **Accounts.** Each account keeps its own sign-in, settings and chats, in its own folder.
+   `~/.claude` (the default) and any `~/.claude-<name>` folder Claude Code has used are offered
+   for import. A new account needs only a name; its folder is `~/.claude-<name>` unless you pick
+   another with **Change…**. **Add** opens Claude Code under the new account, and its own first run
+   signs it in. Each account shows its email and plan, read from `claude auth status`.
+3. **New tabs.** Which account new tabs use.
+
+**Accounts** (the person button at the bottom of the sidebar) adds, renames or removes accounts,
+and sets the account new tabs use, the shell the **Shell** button opens, where **New project**
+opens its folder picker, and whether alerts are on. Removing an account only forgets it; its
+folder stays on disk.
+
+## Projects and tabs
+
+**New project** opens a folder picker, and the folder's name becomes the project's name. The
+**+** beside a project opens the new tab box: pick the account, whether the tab goes on its own
+or under a planner, then **Claude Code** or **Shell**. The tab starts in the project's folder.
+
+- A **planner** is a Claude Code tab at the top of a project.
+- A **sub-tab** sits under a planner: a Claude Code coder or a shell. Closing a planner moves its
+  sub-tabs up to the top of the project.
+- The **×** beside a project removes it from the sidebar, asking first when it has tabs open. The
+  folder is never touched.
+
+Every tab keeps running while another shows. Closing a tab ends its program and anything it
+started, and no other tab's. Closing the window ends every tab's program, but a window started
+from a tab (an editor opened with `code .`) stays open. On Windows a crash or forced kill also
+ends what the app started; on macOS a tab's programs get a hangup when its terminal closes.
+
+Drag the sidebar's right edge to resize it, or double-click the edge to reset it.
+
+## Restarts and resuming
+
+Projects and tabs are saved as you change them, in `tree.db` in the app's data folder. After a
+restart or a crash the sidebar comes back as it was, and nothing starts until you open a tab.
+
+Opening a saved Claude Code tab runs `claude --resume` with that tab's chat, in its folder and
+under its account. Cerberus learns the chat from Claude Code's `sessions` file and follows it to
+the new chat after `/clear`. A tab whose chat file has since been deleted starts a new chat and
+says so. Shell tabs start fresh in their folder.
+
+**Ended chats.** When a chat ends by itself, for example with `/exit`, its tab becomes a shell in
+the same folder and account, with Claude Code's "Resume this session with" line still above the
+prompt. It stays a shell after a restart. **Resume chat** in its right-click menu brings the chat
+back. Closing Cerberus, a crash, or moving the chat never counts as ended.
+
+If a save fails, the bar shows "Tabs not saved" and Cerberus retries. Starting Cerberus again
+brings the open window forward instead of opening a second one. An unreadable `tree.db` is kept
+as `tree.db.bad` and Cerberus starts with no saved tabs.
+
+## The session board and alerts
+
+Each Claude Code tab's row shows what its chat is doing:
+
+| Mark | Means |
+|---|---|
+| A small spinner | Working on a reply |
+| A white dot and a bold title | Stopped while you were on another tab, so it is waiting on you |
+| A clock and a time | The last turn hit a usage limit; the time is when it resets |
+| A dimmed title | The program exited |
+
+Ctrl+Shift+A (Cmd+Shift+A on macOS) jumps to the next tab waiting on you.
+
+When a chat stops, hits a limit or ends while you aren't looking at it (its tab is hidden, or the
+window isn't focused), you get a desktop notification such as "planner · alpha: Waiting on you".
+Clicking it, while it is on screen, opens that tab. A notification names only the tab and its
+project, never chat text or an account. Turn alerts off in **Accounts**.
+
+The state comes from Claude Code's `sessions` file. For a limit, Cerberus reads only the error
+type and reset time from the chat's last record, and never shows, logs or stores anything else
+from a transcript.
+
+## Moving a chat to another account
+
+Right-click a Claude Code tab and pick **Continue on `<account>`…** to carry its chat to another
+of your accounts, for example to keep work and personal chats apart. If the chat is running,
+Cerberus asks before closing it, and the row says "Moving to `<account>`…" until it lands.
+
+Cerberus copies the chat's file, and its folder of subagent chats, into the other account's
+folder under a temporary name, renaming it once complete, then reopens the tab there with
+`claude --resume`. The original stays on the first account. When the other account already has an
+older copy, it is kept as `<id>.jsonl.cerberus-old`, never deleted. It refuses when the other
+account is signed out or has that chat open right now. On any failure the tab stays where it was
+and says why. The copy moves files only; Cerberus never reads what is in them.
+
+## `cerberus open`
+
+The project matches by name, then the same name in any case, then its folder's name; the tab by
+title the same way. Words after `open` are joined, so `cerberus open my app/planner` needs no
+quotes. A running Cerberus answers from its open window; otherwise the saved file is read.
+
+Exit codes: 0 opened, 1 no match or more than one (it lists them), 2 bad usage. Only project
+names, folders and tab titles are printed, never chat content. With no arguments it starts the
+app or brings it forward.
+
+`cerberus` is a small console command beside the app, so a shell waits for it and sees what it
+prints. The Windows installer adds it as `cerberus.com` in `%LOCALAPPDATA%\Cerberus`, on your
+`PATH`. On macOS it is `Cerberus.app/Contents/MacOS/cerberus-cli`, linked as shown in the README.
+In a dev build it is `src-tauri/target/debug/cerberus-cli`.
+
+## Programs and environment
+
+| Program | What runs |
+|---|---|
+| Claude Code | `claude` from `PATH` |
+| PowerShell (Windows) | `pwsh` from `PATH`, else Windows PowerShell |
+| Git Bash (Windows) | `bin\bash.exe` under Git's install folder |
+| Login shell (macOS) | `$SHELL -l`, then `/bin/zsh -l` and `/bin/bash -l` |
+
+A tab under an account other than the default gets `CLAUDE_CONFIG_DIR` set to its folder, so
+`claude` there, or typed in a shell tab, runs on that account. The variables a Claude Code session
+sets for its own shells (`CLAUDECODE`, `CLAUDE_CODE_SESSION_ID` and the like, with their
+`NO_COLOR`) are removed, so a tab runs the same however Cerberus was started. Settings such as
+`CLAUDE_CODE_USE_BEDROCK`, and a `NO_COLOR` of your own, stay.
+
+Selecting text copies it. Ctrl+V pastes text (Cmd+V on macOS). In Claude Code, Alt+V or Ctrl+V
+pastes an image (Cmd+V or Ctrl+V on macOS).
+
+## macOS notes
+
+- Opened from Finder or the Dock, an app gets a short `PATH`. Cerberus reads `PATH` from your
+  login shell once at start, so `claude` is found wherever your shell finds it. Tabs get a UTF-8
+  locale when macOS gives none.
+- Cerberus's keys use Cmd, so every Ctrl key reaches the terminal. Option works as Meta, so
+  Option+B, Option+F and Option+arrows move by word in a shell.
+- If `xattr` isn't an option: open Cerberus once, close the warning, then choose **Open Anyway**
+  in **System Settings > Privacy & Security**. (Right-click > Open stopped working in macOS 15.)
+- If `command -v cerberus` prints nothing after linking it, add
+  `export PATH="$HOME/.local/bin:$PATH"` to `~/.zshrc` and open a new terminal.
+- Windows only: the installer, its `PATH` entry and the uninstaller.
+- The macOS build is built and tested in CI, and is in its first hand testing.
+
+## Where data lives
+
+| | Windows | macOS |
+|---|---|---|
+| Accounts and settings (`profiles.json`) | `%APPDATA%\com.cerberus.terminal` | `~/Library/Application Support/com.cerberus.terminal` |
+| Saved tabs (`tree.db`) | same folder | same folder |
+
+Uninstalling on Windows keeps this folder unless you tick the box to delete the app data. An
+unreadable `profiles.json` is kept as `profiles.json.bad` and the app offers to start fresh.
