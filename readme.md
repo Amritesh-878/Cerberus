@@ -64,7 +64,7 @@ into Claude Code with Alt+V on Windows, or Cmd+V on macOS.
 
 ```sh
 cerberus open alpha/planner   # project alpha, tab planner
-cerberus open alpha           # project alpha, the tab you last had open there
+cerberus open alpha           # project alpha: the tab last shown since launch, else its first
 ```
 
 It starts Cerberus if needed, or brings the window forward, and shows that tab. Names match
@@ -78,7 +78,7 @@ your OS.
 ```sh
 npm ci              # not npm install, which rewrites the lockfile on Windows
 npm run tauri dev   # run it
-npm run tauri build # installer (Windows) or .dmg (macOS)
+npm run tauri build # Windows installer; on macOS: npm run tauri build -- --bundles dmg
 ```
 
 The gate, in order, where only 0 errors, 0 warnings and every test passing counts:
