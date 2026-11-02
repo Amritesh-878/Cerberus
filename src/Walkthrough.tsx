@@ -102,9 +102,20 @@ function InstallStep(props: {
   onRecheck: () => void;
 }) {
   const claude = () => installed(props.programs, "claude");
-  const command = () =>
-    props.programs.find((p) => p.id === "claude")?.installCommand ?? null;
-  const shell = () => shellChoice(props.profiles, props.programs);
+  const choice = () => props.programs.find((p) => p.id === "claude");
+  const command = () => choice()?.installCommand ?? null;
+  const named = () => choice()?.installShell ?? null;
+  const shell = () => {
+    const id = named();
+    return id === null
+      ? shellChoice(props.profiles, props.programs)
+      : installed(props.programs, id);
+  };
+  const shellLabel = () => {
+    const id = named();
+    const listed = props.programs.find((p) => p.id === id)?.label;
+    return shell()?.label ?? listed ?? "a terminal";
+  };
   const openInstaller = () => {
     const using = shell();
     const input = command();
@@ -123,7 +134,7 @@ function InstallStep(props: {
           <>
             <p>
               Claude Code isn't installed yet. To install it, run this in{" "}
-              {shell()?.label ?? "a terminal"}:
+              {shellLabel()}:
             </p>
             <pre>{command()}</pre>
             <p>
@@ -132,7 +143,7 @@ function InstallStep(props: {
                 disabled={shell() === undefined || command() === null}
                 onClick={openInstaller}
               >
-                Open in {shell()?.label ?? "a shell"}
+                Open in {shellLabel()}
               </button>{" "}
               <button
                 type="button"

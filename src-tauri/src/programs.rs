@@ -17,6 +17,8 @@ pub struct ProgramChoice {
     pub is_shell: bool,
     /// What a shell runs to install the program, shown while it is missing.
     pub install_command: Option<&'static str>,
+    /// The shell `install_command` is written for; `None` means the user's own.
+    pub install_shell: Option<&'static str>,
 }
 
 // Claude Code's image-paste key: Alt+V on Windows, Ctrl+V elsewhere.
@@ -26,9 +28,13 @@ const CLAUDE_IMAGE_PASTE: &str = "\x1bv";
 const CLAUDE_IMAGE_PASTE: &str = "\x16";
 
 #[cfg(windows)]
-const CLAUDE_INSTALL: &str = "irm https://claude.ai/install.ps1 | iex";
+const CLAUDE_INSTALL: (&str, Option<&str>) = (
+    "irm https://claude.ai/install.ps1 | iex",
+    Some("powershell"),
+);
 #[cfg(not(windows))]
-const CLAUDE_INSTALL: &str = "curl -fsSL https://claude.ai/install.sh | bash";
+const CLAUDE_INSTALL: (&str, Option<&str>) =
+    ("curl -fsSL https://claude.ai/install.sh | bash", None);
 
 /// The shell the Shell button opens: the saved choice when installed, else the first shell installed.
 pub fn pick_shell(choices: Vec<ProgramChoice>, saved: Option<&str>) -> Option<ProgramChoice> {
@@ -121,7 +127,8 @@ impl Finder {
             args: Vec::new(),
             image_paste_key: Some(CLAUDE_IMAGE_PASTE),
             is_shell: false,
-            install_command: Some(CLAUDE_INSTALL),
+            install_command: Some(CLAUDE_INSTALL.0),
+            install_shell: CLAUDE_INSTALL.1,
         };
         std::iter::once(claude).chain(self.shells()).collect()
     }
@@ -186,6 +193,7 @@ fn shell(
         image_paste_key: None,
         is_shell: true,
         install_command: None,
+        install_shell: None,
     }
 }
 
@@ -333,6 +341,7 @@ mod tests {
             choices[0].install_command,
             Some("irm https://claude.ai/install.ps1 | iex")
         );
+        assert_eq!(choices[0].install_shell, Some("powershell"));
         let shells: Vec<_> = choices.iter().map(|c| c.is_shell).collect();
         assert_eq!(shells, [false, true, true]);
     }
@@ -405,6 +414,7 @@ mod tests {
                 .install_command
                 .is_some_and(|c| c.contains("install.sh"))
         );
+        assert_eq!(choices[0].install_shell, None);
     }
 
     #[cfg(unix)]

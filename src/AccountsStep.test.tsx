@@ -25,6 +25,7 @@ const CLAUDE: ProgramChoice = {
   imagePasteKey: "\x1bv",
   isShell: false,
   installCommand: null,
+  installShell: null,
 };
 
 let dispose: (() => void) | undefined;

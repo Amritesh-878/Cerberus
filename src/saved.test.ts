@@ -14,6 +14,7 @@ const CLAUDE: ProgramChoice = {
   imagePasteKey: "\x1bv",
   isShell: false,
   installCommand: null,
+  installShell: null,
 };
 
 const SHELL: ProgramChoice = {
@@ -24,6 +25,7 @@ const SHELL: ProgramChoice = {
   imagePasteKey: null,
   isShell: true,
   installCommand: null,
+  installShell: null,
 };
 
 const PROFILES: Profiles = {

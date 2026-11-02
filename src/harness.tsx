@@ -25,6 +25,7 @@ export const CHOICES: ProgramChoice[] = [
     imagePasteKey: "\x1bv",
     isShell: false,
     installCommand: "irm https://claude.ai/install.ps1 | iex",
+    installShell: "powershell",
   },
   {
     id: "powershell",
@@ -34,6 +35,7 @@ export const CHOICES: ProgramChoice[] = [
     imagePasteKey: null,
     isShell: true,
     installCommand: null,
+    installShell: null,
   },
 ];
 

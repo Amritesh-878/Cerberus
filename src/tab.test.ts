@@ -12,6 +12,7 @@ const GIT_BASH = {
   imagePasteKey: null,
   isShell: true,
   installCommand: null,
+  installShell: null,
 };
 
 test("an installed program opens a tab under its account", () => {
@@ -59,6 +60,7 @@ test("a missing program opens no tab", () => {
         imagePasteKey: "\x1bv",
         isShell: false,
         installCommand: null,
+        installShell: null,
       },
       { account: null, cwd: null },
     ),
@@ -74,6 +76,7 @@ function program(id: string, path: string | null): ProgramChoice {
     imagePasteKey: null,
     isShell: id !== "claude",
     installCommand: null,
+    installShell: null,
   };
 }
 

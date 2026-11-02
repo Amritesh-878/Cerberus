@@ -32,7 +32,12 @@ test("a first run with no accounts opens the walkthrough", async () => {
 test("the install step shows the command and shell the core reports", async () => {
   const root = await renderApp(() => EMPTY, {
     list_programs: () => [
-      { ...CHOICES[0], program: null, installCommand: "curl -fsSL x | bash" },
+      {
+        ...CHOICES[0],
+        program: null,
+        installCommand: "curl -fsSL x | bash",
+        installShell: null,
+      },
       { ...CHOICES[1], id: "zsh", label: "zsh", program: "/bin/zsh" },
     ],
   });
@@ -43,6 +48,46 @@ test("the install step shows the command and shell the core reports", async () =
     (b) => b.textContent === "Open in zsh",
   );
   expect(open?.disabled).toBe(false);
+});
+
+const GIT_BASH = {
+  ...CHOICES[1],
+  id: "git-bash",
+  label: "Git Bash",
+  program: String.raw`C:\Git\bin\bash.exe`,
+};
+
+function installPrograms(powershell: string | null) {
+  return [
+    { ...CHOICES[0], program: null },
+    { ...CHOICES[1], program: powershell },
+    GIT_BASH,
+  ];
+}
+
+function openButton(root: HTMLElement) {
+  return Array.from(root.querySelectorAll("button")).find((b) =>
+    b.textContent.startsWith("Open in"),
+  );
+}
+
+test("on Windows the install step waits for PowerShell, whatever shell is saved", async () => {
+  const root = await renderApp(() => ({ ...EMPTY, shell: "git-bash" }), {
+    list_programs: () => installPrograms(null),
+  });
+
+  expect(root.textContent).toContain("run this in PowerShell:");
+  expect(openButton(root)?.textContent).toBe("Open in PowerShell");
+  expect(openButton(root)?.disabled).toBe(true);
+});
+
+test("on Windows the install step opens PowerShell over a saved Git Bash", async () => {
+  const root = await renderApp(() => ({ ...EMPTY, shell: "git-bash" }), {
+    list_programs: () => installPrograms(String.raw`C:\ps\powershell.exe`),
+  });
+
+  expect(openButton(root)?.textContent).toBe("Open in PowerShell");
+  expect(openButton(root)?.disabled).toBe(false);
 });
 
 test("the walkthrough's last step asks only which account new tabs use", async () => {

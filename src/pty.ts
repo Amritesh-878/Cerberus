@@ -22,6 +22,8 @@ export interface ProgramChoice {
   isShell: boolean;
   /** What a shell runs to install the program while it is missing. */
   installCommand: string | null;
+  /** The shell `installCommand` is written for; `null` means the user's own. */
+  installShell: string | null;
 }
 
 export interface Size {
