@@ -37,7 +37,7 @@ import {
   startedTabs,
 } from "./board";
 import { AppIcon, CloseIcon, MenuIcon, PanelIcon } from "./icons";
-import { KEY_HELP, shortcutFor } from "./keys";
+import { keyHelp, shortcutFor } from "./keys";
 import { type Launch, NewTab } from "./NewTab";
 import { followOpenRequests } from "./open";
 import { listPrograms } from "./pty";
@@ -852,7 +852,7 @@ function Home(props: {
         )}
       </Show>
       <dl class="home-keys">
-        <For each={KEY_HELP}>
+        <For each={keyHelp()}>
           {(help) => (
             <>
               <dt>{help.keys}</dt>

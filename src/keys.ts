@@ -1,5 +1,7 @@
 export interface KeyChord {
   key: string;
+  /** The physical key, for chords whose `key` changes with Shift, such as `]`. */
+  code?: string;
   ctrlKey: boolean;
   altKey: boolean;
   shiftKey: boolean;
@@ -20,9 +22,20 @@ function isTextPaste(chord: KeyChord): boolean {
   );
 }
 
-/** Text pastes go to the webview's paste event; Alt+V stays input, as Claude Code's image paste. */
-export function terminalHandlesKey(chord: KeyChord): boolean {
-  return !isTextPaste(chord);
+export type Platform = "mac" | "other";
+
+export function platformOf(userAgent: string): Platform {
+  return /Macintosh|Mac OS X/.test(userAgent) ? "mac" : "other";
+}
+
+export const PLATFORM: Platform = platformOf(navigator.userAgent);
+
+/** On macOS Cmd keys belong to Cerberus and the menu; elsewhere text pastes go to the webview's paste event. */
+export function terminalHandlesKey(
+  chord: KeyChord,
+  platform: Platform = PLATFORM,
+): boolean {
+  return platform === "mac" ? !chord.metaKey : !isTextPaste(chord);
 }
 
 /** Input to send in place of a paste, or `undefined` to let xterm paste the text. */
@@ -42,8 +55,10 @@ export function pasteInput(
 export type Shortcut =
   "nextTab" | "previousTab" | "newTab" | "closeTab" | "nextWaiting";
 
+type Chords = readonly (readonly [Shortcut, string])[];
+
 // Cerberus's own keys, chosen to miss Claude Code's (Ctrl+T, Ctrl+C, Ctrl+V, Alt+V, Shift+Tab) and WebView2's Ctrl+Shift+J.
-const CHORDS: readonly (readonly [Shortcut, string])[] = [
+const OTHER_CHORDS: Chords = [
   ["nextTab", "Ctrl+Tab"],
   ["previousTab", "Ctrl+Shift+Tab"],
   ["newTab", "Ctrl+Shift+T"],
@@ -51,37 +66,67 @@ const CHORDS: readonly (readonly [Shortcut, string])[] = [
   ["closeTab", "Ctrl+Shift+W"],
 ];
 
+// Cmd never reaches the terminal on macOS, so Terminal.app's keys take nothing from Claude Code.
+const MAC_CHORDS: Chords = [
+  ["nextTab", "Cmd+Shift+]"],
+  ["previousTab", "Cmd+Shift+["],
+  ["nextTab", "Ctrl+Tab"],
+  ["previousTab", "Ctrl+Shift+Tab"],
+  ["newTab", "Cmd+T"],
+  ["nextWaiting", "Cmd+Shift+A"],
+  ["closeTab", "Cmd+W"],
+];
+
+function chordsFor(platform: Platform): Chords {
+  return platform === "mac" ? MAC_CHORDS : OTHER_CHORDS;
+}
+
 /** Renames the sidebar row or project that has focus. */
 export const RENAME_KEY = "F2";
+
+// Shift turns `]` into `}` on a US layout, so brackets match by physical key.
+const CODE_KEYS: Readonly<Record<string, string>> = {
+  BracketLeft: "[",
+  BracketRight: "]",
+};
 
 function matches(chord: KeyChord, keys: string): boolean {
   const mods = keys.split("+");
   const key = mods.pop()?.toLowerCase();
+  const pressed = chord.key.toLowerCase();
   return (
     !chord.altKey &&
-    !chord.metaKey &&
+    chord.metaKey === mods.includes("Cmd") &&
     chord.ctrlKey === mods.includes("Ctrl") &&
     chord.shiftKey === mods.includes("Shift") &&
-    chord.key.toLowerCase() === key
+    (pressed === key || CODE_KEYS[chord.code ?? ""] === key)
   );
 }
 
-export function shortcutFor(chord: KeyChord): Shortcut | undefined {
-  return CHORDS.find(([, keys]) => matches(chord, keys))?.[0];
+export function shortcutFor(
+  chord: KeyChord,
+  platform: Platform = PLATFORM,
+): Shortcut | undefined {
+  return chordsFor(platform).find(([, keys]) => matches(chord, keys))?.[0];
 }
 
-function keysOf(shortcut: Shortcut): string {
-  return CHORDS.find(([s]) => s === shortcut)?.[1] ?? "";
+function keysOf(shortcut: Shortcut, platform: Platform): string {
+  return chordsFor(platform).find(([s]) => s === shortcut)?.[1] ?? "";
 }
 
 /** What the start page lists, built from the same keys `shortcutFor` answers to. */
-export const KEY_HELP: readonly { keys: string; does: string }[] = [
-  {
-    keys: `${keysOf("nextTab")} / ${keysOf("previousTab")}`,
-    does: "Switch tabs",
-  },
-  { keys: keysOf("newTab"), does: "New tab" },
-  { keys: keysOf("nextWaiting"), does: "Next chat waiting on you" },
-  { keys: RENAME_KEY, does: "Rename" },
-  { keys: keysOf("closeTab"), does: "Close tab" },
-];
+export function keyHelp(
+  platform: Platform = PLATFORM,
+): readonly { keys: string; does: string }[] {
+  const keys = (shortcut: Shortcut) => keysOf(shortcut, platform);
+  return [
+    {
+      keys: `${keys("nextTab")} / ${keys("previousTab")}`,
+      does: "Switch tabs",
+    },
+    { keys: keys("newTab"), does: "New tab" },
+    { keys: keys("nextWaiting"), does: "Next chat waiting on you" },
+    { keys: RENAME_KEY, does: "Rename" },
+    { keys: keys("closeTab"), does: "Close tab" },
+  ];
+}

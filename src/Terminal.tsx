@@ -5,7 +5,7 @@ import "@xterm/xterm/css/xterm.css";
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 
 import type { LiveState } from "./board";
-import { pasteInput, terminalHandlesKey } from "./keys";
+import { PLATFORM, pasteInput, terminalHandlesKey } from "./keys";
 import { PtySession, type SpawnSpec } from "./pty";
 import { throttle } from "./throttle";
 
@@ -64,13 +64,15 @@ export function TerminalView(props: {
       cursorBlink: true,
       scrollback: 10_000,
       theme: { background: "#1a1a1a" },
+      // Option+B, Option+F and Option+arrows move by word in shells, as in Terminal.app with this set.
+      macOptionIsMeta: PLATFORM === "mac",
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(element);
     useWebgl(term);
     fit.fit();
-    term.attachCustomKeyEventHandler(terminalHandlesKey);
+    term.attachCustomKeyEventHandler((event) => terminalHandlesKey(event));
 
     // Read once: a pane keeps its tab and program spec for its whole life.
     const spec = props.spec;

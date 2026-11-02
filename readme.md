@@ -61,8 +61,10 @@ How macOS differs from Windows:
 
 - **Shells:** your login shell (`$SHELL`), zsh and bash, each started as a login shell. No
   PowerShell or Git Bash.
-- **Keys:** the same Ctrl chords as on Windows (Ctrl+Tab, Ctrl+Shift+T and so on), not Cmd.
-  Cmd+V pastes text; in Claude Code, Cmd+V with only an image on the clipboard pastes the image.
+- **Keys:** Cerberus's keys use Cmd (see the table under Projects and tabs), so every Ctrl key
+  reaches the terminal, Ctrl+T, Ctrl+C and Ctrl+V included. Cmd+C copies, Cmd+V pastes, and in
+  Claude Code Cmd+V with only an image on the clipboard pastes the image. Option works as Meta,
+  so Option+B, Option+F and Option+arrows move by word in a shell.
 - **Quitting:** Windows ends every program a tab started when Cerberus crashes. On macOS a tab's
   programs get a hangup when its terminal closes, which ends `claude` and shells; a program that
   ignores hangups, such as one started with `nohup`, keeps running.
@@ -131,6 +133,10 @@ it, and lets go of that job only on a normal close.
 | Ctrl+Shift+T | New tab in the current project |
 | Ctrl+Shift+W | Close the current tab |
 | Ctrl+Shift+A | Next tab whose chat is waiting on you |
+
+On macOS: Cmd+Shift+] and Cmd+Shift+[ (or Ctrl+Tab and Ctrl+Shift+Tab) switch tabs, Cmd+T opens a
+new tab, Cmd+W closes one, and Cmd+Shift+A goes to the next waiting chat. The start page lists the
+keys for the platform it runs on.
 
 These miss Claude Code's own keys (Ctrl+T, Ctrl+C, Ctrl+V, Alt+V, Shift+Tab, Ctrl+Shift+C) and
 WebView2's Ctrl+Shift+J.
