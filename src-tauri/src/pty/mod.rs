@@ -278,14 +278,14 @@ const SESSION_VARS: [&str; 11] = [
 fn strip_inherited_session_vars(command: &mut CommandBuilder) {
     let names: Vec<String> = command
         .iter_full_env_as_str()
-        .map(|(name, _)| name.to_ascii_uppercase())
+        .map(|(name, _)| name.to_owned())
         .collect();
-    let is_session = |name: &String| SESSION_VARS.contains(&name.as_str());
+    let is_session = |name: &String| SESSION_VARS.contains(&name.to_ascii_uppercase().as_str());
     // A NO_COLOR next to a session's variables came from Claude Code, not from the user.
     let from_claude = names.iter().any(is_session);
     let removed: Vec<String> = names
         .into_iter()
-        .filter(|name| is_session(name) || (from_claude && name == "NO_COLOR"))
+        .filter(|name| is_session(name) || (from_claude && name.eq_ignore_ascii_case("NO_COLOR")))
         .collect();
     for name in removed {
         command.env_remove(name);

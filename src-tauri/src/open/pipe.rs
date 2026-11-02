@@ -71,7 +71,7 @@ fn serve_within(
                 // Closing the stream turns this asker away with an error, and keeps the listener free.
                 continue;
             };
-            let cut = match sys::cutter(&stream) {
+            let cut = match sys::cutter(&stream, deadline) {
                 Ok(cut) => cut,
                 Err(e) => {
                     eprintln!("could not answer cerberus open: {e}");

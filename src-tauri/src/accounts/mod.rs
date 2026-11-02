@@ -369,6 +369,14 @@ pub(crate) mod testdir {
     use std::sync::atomic::{AtomicU32, Ordering};
     use std::{fs, process};
 
+    /// A fixture path written the Windows way, as this platform spells it: `C:\h\x` is `/h/x` on Unix.
+    pub fn native(path: &str) -> PathBuf {
+        #[cfg(windows)]
+        return PathBuf::from(path);
+        #[cfg(not(windows))]
+        PathBuf::from(path.trim_start_matches("C:").replace('\\', "/"))
+    }
+
     pub struct TestDir(PathBuf);
 
     impl TestDir {
@@ -399,7 +407,7 @@ mod tests {
     use super::*;
 
     fn dir(path: &str) -> PathBuf {
-        PathBuf::from(path)
+        super::testdir::native(path)
     }
 
     fn two_accounts() -> Profiles {
@@ -557,8 +565,10 @@ mod tests {
                 Err(AccountsError::UnknownShell(_))
             ));
         }
-        let saved = accounts.set_shell("git-bash".to_owned()).unwrap();
-        assert_eq!(saved.shell.as_deref(), Some("git-bash"));
+        // A shell every runner of this platform has.
+        let installed = if cfg!(windows) { "git-bash" } else { "bash" };
+        let saved = accounts.set_shell(installed.to_owned()).unwrap();
+        assert_eq!(saved.shell.as_deref(), Some(installed));
     }
 
     #[test]

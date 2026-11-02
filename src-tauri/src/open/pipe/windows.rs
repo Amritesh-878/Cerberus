@@ -127,7 +127,10 @@ fn wait_for_asker(pipe: File) -> io::Result<File> {
 }
 
 /// Ends the worker's blocked pipe call; a worker with nothing pending just fails the call.
-pub fn cutter(_pipe: &File) -> io::Result<impl Fn(&JoinHandle<()>) + Send + 'static> {
+pub fn cutter(
+    _pipe: &File,
+    _deadline: std::time::Duration,
+) -> io::Result<impl Fn(&JoinHandle<()>) + Send + 'static> {
     Ok(|worker: &JoinHandle<()>| {
         use windows_sys::Win32::System::IO::CancelSynchronousIo;
         // The handle stays valid while the caller holds `worker`.

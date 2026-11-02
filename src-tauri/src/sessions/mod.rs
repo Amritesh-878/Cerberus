@@ -333,6 +333,7 @@ mod tests {
         );
     }
 
+    #[cfg(windows)]
     #[test]
     fn claude_is_known_by_its_file_name() {
         assert!(is_claude(r"C:\Users\u\.local\bin\claude.exe"));
@@ -341,5 +342,14 @@ mod tests {
             r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
         ));
         assert!(!is_claude(r"C:\tools\claude-helper.exe"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn claude_is_known_by_its_file_name() {
+        assert!(is_claude("/Users/u/.local/bin/claude"));
+        assert!(is_claude("/opt/homebrew/bin/claude"));
+        assert!(!is_claude("/bin/zsh"));
+        assert!(!is_claude("/usr/local/bin/claude-helper"));
     }
 }

@@ -3,6 +3,7 @@ use std::net::Shutdown;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
 use std::thread::JoinHandle;
+use std::time::Duration;
 
 pub type Stream = UnixStream;
 
@@ -66,12 +67,17 @@ impl Listener {
     }
 }
 
-/// Shutting the socket down wakes a worker blocked on it, which then fails its call and returns.
-pub fn cutter(stream: &UnixStream) -> io::Result<impl Fn(&JoinHandle<()>) + Send + 'static> {
+/// Shutting the read side wakes a worker waiting on a silent asker; a reply still being made can go out.
+pub fn cutter(
+    stream: &UnixStream,
+    deadline: Duration,
+) -> io::Result<impl Fn(&JoinHandle<()>) + Send + 'static> {
+    // An asker that never reads would otherwise block a long reply's write for good.
+    stream.set_write_timeout(Some(deadline))?;
     let stream = stream.try_clone()?;
     Ok(move |_: &JoinHandle<()>| {
         // Fails only once the asker is gone, and then there is nothing left to wake.
-        let _ = stream.shutdown(Shutdown::Both);
+        let _ = stream.shutdown(Shutdown::Read);
     })
 }
 
