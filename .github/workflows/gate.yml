@@ -13,9 +13,12 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  gate:
-    # The app targets Windows only, so the gate runs where WebView2 and MSVC are native.
-    runs-on: windows-latest
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
 
@@ -43,3 +46,11 @@ jobs:
         working-directory: src-tauri
       - run: cargo test
         working-directory: src-tauri
+
+  # The ruleset requires one check named `gate`; a skipped required job would count as a pass.
+  gate:
+    needs: check
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: test "${{ needs.check.result }}" = success
