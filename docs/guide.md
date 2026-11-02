@@ -92,7 +92,9 @@ folder under a temporary name, renaming it once complete, then reopens the tab t
 `claude --resume`. The original stays on the first account. When the other account already has an
 older copy, it is kept as `<id>.jsonl.cerberus-old`, never deleted. It refuses when the other
 account is signed out or has that chat open right now. On any failure the tab stays where it was
-and says why. The copy moves files only; Cerberus never reads what is in them.
+and says why; in the rare case that putting the older copy back fails too, the message says part of
+it stays under a `.cerberus-old` name. The copy moves files only; Cerberus never reads what is in
+them.
 
 ## `cerberus open`
 
@@ -139,7 +141,7 @@ pastes an image (Cmd+V or Ctrl+V on macOS).
 - If `command -v cerberus` prints nothing after linking it, add
   `export PATH="$HOME/.local/bin:$PATH"` to `~/.zshrc` and open a new terminal.
 - Windows only: the installer, its `PATH` entry and the uninstaller.
-- The macOS build is built and tested in CI, and is in its first hand testing.
+- The macOS build is built and tested in CI, and is in its first hands-on testing.
 
 ## Where data lives
 

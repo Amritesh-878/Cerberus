@@ -4,7 +4,7 @@ A terminal for running Claude Code, on Windows with a macOS preview. Every proje
 the sidebar with its tabs under it, and each tab keeps its Claude Code chat, so a restart or a
 crash never loses one.
 
-Each tab runs the official `claude` CLI. Claude Code is the only AI in it. Built with Claude Code.
+Each Claude Code tab runs the official `claude` CLI. Claude Code is the only AI in it. Built with Claude Code.
 
 ## Install
 
@@ -67,8 +67,9 @@ cerberus open alpha/planner   # project alpha, tab planner
 cerberus open alpha           # project alpha: the tab last shown since launch, else its first
 ```
 
-It starts Cerberus if needed, or brings the window forward, and shows that tab. Names match
-loosely (any case, or the folder's name). With no match it lists close names and exits with 1.
+It starts Cerberus if needed, or brings the window forward, and shows that tab. A name matches in
+any case, and a project also by its folder's name. With no match it suggests close names and exits
+with 1.
 
 ## Build from source
 
