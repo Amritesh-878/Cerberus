@@ -1,6 +1,6 @@
 use tauri::{Builder, Runtime};
 
-/// Cmd+C, Cmd+V and Cmd+Q reach a macOS webview only through a menu; Tauri's own binds Cmd+W to Close Window.
+/// Cmd+C, Cmd+V and Cmd+Q reach a macOS webview only through a menu, and Tauri's own binds Cmd+W to Close Window.
 #[cfg(target_os = "macos")]
 pub fn with_app_menu<R: Runtime>(builder: Builder<R>) -> Builder<R> {
     builder.menu(app_menu)

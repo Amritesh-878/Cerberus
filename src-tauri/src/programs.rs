@@ -11,7 +11,7 @@ pub struct ProgramChoice {
     /// Absolute path to run, or `None` when the program is not installed.
     pub program: Option<String>,
     pub args: Vec<String>,
-    /// What a paste of only an image sends, so the program reads the clipboard itself; `None` pastes nothing.
+    /// What a paste of only an image sends, so the program reads the clipboard itself (`None` pastes nothing).
     pub image_paste_key: Option<&'static str>,
     /// Whether the Shell button can open it.
     pub is_shell: bool,
