@@ -90,13 +90,86 @@ fn start_app(app: &Path, command: &Command) -> std::io::Result<()> {
         const DETACHED_PROCESS: u32 = 0x0000_0008;
         const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
         process.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
+        if let Err(e) = keep_own_handles() {
+            // Starting the app matters more; at worst a capturing caller waits until it closes.
+            eprintln!("cerberus: could not keep this shell's handles from the app: {e}");
+        }
     }
     process.spawn().map(drop)
+}
+
+/// Inherited output pipes would keep a capturing caller (`$x = cerberus open a`) waiting until the app closes.
+#[cfg(windows)]
+fn keep_own_handles() -> std::io::Result<()> {
+    use windows_sys::Win32::System::Console::{
+        GetStdHandle, STD_ERROR_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE,
+    };
+    // SAFETY: GetStdHandle takes no pointers.
+    let handles = [STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE]
+        .map(|id| unsafe { GetStdHandle(id) });
+    not_inherited(&handles)
+}
+
+/// Clears the inherit flag on every real handle, reporting the first that would not change.
+#[cfg(windows)]
+fn not_inherited(handles: &[windows_sys::Win32::Foundation::HANDLE]) -> std::io::Result<()> {
+    use windows_sys::Win32::Foundation::{
+        HANDLE_FLAG_INHERIT, INVALID_HANDLE_VALUE, SetHandleInformation,
+    };
+    let mut first_error = None;
+    for &handle in handles {
+        if handle.is_null() || handle == INVALID_HANDLE_VALUE {
+            continue;
+        }
+        // SAFETY: SetHandleInformation only reads the handle; a bad one fails rather than faults.
+        if unsafe { SetHandleInformation(handle, HANDLE_FLAG_INHERIT, 0) } == 0 {
+            first_error.get_or_insert_with(std::io::Error::last_os_error);
+        }
+    }
+    first_error.map_or(Ok(()), Err)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn a_handle_the_app_would_inherit_no_longer_is() {
+        use windows_sys::Win32::Foundation::{
+            CloseHandle, GetHandleInformation, HANDLE, HANDLE_FLAG_INHERIT,
+        };
+        use windows_sys::Win32::Security::SECURITY_ATTRIBUTES;
+        use windows_sys::Win32::System::Pipes::CreatePipe;
+
+        let inheritable = SECURITY_ATTRIBUTES {
+            nLength: u32::try_from(size_of::<SECURITY_ATTRIBUTES>()).unwrap(),
+            lpSecurityDescriptor: std::ptr::null_mut(),
+            bInheritHandle: 1,
+        };
+        let (mut read, mut write): (HANDLE, HANDLE) = (std::ptr::null_mut(), std::ptr::null_mut());
+        // SAFETY: out-pointers to locals; both handles are closed at the end.
+        assert_ne!(
+            unsafe { CreatePipe(&mut read, &mut write, &inheritable, 0) },
+            0
+        );
+        let inherited = |handle: HANDLE| {
+            let mut flags = 0;
+            // SAFETY: an out-pointer to a local, on a handle this test owns.
+            assert_ne!(unsafe { GetHandleInformation(handle, &mut flags) }, 0);
+            flags & HANDLE_FLAG_INHERIT != 0
+        };
+        assert!(inherited(write));
+
+        not_inherited(&[write, std::ptr::null_mut()]).unwrap();
+
+        assert!(!inherited(write));
+        // SAFETY: closing the two handles CreatePipe gave this test.
+        unsafe {
+            CloseHandle(read);
+            CloseHandle(write);
+        }
+    }
 
     #[test]
     fn the_identifier_matches_the_tauri_config() {
