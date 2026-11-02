@@ -108,7 +108,7 @@ test("a finished turn in a hidden tab shows one notification, and clicking it op
   await settle();
 
   expect(desktop.sent).toEqual([
-    { title: "planner · alpha", body: "Finished", extra: { tab: 3 } },
+    { title: "planner · alpha", body: "Waiting on you", extra: { tab: 3 } },
   ]);
   expect(activeTitle(root)).toBe("coder");
 

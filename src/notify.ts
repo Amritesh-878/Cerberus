@@ -46,7 +46,7 @@ export function toastFor(
 function bodyOf(alert: Alert, locale: string | undefined): string {
   switch (alert.kind) {
     case "finished":
-      return "Finished";
+      return "Waiting on you";
     case "limited":
       return alert.resetsAt === null
         ? "Hit its limit"

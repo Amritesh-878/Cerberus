@@ -172,7 +172,7 @@ shows, logs or stores anything else from a transcript.
 
 When a chat finishes a turn, hits a usage limit or ends by itself while you are not looking at
 it (its tab is hidden, or the Cerberus window is not focused), Windows shows a notification such
-as "planner · alpha" with "Finished" or "Hit its limit, resets 6:40pm". Clicking it, while it is
+as "planner · alpha" with "Waiting on you" or "Hit its limit, resets 6:40pm". Clicking it, while it is
 still on screen, brings Cerberus forward on that tab. A tab gets at most one per turn, and a
 notification names only the tab and its project: never chat text or an account. Alerts are on
 by default; turn them off in **Accounts**.

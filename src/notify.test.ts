@@ -24,7 +24,7 @@ test("an untouched title names the program, never the account", () => {
 
   expect(toastFor({ kind: "finished" }, tree, tab)).toEqual({
     title: "Claude Code · alpha",
-    body: "Finished",
+    body: "Waiting on you",
   });
 });
 
