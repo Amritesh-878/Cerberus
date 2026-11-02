@@ -1,320 +1,106 @@
 # Cerberus
 
-A fast terminal for Windows, with a macOS preview, built around Claude Code. One window holds every project as a tree: a
-planner tab per project with coder sub-tabs under it, each tab tied to a folder, a Claude account
-and a saved session, so a crash or a closed window never loses a chat.
+A terminal for running Claude Code, on Windows with a macOS preview. Every project is a folder in
+the sidebar with its tabs under it, and each tab keeps its Claude Code chat, so after a restart or
+a crash your tabs come back and their chats resume.
 
-Each tab runs the official `claude` CLI under its account's `CLAUDE_CONFIG_DIR`, so three accounts
-run side by side and a chat can continue on another account. Claude Code is the only AI in it.
-
-Built with Claude Code.
-
-**Status:** early. Projects and tabs run side by side and are saved across restarts.
+Each Claude Code tab runs the official `claude` CLI. Claude Code is the only AI in it. Built with Claude Code.
 
 ## Install
 
-Download `Cerberus_<version>_x64-setup.exe` from
+**Windows:** download `Cerberus_<version>_x64-setup.exe` from
 [Releases](https://github.com/Amritesh-878/Cerberus/releases) and run it. It installs for your
-user only, with no admin prompt, on 64-bit Windows 10 or 11. Tabs run
-[Claude Code](https://code.claude.com/docs/en/setup), which is installed separately. Each
-release lists the installer's SHA-256 beside it; compare it with `Get-FileHash <file>` in
-PowerShell.
+user (no admin), adds a Desktop shortcut, and puts `cerberus` on your `PATH`. The installer isn't
+code-signed yet, so SmartScreen may warn: choose **More info**, then **Run anyway**.
 
-The installer is not code-signed yet, so Windows SmartScreen may warn on first run: choose
-**More info**, then **Run anyway**.
-
-The installer adds its folder to your user `PATH`, so `cerberus open <project>[/<tab>]` works
-from any terminal opened after the install; terminals already open keep the old `PATH`.
-Uninstalling removes it again.
-
-Uninstall from **Settings > Apps**. Your accounts and settings in
-`%APPDATA%\com.cerberus.terminal` are kept unless you tick the box to delete the app data.
-
-**winget:** coming soon.
-
-### macOS (Apple silicon, preview)
-
-Download `Cerberus_<version>_aarch64.dmg` from
-[Releases](https://github.com/Amritesh-878/Cerberus/releases), open it and drag Cerberus to
-Applications. Compare the SHA-256 listed beside it with `shasum -a 256 <file>`.
-
-The app is not signed by Apple, so macOS blocks the first launch. Run this once:
+**macOS (Apple silicon, preview):** download `Cerberus_<version>_aarch64.dmg` and drag Cerberus to
+Applications. It isn't signed by Apple, so clear the block once:
 
 ```sh
 xattr -dr com.apple.quarantine /Applications/Cerberus.app
 ```
 
-Or open Cerberus once, close the warning, then choose **Open Anyway** in **System Settings >
-Privacy & Security**. On macOS 14 and earlier, right-click Cerberus and choose **Open** also works;
-macOS 15 removed that.
-
-There is no installer to put `cerberus` on `PATH`. Link the console command into
-`~/.local/bin`, where Claude Code's installer puts `claude`:
+To use `cerberus` in a terminal, link it next to `claude`:
 
 ```sh
 mkdir -p ~/.local/bin
 ln -sf /Applications/Cerberus.app/Contents/MacOS/cerberus-cli ~/.local/bin/cerberus
 ```
 
-If `command -v cerberus` then prints nothing, that folder is not on your `PATH` yet: add
-`export PATH="$HOME/.local/bin:$PATH"` to `~/.zshrc` (or `~/.bash_profile` for bash) and open a
-new terminal.
+You also need [Claude Code](https://code.claude.com/docs/en/setup). Each release lists its files'
+SHA-256 so you can check a download.
 
-Opened from Finder or the Dock, an app gets a short `PATH` that misses `~/.local/bin` and
-`/opt/homebrew/bin`. Cerberus reads `PATH` from your login shell once at start, so `claude` is
-found wherever your shell finds it. Accounts and settings live in
-`~/Library/Application Support/com.cerberus.terminal`.
+## What it does
 
-How macOS differs from Windows:
+- **Projects and tabs.** A project is a folder. Under it sit Claude Code and shell tabs, with
+  coder sub-tabs under a planner. Rename with a double-click or F2, search by title.
+- **Chats survive restarts and crashes.** The sidebar comes back as it was, and opening a saved
+  Claude Code tab resumes its chat. Nothing starts until you open a tab.
+- **Accounts.** Each tab runs under one of your Claude Code accounts, each with its own sign-in
+  and chats. A first-run walkthrough finds the accounts you already use.
+- **A board of every chat.** Each row shows whether its chat is working, waiting on you, or paused
+  until a usage reset. A desktop notification tells you when a chat in another tab needs you.
+- **A shell when a chat ends.** After `/exit` the tab becomes a shell in the same folder.
+  **Resume chat** in its menu brings the chat back.
+- **Move a chat to another of your accounts**, from the tab's right-click menu.
+- **`cerberus open`** jumps to a tab from any terminal (below).
 
-- **Shells:** your login shell (`$SHELL`), zsh and bash, each started as a login shell. No
-  PowerShell or Git Bash.
-- **Keys:** Cerberus's keys use Cmd (see the table under Projects and tabs), so every Ctrl key
-  reaches the terminal, Ctrl+T, Ctrl+C and Ctrl+V included. Cmd+C copies, Cmd+V pastes, and in
-  Claude Code Cmd+V with only an image on the clipboard pastes the image. Option works as Meta,
-  so Option+B, Option+F and Option+arrows move by word in a shell.
-- **Quitting:** Windows ends every program a tab started when Cerberus crashes. On macOS a tab's
-  programs get a hangup when its terminal closes, which ends `claude` and shells; a program that
-  ignores hangups, such as one started with `nohup`, keeps running.
-- **Windows only:** the installer, its `PATH` entry and the uninstaller, and winget.
+More detail on each, and how it works: [`docs/guide.md`](docs/guide.md).
 
-The macOS build is built and tested in CI; it has not yet been run by hand on a Mac.
+## Keys
 
-## Using it
+| Action | Windows | macOS |
+|---|---|---|
+| Next or previous tab | Ctrl+Tab, Ctrl+Shift+Tab | Cmd+Shift+] / [ (or Ctrl+Tab) |
+| New tab | Ctrl+Shift+T | Cmd+T |
+| Close tab | Ctrl+Shift+W | Cmd+W |
+| Next chat waiting on you | Ctrl+Shift+A | Cmd+Shift+A |
+| Rename | F2 | F2 |
 
-### First run
+They leave Claude Code's own keys alone (Ctrl+T, Ctrl+C, Ctrl+V, Alt+V, Shift+Tab). Paste an image
+into Claude Code with Alt+V on Windows, or Cmd+V on macOS.
 
-The first launch opens a short walkthrough:
-
-1. **Install.** Checks that `claude` is installed. If not, it shows Anthropic's install
-   command and can open it in a shell tab (PowerShell on Windows, your login shell on macOS),
-   typed but not run; press Enter to install.
-2. **Accounts.** Each account keeps its own sign-in, settings and chats, in its own folder.
-   `~/.claude` (the default) and any `~/.claude-<name>` folder Claude Code has used are offered
-   for import. A new account needs only a name; its folder is `~/.claude-<name>` unless you
-   pick another with **Change…**. **Add** opens Claude Code under the new account, and its own
-   first run signs it in; close the tab (or press **Done**) once you're signed in. An account
-   that is signed out shows **Sign in**. Each account shows its email and plan, read from
-   `claude auth status`.
-3. **New tabs.** Which account new tabs use.
-
-**Accounts** (the person button at the bottom of the sidebar) adds, renames or removes accounts,
-and picks the account new tabs use, the shell the **Shell** button opens, the folder where
-**New project** opens its folder picker, and whether alerts are on. Removing an account only forgets it; its folder stays
-on disk.
-Accounts and settings live in `profiles.json` in the app's config folder
-(`%APPDATA%\com.cerberus.terminal`). If that file cannot be read, the app offers to start fresh
-and keeps the old file as `profiles.json.bad` (`.bad2`, `.bad3` and so on when that name is
-taken).
-
-### Projects and tabs
-
-The sidebar lists projects, each a folder. **New project** opens the Windows folder picker, and
-the folder's name becomes the project's name. Drag the sidebar's right edge to resize it, or
-double-click the edge to reset it; the width is saved with your settings. Under each project sit
-its tabs:
-
-- A **planner** is a Claude Code tab at the top of a project.
-- A **sub-tab** sits under a planner, one level down: a Claude Code coder or a shell.
-- A shell tab opened on its own sits at the top of the project, beside the planners.
-
-The **+** beside a project opens the new tab box: pick the account, pick whether the tab goes on
-its own or under a planner, then **Claude Code** or **Shell**. The tab starts in the project's
-folder. Its title is the program and the account until you rename it (double-click it or press
-F2). Closing a planner leaves its sub-tabs open, moved up to the top of the project. Search
-filters tabs by title or account.
-
-A project is renamed the same way, from its row. The **×** beside it removes it from the
-sidebar: when it has tabs open, Cerberus asks first, then closes them. The folder is never
-touched.
-
-Every tab keeps running while another shows, with its scrollback. Closing a tab (its ×, or
-Ctrl+Shift+W) ends that tab's program and anything it started, and no other tab's. Closing the
-window ends every tab's program. A window started from a tab, such as an editor opened with
-`code .` in a shell tab, stays open, as in Windows Terminal. A crash or a forced kill ends
-everything the app started, those windows included: Cerberus runs in a Windows job that ends with
-it, and lets go of that job only on a normal close.
-
-| Keys | Does |
-|---|---|
-| Ctrl+Tab, Ctrl+Shift+Tab | Next or previous tab, in sidebar order |
-| Ctrl+Shift+T | New tab in the current project |
-| Ctrl+Shift+W | Close the current tab |
-| Ctrl+Shift+A | Next tab whose chat is waiting on you |
-
-On macOS: Cmd+Shift+] and Cmd+Shift+[ (or Ctrl+Tab and Ctrl+Shift+Tab) switch tabs, Cmd+T opens a
-new tab, Cmd+W closes one, and Cmd+Shift+A goes to the next waiting chat. The start page lists the
-keys for the platform it runs on.
-
-These miss Claude Code's own keys (Ctrl+T, Ctrl+C, Ctrl+V, Alt+V, Shift+Tab, Ctrl+Shift+C) and
-WebView2's Ctrl+Shift+J.
-
-### Restarts and resuming
-
-Projects and tabs are saved as you change them, in `tree.db` in the app's folder
-(`%APPDATA%\com.cerberus.terminal`). After a restart, or a crash, the sidebar comes back as it
-was: names, accounts, folders and order. Nothing starts until you open a tab, so twenty saved
-tabs cost nothing until you use them.
-
-Opening a saved Claude Code tab runs `claude --resume` with that tab's chat, in its folder and
-under its account, and the tab says "Resuming chat…" while it loads. Cerberus learns the chat
-from Claude Code's `sessions` file for the tab's process, and follows it to the new chat after
-`/clear`. A chat is saved once it has its first message; a tab whose chat file has since been
-deleted starts a new chat and says so. Shell tabs start fresh in their folder. Setup tabs, such
-as signing an account in, are not saved.
-
-When a chat ends, for example with `/exit`, its tab becomes a shell in the same folder and under
-the same account (the shell picked in Accounts), with Claude Code's "Resume this session with"
-line still above the prompt. The tab stays a shell after a restart and starts no `claude`; pick
-**Resume chat** from its right-click menu to bring the chat back with its history. Only a chat
-that ends by itself counts: closing Cerberus, a crash, or moving the chat to another account
-never marks it ended.
-
-If a save fails, the bar shows "Tabs not saved" and Cerberus retries every two seconds. Starting
-Cerberus again brings the open window forward instead of opening a second one. Should a second
-copy start anyway, only the first saves tabs: the second runs with saving off and says so.
-A `tree.db` that cannot be read is renamed to `tree.db.bad` (or `.bad2` and so on), and Cerberus
-starts with no saved tabs and says where the old file went.
-
-### Opening a tab from the command line
-
-```powershell
-cerberus open alpha/planner   # project alpha, tab planner
-cerberus open alpha           # project alpha: the tab last shown there since Cerberus started, else its first
-```
-
-This starts Cerberus if it is not running, or brings the open window forward, and shows that
-tab; a saved Claude Code tab resumes its chat as usual. The project matches by name, then the
-same name in any case, then its folder's name; the tab matches by title the same way. Words
-after `open` are joined, so `cerberus open my app/planner` needs no quotes. A running Cerberus
-answers from its open window, so a tab made a moment ago is found; otherwise the saved file is read.
-
-When nothing matches, Cerberus prints the close names and exits with 1. A name that matches
-two projects or tabs lists them and exits with 1 too; rename one to tell them apart. Bad usage
-exits with 2. Only project names, folders and tab titles are printed, never chat content.
-
-`cerberus open` runs a small console command, not the app itself: the app is a windowed program,
-so a shell would not wait for it or see what it prints. With no Cerberus running, the command
-starts the app on the tab and exits with 0. Run with no arguments, it starts the app or brings it
-forward.
-
-- **Installed:** the installer puts the console command beside the app as `cerberus-cli.exe`, in
-  `%LOCALAPPDATA%\Cerberus`. The installer does not add that folder to `PATH` yet, so run it by
-  its path: `& "$env:LOCALAPPDATA\Cerberus\cerberus-cli.exe" open alpha/planner`.
-- **Dev build:** `cargo build` in `src-tauri` makes `target\debug\cerberus-cli.exe` beside
-  `cerberus.exe`; run it by its path, for example
-  `src-tauri\target\debug\cerberus-cli.exe open alpha/planner`.
-
-### The session board
-
-Each Claude Code tab's row shows what its chat is doing:
-
-| Mark | Means |
-|---|---|
-| A small spinner | Working on a reply |
-| A white dot, and the title in bold | Finished while you were on another tab, so it is waiting on you. Opening the tab clears it. |
-| A clock and a time | The last turn hit a usage limit; the time is when it resets |
-| A dimmed title | The program exited |
-| Nothing | Idle |
-
-The state comes from Claude Code's `sessions` file. The limit comes from the last record of the
-chat's transcript, of which Cerberus reads only the error type and the reset time; it never
-shows, logs or stores anything else from a transcript.
-
-#### Alerts
-
-When a chat finishes a turn, hits a usage limit or ends by itself while you are not looking at
-it (its tab is hidden, or the Cerberus window is not focused), Windows shows a notification such
-as "planner · alpha" with "Waiting on you" or "Hit its limit, resets 6:40pm". Clicking it, while it is
-still on screen, brings Cerberus forward on that tab. A tab gets at most one per turn, and a
-notification names only the tab and its project: never chat text or an account. Alerts are on
-by default; turn them off in **Accounts**.
-
-### Continuing a chat on another account
-
-Right-click a Claude Code tab and pick **Continue on `<account>`…** to carry its chat to another
-of your accounts, for example to keep work and personal chats apart. A limited tab offers the same
-thing on its row: "Limited until 6:40pm · continue on work". If the chat is running, Cerberus asks
-before closing it.
-
-Cerberus copies the chat's file, and its folder of subagent chats if there is one, into the
-other account's folder. It writes the copy under a temporary name and renames it once complete,
-so a half copy is never resumed. Then it reopens the tab under that account with
-`claude --resume`, in the same folder. The original stays on the first account. A chat can go
-back and forth: when the other account already has an older copy of it, that copy is kept beside
-it as `<id>.jsonl.cerberus-old` (then `.cerberus-old2` and so on), never deleted. It refuses when
-the other account is signed out, or has that chat open in a running `claude` right now. A tab
-moves one chat at a time, and Cerberus waits for everything its program started to end before
-copying. While the chat moves, its row and pane say "Moving to `<account>`…". On any failure the
-tab stays on its account, still resumable, and says what went wrong.
-The copy moves files only; Cerberus never reads what is in them.
-
-A tab under an account other than the default gets `CLAUDE_CONFIG_DIR` set to its folder, so
-`claude` there, or typed in a shell tab, runs on that account. The default account leaves the
-variable unset, as Claude Code expects. The variables a Claude Code session sets for its own
-shells (`CLAUDECODE`, `CLAUDE_CODE_SESSION_ID` and the like, and the `NO_COLOR` that comes with
-them) are removed, so a tab runs the same whether Cerberus started from the Start menu or from
-a Claude Code chat. Settings such as `CLAUDE_CODE_USE_BEDROCK`, and a `NO_COLOR` of your own,
-stay. The bar above the
-terminal shows the account; hover it for the email and plan.
-
-The programs a tab can run:
-
-| Program | What runs |
-|---|---|
-| Claude Code | `claude` from `PATH` |
-| PowerShell (Windows) | `pwsh` from `PATH`, else Windows PowerShell (`powershell.exe`) |
-| Git Bash (Windows) | `bin\bash.exe` under Git's install folder, found from `git` on `PATH` |
-| Login shell (macOS) | `$SHELL` with `-l`, when it is not `/bin/zsh` or `/bin/bash` |
-| zsh, bash (macOS) | `/bin/zsh -l`, `/bin/bash -l`; the one that is `$SHELL` comes first |
-
-Selecting text copies it; Ctrl+V (Cmd+V on macOS) pastes text. In Claude Code, Alt+V or Ctrl+V
-(Cmd+V or Ctrl+V on macOS) pastes an image from the clipboard. When a shell exits the tab stays open with its exit code.
-
-The panel button at the top right opens an empty side panel, kept for later.
-
-## Stack
-
-Tauri 2 with a Rust core (PTYs, sessions, accounts, persistence) and a Solid + TypeScript webview
-built with Vite. Terminals are xterm.js (WebGL renderer) over `portable-pty`; the file pane will use
-CodeMirror.
-
-## Run it
-
-Needs Node 24 and a Rust toolchain with the MSVC target, plus the
-[Tauri prerequisites](https://tauri.app/start/prerequisites/) for Windows (WebView2, C++ build
-tools).
+## Open a tab from the command line
 
 ```sh
-npm ci              # install from the lockfile; `npm install` rewrites it on Windows
-npm run tauri dev   # start Vite and open the app window
-npm run tauri build # release build and installer
+cerberus open alpha/planner   # project alpha, tab planner
+cerberus open alpha           # project alpha: the tab last shown since launch, else its first
 ```
 
-## Quality gate
+It starts Cerberus if needed, or brings the window forward, and shows that tab. A name matches in
+any case, and a project also by its folder's name. With no match it suggests close names and exits
+with 1.
 
-Run in this order; 0 errors, 0 warnings and 100% passing is the only pass.
+## Build from source
+
+Needs Node 24, Rust, and the [Tauri prerequisites](https://tauri.app/start/prerequisites/) for
+your OS.
+
+```sh
+npm ci              # not npm install, which rewrites the lockfile on Windows
+npm run tauri dev   # run it
+npm run tauri build # Windows installer
+npm run tauri build -- --bundles dmg   # macOS .dmg
+```
+
+The gate, in order, where only 0 errors, 0 warnings and every test passing counts:
 
 ```sh
 npm run lint:fix && npm run typecheck && npm test
 cd src-tauri && cargo fmt && cargo clippy --all-targets -- -D warnings && cargo test
 ```
 
-## Where things are
-
 | Path | What it is |
 |---|---|
-| `src/` | Solid webview: components, styles and their Vitest tests |
-| `src-tauri/` | Rust core, Tauri config and window permissions (`src-tauri/capabilities/`) |
-| `AGENTS.md` | Project context and the rules every agent session follows |
-| `coding_standards.md` | How code, commits and PRs are written and reviewed |
-| `.claude/` | The skills, agents and settings Claude Code loads in this repo |
+| `src/` | Solid + TypeScript webview and its Vitest tests |
+| `src-tauri/` | Rust core (PTYs, sessions, accounts, saving) and the Tauri config |
+| `docs/guide.md` | How each feature works |
+| `bench/` | The process sampler and the Warp baseline |
+| `AGENTS.md`, `coding_standards.md` | Rules for agent sessions and for code, commits and PRs |
 
-The agent workflow comes from the `prompts` template, kept as the `template` remote. Planning docs
-(task files, decisions such as `DEC-###`, project state) are kept privately and are not part of
-this repo.
+Stack: Tauri 2, Rust, Solid + TypeScript with Vite, xterm.js over `portable-pty`.
 
 ## License
 
-MIT, see `LICENSE`. Skills vendored under `.claude/skills/` keep their own MIT notices in
+MIT, see `LICENSE`. Skills under `.claude/skills/` keep their own MIT notices in
 `.claude/skills/notice.md`.
