@@ -210,26 +210,34 @@ function AlertsSetting(props: {
   onProfiles: (profiles: Profiles) => void;
 }) {
   const [error, setError] = createSignal<string>();
+  // The latest click, shown until every queued save is back, so an earlier reply cannot flip the box.
+  const [choice, setChoice] = createSignal<boolean>();
+  let unsettled = 0;
 
   return (
     <div class="alerts-setting">
       <label>
         <input
           type="checkbox"
-          checked={props.profiles.alerts}
+          checked={choice() ?? props.profiles.alerts}
           onChange={(event) => {
-            const box = event.currentTarget;
-            setAlerts(box.checked).then(
-              (profiles) => {
-                setError(undefined);
-                props.onProfiles(profiles);
-              },
-              (e: unknown) => {
-                // The saved choice did not change, so the box goes back to it.
-                box.checked = props.profiles.alerts;
-                setError(String(e));
-              },
-            );
+            const on = event.currentTarget.checked;
+            setChoice(on);
+            unsettled += 1;
+            setAlerts(on)
+              .then(
+                (profiles) => {
+                  setError(undefined);
+                  props.onProfiles(profiles);
+                },
+                (e: unknown) => {
+                  setError(String(e));
+                },
+              )
+              .finally(() => {
+                unsettled -= 1;
+                if (unsettled === 0) setChoice(undefined);
+              });
           }}
         />
         Notify me when a chat in a tab I'm not looking at finishes, hits its

@@ -261,6 +261,7 @@ test("two quick clicks on the alerts box are saved in order", async () => {
   pending.shift()?.();
   await settle();
   expect(saves).toEqual([false, true]);
+  expect(box.checked).toBe(true);
   pending.shift()?.();
   await settle();
 
