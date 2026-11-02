@@ -216,9 +216,9 @@ shows, logs or stores anything else from a transcript.
 ### Continuing a chat on another account
 
 Right-click a Claude Code tab and pick **Continue on `<account>`…** to carry its chat to another
-account, for example when one has hit its usage limit. A limited tab offers the same thing on its
-row: "Limited until 6:40pm · continue on work". If the chat is running, Cerberus asks before
-closing it.
+of your accounts, for example to keep work and personal chats apart. A limited tab offers the same
+thing on its row: "Limited until 6:40pm · continue on work". If the chat is running, Cerberus asks
+before closing it.
 
 Cerberus copies the chat's file, and its folder of subagent chats if there is one, into the
 other account's folder. It writes the copy under a temporary name and renames it once complete,
