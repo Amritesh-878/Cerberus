@@ -14,7 +14,17 @@ concurrency:
 
 jobs:
   build:
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            bundle: nsis
+            installer: "*-setup.exe"
+          - os: macos-latest
+            bundle: dmg
+            installer: "*.dmg"
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -54,12 +64,21 @@ jobs:
             throw "Tag $env:GITHUB_REF_NAME does not match version $version in tauri.conf.json"
           }
 
-      - run: npx tauri build
+      - run: npx tauri build --bundles ${{ matrix.bundle }}
+
+      - name: Show what the app bundle holds
+        if: runner.os == 'macOS'
+        run: |
+          app=src-tauri/target/release/bundle/macos/Cerberus.app
+          echo "Contents/MacOS: $(ls $app/Contents/MacOS | tr '
+' ' ')" >> "$GITHUB_STEP_SUMMARY"
+          echo "CFBundleExecutable: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' $app/Contents/Info.plist)" >> "$GITHUB_STEP_SUMMARY"
+          test -x "$app/Contents/MacOS/cerberus" && test -x "$app/Contents/MacOS/cerberus-cli"
 
       - name: Hash the installer
         shell: pwsh
         run: |
-          $exe = @(Get-Item src-tauri/target/release/bundle/nsis/*-setup.exe)
+          $exe = @(Get-Item src-tauri/target/release/bundle/${{ matrix.bundle }}/${{ matrix.installer }})
           if ($exe.Count -ne 1) { throw "Expected one installer, found $($exe.Count)" }
           $exe = $exe[0]
           $hash = (Get-FileHash $exe.FullName -Algorithm SHA256).Hash.ToLower()
@@ -70,10 +89,10 @@ jobs:
         if: github.event_name == 'push'
         uses: actions/upload-artifact@v7
         with:
-          name: installer
+          name: installer-${{ matrix.bundle }}
           path: |
-            src-tauri/target/release/bundle/nsis/*-setup.exe
-            src-tauri/target/release/bundle/nsis/*-setup.exe.sha256
+            src-tauri/target/release/bundle/${{ matrix.bundle }}/${{ matrix.installer }}
+            src-tauri/target/release/bundle/${{ matrix.bundle }}/${{ matrix.installer }}.sha256
           retention-days: 1
           if-no-files-found: error
 
@@ -86,12 +105,17 @@ jobs:
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: installer
+          pattern: installer-*
+          merge-multiple: true
           path: installer
 
       - name: Draft the release
         env:
           GH_TOKEN: ${{ github.token }}
+          NOTES: >-
+            macOS (Apple silicon): the app is not signed by Apple. After copying Cerberus to
+            Applications, right-click it and choose Open once, or run
+            `xattr -dr com.apple.quarantine /Applications/Cerberus.app`.
         run: >
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft --verify-tag
-          --title "Cerberus $GITHUB_REF_NAME" --generate-notes installer/*
+          --title "Cerberus $GITHUB_REF_NAME" --notes "$NOTES" --generate-notes installer/*
