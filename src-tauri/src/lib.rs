@@ -31,6 +31,7 @@ pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(open::on_second_launch))
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .manage(PtyManager::default())
         .manage(Arc::new(RunningTabs::default()))
         .manage(open::Pending::default())
@@ -75,6 +76,7 @@ pub fn run() {
             commands::set_start_folder,
             commands::set_shell,
             commands::set_sidebar_width,
+            commands::set_alerts,
             commands::account_status,
             commands::tree_load,
             commands::tree_save,

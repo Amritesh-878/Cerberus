@@ -277,6 +277,11 @@ pub fn set_sidebar_width(
 }
 
 #[tauri::command(async)]
+pub fn set_alerts(accounts: State<'_, Accounts>, on: bool) -> Result<Profiles, AccountsError> {
+    accounts.set_alerts(on)
+}
+
+#[tauri::command(async)]
 pub fn set_shell(accounts: State<'_, Accounts>, shell: String) -> Result<Profiles, AccountsError> {
     accounts.set_shell(shell)
 }

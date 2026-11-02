@@ -1057,6 +1057,21 @@ button {
   gap: 4px;
 }
 
+.alerts-setting {
+  max-width: 480px;
+  font-size: 13px;
+}
+
+.alerts-setting label {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.alerts-setting input {
+  accent-color: var(--accent);
+}
+
 .step-nav {
   display: flex;
   gap: 8px;

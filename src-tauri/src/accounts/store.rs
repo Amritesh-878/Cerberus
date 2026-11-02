@@ -319,6 +319,18 @@ mod tests {
     }
 
     #[test]
+    fn a_file_saved_before_the_alerts_setting_has_alerts_on() {
+        let dir = TestDir::new();
+        let text = r#"{"version":3,"nextId":0,"accounts":[],"defaultAccount":null,
+            "shell":null,"startFolder":null,"sidebarWidth":300}"#;
+
+        let loaded = write_raw(&dir, text).load().unwrap();
+
+        assert!(loaded.alerts);
+        assert_eq!(loaded.sidebar_width, Some(300));
+    }
+
+    #[test]
     fn reset_sets_the_bad_file_aside() {
         let dir = TestDir::new();
         let store = write_raw(&dir, "{ not json");

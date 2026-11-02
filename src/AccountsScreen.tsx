@@ -17,6 +17,8 @@ export function AccountsScreen(props: {
   profiles: Profiles;
   programs: ProgramChoice[];
   statuses: Statuses;
+  alerts: boolean;
+  onAlerts: (on: boolean) => void;
   onProfiles: (profiles: Profiles) => void;
   onOpen: (tab: Tab) => void;
   onClose: () => void;
@@ -47,6 +49,20 @@ export function AccountsScreen(props: {
           onProfiles={props.onProfiles}
         />
       </section>
+      <h3>Alerts</h3>
+      <div class="alerts-setting">
+        <label>
+          <input
+            type="checkbox"
+            checked={props.alerts}
+            onChange={(event) => {
+              props.onAlerts(event.currentTarget.checked);
+            }}
+          />
+          Notify me when a chat in a tab I'm not looking at finishes, hits its
+          limit or ends
+        </label>
+      </div>
       <nav class="step-nav">
         <button
           type="button"

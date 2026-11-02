@@ -25,6 +25,7 @@ import {
   statusText,
 } from "./accounts";
 import { AccountsScreen } from "./AccountsScreen";
+import { createAlertsSetting } from "./alerting";
 import { continueOnAccount } from "./carry";
 import {
   type Board,
@@ -39,6 +40,7 @@ import {
 import { AppIcon, CloseIcon, MenuIcon, PanelIcon } from "./icons";
 import { KEY_HELP, shortcutFor } from "./keys";
 import { type Launch, NewTab } from "./NewTab";
+import { createNotifier } from "./notify";
 import { followOpenRequests } from "./open";
 import { listPrograms } from "./pty";
 import {
@@ -104,6 +106,7 @@ export function App() {
     setLoadError(String(error));
   };
   loadProfiles().then(loaded, fail);
+  const alertsSetting = createAlertsSetting(profiles, changed);
   const [programs, { refetch: recheckPrograms }] = createResource(listPrograms);
   // Solid types a resource error as `any`.
   const programsError = (): unknown => programs.error;
@@ -284,6 +287,16 @@ export function App() {
     showPage(undefined);
     setDrawer(false);
   };
+  const notify = createNotifier({
+    tree,
+    board,
+    shown,
+    alertsOn: alertsSetting.on,
+    open: (id) => {
+      setOpening(undefined);
+      select(id);
+    },
+  });
 
   // The account each moving tab's chat is going to, shown on its row and pane until it restarts.
   const [moving, setMoving] = createSignal<ReadonlyMap<TabId, string>>(
@@ -581,6 +594,13 @@ export function App() {
                     </span>
                   )}
                 </Show>
+                <Show when={alertsSetting.error()}>
+                  {(error) => (
+                    <span class="save-error" role="status" title={error()}>
+                      Alerts setting not saved
+                    </span>
+                  )}
+                </Show>
                 <Show when={shownTab()?.launch.account}>
                   {(account) => (
                     <span
@@ -670,11 +690,15 @@ export function App() {
                               pastesImages={tab().launch.pastesImages}
                               input={tab().launch.input}
                               active={shown() === id}
-                              onState={(state) =>
-                                setBoard((b) => reported(b, id, state, shown()))
-                              }
+                              onState={(state) => {
+                                notify(id, state);
+                                setBoard((b) =>
+                                  reported(b, id, state, shown()),
+                                );
+                              }}
                               onExit={() => setBoard((b) => exited(b, id))}
                               onEnded={() => {
+                                notify(id, { state: "ended" });
                                 markEnded(id, true);
                                 setBoard((b) => cleared(b, id));
                               }}
@@ -720,6 +744,8 @@ export function App() {
                           profiles={loaded()}
                           programs={programs.latest ?? []}
                           statuses={statuses}
+                          alerts={alertsSetting.on()}
+                          onAlerts={alertsSetting.save}
                           onProfiles={changed}
                           onOpen={openSetupTab}
                           onClose={() => {

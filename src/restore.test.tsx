@@ -6,10 +6,13 @@ import {
   activeTitle,
   cleanup,
   click,
+  emit,
   field,
+  open,
   press,
   ptyCore,
   renderApp,
+  row,
   SAVED,
   settle,
   sidebarTitles,
@@ -68,41 +71,6 @@ function restoring(tree: SavedTree = TREE) {
   };
 }
 
-function row(root: HTMLElement, title: string): HTMLElement {
-  const found = [...root.querySelectorAll<HTMLElement>(".tab-row")].find(
-    (r) => r.querySelector(".tab-title")?.textContent === title,
-  );
-  if (!found) throw new Error(`no ${title} row`);
-  return found;
-}
-
-async function open(root: HTMLElement, title: string): Promise<void> {
-  row(root, title).querySelector<HTMLButtonElement>(".tab-select")?.click();
-  await settle();
-}
-
-// The mocked core delivers channel messages through the callback the channel registered.
-interface MockInternals {
-  runCallback: (id: number, data: unknown) => void;
-}
-
-const sentCount = new Map<number, number>();
-
-/** Sends `messages` on the channel the `nth` spawn was given, as the core would. */
-function emit(spawned: unknown[], nth: number, ...messages: unknown[]): void {
-  const channel = field(spawned[nth], "events") as { id: number };
-  const internals = (
-    window as unknown as { __TAURI_INTERNALS__: MockInternals }
-  ).__TAURI_INTERNALS__;
-  const sent = (sentCount.get(channel.id) ?? 0) + messages.length;
-  messages.forEach((message, i) => {
-    internals.runCallback(channel.id, {
-      index: sent - messages.length + i,
-      message,
-    });
-  });
-  sentCount.set(channel.id, sent);
-}
 test("the saved tree comes back in order and starts no program", async () => {
   const restore = restoring();
   const root = await renderApp(() => SAVED, restore.core);
