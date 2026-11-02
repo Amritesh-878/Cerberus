@@ -81,8 +81,13 @@ export function setSidebarWidth(width: number): Promise<Profiles> {
   return invoke<Profiles>("set_sidebar_width", { width });
 }
 
+// One save at a time for the whole app, so the last click stays even across reopening a screen.
+let alertsSaving: Promise<unknown> = Promise.resolve();
+
 export function setAlerts(on: boolean): Promise<Profiles> {
-  return invoke<Profiles>("set_alerts", { on });
+  const saved = alertsSaving.then(() => invoke<Profiles>("set_alerts", { on }));
+  alertsSaving = saved.catch(() => undefined);
+  return saved;
 }
 
 export function setShell(shell: string): Promise<Profiles> {

@@ -268,6 +268,50 @@ test("two quick clicks on the alerts box are saved in order", async () => {
   expect(box.checked).toBe(true);
 });
 
+test("alerts saves stay in click order after Accounts is closed and reopened", async () => {
+  const saves: unknown[] = [];
+  const pending: (() => void)[] = [];
+  let saved: Profiles = SAVED;
+  const root = await renderApp(() => saved, {
+    set_alerts: (args: unknown) =>
+      new Promise<Profiles>((resolve) => {
+        saves.push(field(args, "on"));
+        pending.push(() => {
+          saved = {
+            ...saved,
+            alerts: field(args, "on") === true,
+            revision: saves.length,
+          };
+          resolve(saved);
+        });
+      }),
+  });
+  const box = async () => {
+    click(root, "Accounts");
+    await settle();
+    const found = root.querySelector<HTMLInputElement>(".alerts-setting input");
+    if (!found) throw new Error("no alerts box");
+    return found;
+  };
+
+  const first = await box();
+  first.click();
+  first.click();
+  click(root, "Done");
+  await settle();
+  (await box()).click();
+  await settle();
+  expect(saves).toEqual([false]);
+
+  while (pending.length > 0) {
+    pending.shift()?.();
+    await settle();
+  }
+
+  expect(saves).toEqual([false, true, false]);
+  expect(saved.alerts).toBe(false);
+});
+
 test("the accounts screen turns alerts off and keeps the box in step on a failed save", async () => {
   let fail = false;
   const saves: unknown[] = [];
