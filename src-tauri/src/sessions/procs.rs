@@ -28,9 +28,34 @@ pub fn descendants(root: u32) -> Vec<u32> {
     below(&pairs, root)
 }
 
-#[cfg(not(windows))]
-pub fn descendants(_root: u32) -> Vec<u32> {
-    Vec::new()
+#[cfg(unix)]
+pub fn descendants(root: u32) -> Vec<u32> {
+    let listed = std::process::Command::new("/bin/ps")
+        .args(["-axo", "pid=,ppid="])
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .output();
+    match listed {
+        Ok(out) if out.status.success() => {
+            below(&ps_pairs(&String::from_utf8_lossy(&out.stdout)), root)
+        }
+        _ => Vec::new(),
+    }
+}
+
+/// (process, parent) pairs from `ps -o pid=,ppid=`; a line that is not two numbers is skipped.
+#[cfg(any(unix, test))]
+fn ps_pairs(listing: &str) -> Vec<(u32, u32)> {
+    listing
+        .lines()
+        .filter_map(|line| {
+            let mut fields = line.split_whitespace().map(str::parse::<u32>);
+            match (fields.next(), fields.next(), fields.next()) {
+                (Some(Ok(pid)), Some(Ok(ppid)), None) => Some((pid, ppid)),
+                _ => None,
+            }
+        })
+        .collect()
 }
 
 /// Whether a process with this id is still running.
@@ -54,9 +79,15 @@ pub fn is_running(pid: u32) -> bool {
     }
 }
 
-#[cfg(not(windows))]
-pub fn is_running(_pid: u32) -> bool {
-    false
+#[cfg(unix)]
+pub fn is_running(pid: u32) -> bool {
+    let Ok(pid) = libc::pid_t::try_from(pid) else {
+        return false;
+    };
+    // Signal 0 only checks; EPERM means the process exists under another user.
+    // SAFETY: `kill` with signal 0 sends nothing and touches no memory.
+    let sent = unsafe { libc::kill(pid, 0) };
+    sent == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
 }
 
 /// `pairs` are (process, parent); the walk is breadth first, so nearer processes come first.
@@ -97,6 +128,52 @@ mod tests {
 
         assert!(is_running(std::process::id()));
         assert!(!is_running(child.id()));
+    }
+
+    #[test]
+    fn ps_lines_become_pairs_and_odd_lines_are_skipped() {
+        let listing = "    1     0
+  412     1
+ 9000   412
+PID PPID
+
+ 77 x
+ 5 6 7
+";
+
+        assert_eq!(ps_pairs(listing), [(1, 0), (412, 1), (9000, 412)]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn this_process_is_running_and_a_finished_one_is_not() {
+        let mut child = std::process::Command::new("/usr/bin/true").spawn().unwrap();
+        child.wait().unwrap();
+
+        assert!(is_running(std::process::id()));
+        assert!(!is_running(child.id()));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_wrappers_real_program_is_found_below_it() {
+        // The trailing `true` keeps sh from replacing itself with sleep.
+        let mut wrapper = std::process::Command::new("/bin/sh")
+            .args(["-c", "sleep 30; true"])
+            .spawn()
+            .unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let mut found = Vec::new();
+        while found.is_empty() && std::time::Instant::now() < deadline {
+            found = descendants(wrapper.id());
+        }
+        for pid in found.iter().chain([&wrapper.id()]) {
+            // SAFETY: plain signal to a test-owned process.
+            unsafe { libc::kill(libc::pid_t::try_from(*pid).unwrap(), libc::SIGKILL) };
+        }
+        let _ = wrapper.wait();
+
+        assert!(!found.is_empty(), "no process found below the wrapper");
     }
 
     #[test]

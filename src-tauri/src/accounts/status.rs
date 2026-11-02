@@ -70,6 +70,9 @@ fn run(mut command: Command, timeout: Duration) -> Result<Vec<u8>, RunError> {
         .stderr(Stdio::null());
     #[cfg(windows)]
     std::os::windows::process::CommandExt::creation_flags(&mut command, CREATE_NO_WINDOW);
+    // Its own group, so a timeout can end whatever a wrapper script started.
+    #[cfg(unix)]
+    std::os::unix::process::CommandExt::process_group(&mut command, 0);
     let mut child = command.spawn().map_err(RunError::Start)?;
     let Some(mut stdout) = child.stdout.take() else {
         return Err(RunError::Read(io::Error::other("no output pipe")));
@@ -131,6 +134,13 @@ fn kill_tree(child: &mut Child) {
             .stderr(Stdio::null());
         std::os::windows::process::CommandExt::creation_flags(&mut taskkill, CREATE_NO_WINDOW);
         if taskkill.status().is_ok_and(|status| status.success()) {
+            return;
+        }
+    }
+    #[cfg(unix)]
+    if let Ok(group) = libc::pid_t::try_from(child.id()) {
+        // SAFETY: signals the group `run` gave the child; no memory is touched.
+        if unsafe { libc::killpg(group, libc::SIGKILL) } == 0 {
             return;
         }
     }
@@ -275,6 +285,17 @@ mod tests {
         assert_eq!(parse(&stdout).state, AuthState::LoggedOut);
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn output_is_read_whatever_the_exit_code() {
+        let mut command = Command::new("/bin/sh");
+        command.args(["-c", r#"echo '{"loggedIn":false}'; exit 1"#]);
+
+        let stdout = run(command, Duration::from_secs(20)).unwrap();
+
+        assert_eq!(parse(&stdout).state, AuthState::LoggedOut);
+    }
+
     #[test]
     fn output_from_a_program_that_never_exits_is_a_timeout() {
         let second = Duration::from_secs(1);
@@ -354,5 +375,71 @@ mod tests {
             .unwrap();
         let listed = String::from_utf8_lossy(&listed.stdout);
         assert!(!listed.contains(pid.trim()), "still running: {listed}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_exit_wait_gives_up_at_the_deadline() {
+        use std::os::unix::process::CommandExt;
+        let mut hung = Command::new("/bin/sleep")
+            .arg("30")
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let mut quick = Command::new("/usr/bin/true").spawn().unwrap();
+        let started = Instant::now();
+
+        let hung_exited = exits_by(&mut hung, started + Duration::from_millis(300));
+        kill_tree(&mut hung);
+        let _ = hung.wait();
+
+        assert!(!hung_exited);
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "{:?}",
+            started.elapsed()
+        );
+        assert!(exits_by(
+            &mut quick,
+            Instant::now() + Duration::from_secs(10)
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_hung_program_times_out() {
+        let mut command = Command::new("/bin/sleep");
+        command.arg("30");
+
+        let result = run(command, Duration::from_millis(300));
+
+        assert!(matches!(result, Err(RunError::TimedOut(_))));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_timeout_ends_what_a_wrapper_started() {
+        let dir = crate::accounts::testdir::TestDir::new();
+        let pid_file = dir.path().join("pid.txt");
+        let mut command = Command::new("/bin/sh");
+        // Backgrounded and waited on, so sleep is the wrapper's child rather than its replacement.
+        command.args([
+            "-c",
+            &format!("sleep 30 & echo $! > '{}'; wait", pid_file.display()),
+        ]);
+
+        let result = run(command, Duration::from_secs(5));
+
+        assert!(matches!(result, Err(RunError::TimedOut(_))));
+        let pid: u32 = std::fs::read_to_string(&pid_file)
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        let gone = (0..100).any(|_| {
+            thread::sleep(Duration::from_millis(20));
+            !crate::sessions::procs::is_running(pid)
+        });
+        assert!(gone, "still running: {pid}");
     }
 }
