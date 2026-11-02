@@ -4,6 +4,7 @@ mod handover;
 mod job;
 #[cfg(unix)]
 mod login_path;
+mod menu;
 mod open;
 mod programs;
 mod pty;
@@ -32,7 +33,7 @@ pub fn run() {
     if let Err(e) = job::end_children_with_app() {
         eprintln!("tab programs may outlive a crash: {e}");
     }
-    let app = tauri::Builder::default()
+    let app = menu::with_app_menu(tauri::Builder::default())
         .plugin(tauri_plugin_single_instance::init(open::on_second_launch))
         .plugin(tauri_plugin_dialog::init())
         .manage(PtyManager::default())
