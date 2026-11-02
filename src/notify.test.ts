@@ -28,6 +28,21 @@ test("an untouched title names the program, never the account", () => {
   });
 });
 
+test("a default title from before an account was renamed still drops the account", () => {
+  const [tree, tab] = treeWith(true);
+  const stale = {
+    ...tree,
+    tabs: tree.tabs.map((t) => ({
+      ...t,
+      title: "Claude Code · old@example.com",
+    })),
+  };
+
+  expect(toastFor({ kind: "finished" }, stale, tab)?.title).toBe(
+    "Claude Code · alpha",
+  );
+});
+
 test("a renamed tab keeps its name, and a setup tab has no project", () => {
   const [tree, tab] = treeWith(false);
 

@@ -15,14 +15,14 @@ import {
   type Change,
   resetText,
 } from "./board";
-import { defaultTitle, type TabId, type Tree } from "./tree";
+import type { TabId, Tree } from "./tree";
 
 export interface Toast {
   title: string;
   body: string;
 }
 
-/** Names the tab and its project only: no chat text, and an untouched title drops its account name. */
+/** Names the tab and its project only: no chat text, and a title in the default shape drops its account. */
 export function toastFor(
   alert: Alert,
   tree: Tree,
@@ -31,10 +31,10 @@ export function toastFor(
 ): Toast | undefined {
   const found = tree.tabs.find((t) => t.id === tab);
   if (!found) return undefined;
-  const name =
-    found.title === defaultTitle(found.launch)
-      ? found.launch.label
-      : found.title;
+  // Matched by shape, not by the current name, since a saved title keeps an account's old name.
+  const name = found.title.startsWith(`${found.launch.label} · `)
+    ? found.launch.label
+    : found.title;
   const project = tree.projects.find((p) => p.id === found.projectId)?.name;
   return {
     title: project === undefined ? name : `${name} · ${project}`,
