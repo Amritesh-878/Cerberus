@@ -1,6 +1,6 @@
 [package]
 name = "cerberus"
-version = "0.1.0"
+version = "0.2.0"
 description = "A fast Windows terminal built around Claude Code"
 license = "MIT"
 edition = "2024"
