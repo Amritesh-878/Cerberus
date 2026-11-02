@@ -32,10 +32,18 @@ pub fn adopt() {
     unsafe { std::env::set_var("PATH", merge(&login, &current)) };
 }
 
+// fish quotes a list with spaces between items, so it joins `PATH` itself.
+fn script_for(shell: &Path) -> String {
+    if shell.file_name().is_some_and(|name| name == "fish") {
+        format!("printf '%s%s%s' {MARK} (string join : $PATH) {MARK}")
+    } else {
+        format!(r#"printf '%s%s%s' {MARK} "$PATH" {MARK}"#)
+    }
+}
+
 fn read_within(shell: &Path, timeout: Duration) -> Option<String> {
-    let script = format!(r#"printf '%s%s%s' {MARK} "$PATH" {MARK}"#);
     let mut child = Command::new(shell)
-        .args(["-ilc", &script])
+        .args(["-ilc", &script_for(shell)])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -45,8 +53,7 @@ fn read_within(shell: &Path, timeout: Duration) -> Option<String> {
     let mut stdout = child.stdout.take()?;
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
-        let mut out = String::new();
-        let _ = tx.send(stdout.read_to_string(&mut out).map(|_| out));
+        let _ = tx.send(read_marked(&mut stdout));
     });
     let answer = rx.recv_timeout(timeout);
     if answer.is_err()
@@ -57,6 +64,23 @@ fn read_within(shell: &Path, timeout: Duration) -> Option<String> {
     }
     let _ = child.wait();
     parse(&answer.ok()?.ok()?).map(str::to_owned)
+}
+
+/// Stops at the second mark, since a background job from an rc file can hold the pipe open for good.
+fn read_marked(mut out: impl Read) -> std::io::Result<String> {
+    let mut seen = Vec::new();
+    let mut chunk = [0; 4096];
+    loop {
+        let n = out.read(&mut chunk)?;
+        if n == 0 {
+            break;
+        }
+        seen.extend_from_slice(&chunk[..n]);
+        if String::from_utf8_lossy(&seen).matches(MARK).count() >= 2 {
+            break;
+        }
+    }
+    Ok(String::from_utf8_lossy(&seen).into_owned())
 }
 
 fn parse(output: &str) -> Option<&str> {
@@ -92,6 +116,39 @@ mod tests {
         assert_eq!(parse("no marks"), None);
     }
 
+    /// Hands out its chunks and fails the test if read again, as a pipe nobody closes would block.
+    struct NeverCloses(std::collections::VecDeque<&'static [u8]>);
+
+    impl Read for NeverCloses {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            let chunk = self.0.pop_front().expect("read past the second mark");
+            buf[..chunk.len()].copy_from_slice(chunk);
+            Ok(chunk.len())
+        }
+    }
+
+    #[test]
+    fn reading_stops_at_the_second_mark_while_the_pipe_stays_open() {
+        let chunks = [
+            b"rc noise
+__CERBERUS_"
+                .as_slice(),
+            b"PATH__/usr/bin:/bin__CERB".as_slice(),
+            b"ERUS_PATH__".as_slice(),
+        ];
+
+        let read = read_marked(NeverCloses(chunks.into())).unwrap();
+
+        assert_eq!(parse(&read), Some("/usr/bin:/bin"));
+    }
+
+    #[test]
+    fn fish_joins_its_path_list_and_other_shells_print_path() {
+        assert!(script_for(Path::new("/opt/homebrew/bin/fish")).contains("(string join : $PATH)"));
+        assert!(script_for(Path::new("/bin/zsh")).contains(r#""$PATH""#));
+        assert!(script_for(Path::new("/bin/bash")).contains(r#""$PATH""#));
+    }
+
     #[test]
     fn the_login_dirs_come_first_and_none_repeat() {
         let merged = merge(
@@ -110,6 +167,32 @@ mod tests {
         let path = read_within(Path::new("/bin/sh"), Duration::from_secs(20)).unwrap();
 
         assert!(path.split(':').any(|dir| dir == "/usr/bin"), "{path}");
+    }
+
+    #[test]
+    fn a_background_job_holding_the_pipe_does_not_hold_up_the_answer() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = crate::accounts::testdir::TestDir::new();
+        let shell = dir.path().join("rc-job");
+        let script = format!(
+            "#!/bin/sh
+sleep 30 &
+printf '{MARK}/usr/bin{MARK}'
+"
+        );
+        std::fs::write(&shell, script).unwrap();
+        std::fs::set_permissions(&shell, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let started = Instant::now();
+
+        assert_eq!(
+            read_within(&shell, Duration::from_secs(5)).as_deref(),
+            Some("/usr/bin")
+        );
+        assert!(
+            started.elapsed() < Duration::from_secs(3),
+            "{:?}",
+            started.elapsed()
+        );
     }
 
     #[test]
