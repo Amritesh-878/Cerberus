@@ -2,6 +2,8 @@ mod accounts;
 mod commands;
 mod handover;
 mod job;
+#[cfg(unix)]
+mod login_path;
 mod open;
 mod programs;
 mod pty;
@@ -22,6 +24,8 @@ pub use crate::open::console;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(unix)]
+    login_path::adopt();
     let context = tauri::generate_context!();
     let command = open::from_command_line(&context.config().identifier);
     // Joined before anything starts, so the webview and every tab are in the job too.
