@@ -50,8 +50,8 @@ The first launch opens a short walkthrough:
 3. **New tabs.** Which account new tabs use.
 
 **Accounts** (the person button at the bottom of the sidebar) adds, renames or removes accounts,
-and picks the account new tabs use, the shell the **Shell** button opens, and the folder where
-**New project** opens its folder picker. Removing an account only forgets it; its folder stays
+and picks the account new tabs use, the shell the **Shell** button opens, the folder where
+**New project** opens its folder picker, and whether alerts are on. Removing an account only forgets it; its folder stays
 on disk.
 Accounts and settings live in `profiles.json` in the app's config folder
 (`%APPDATA%\com.cerberus.terminal`). If that file cannot be read, the app offers to start fresh
@@ -167,6 +167,15 @@ Each Claude Code tab's row shows what its chat is doing:
 The state comes from Claude Code's `sessions` file. The limit comes from the last record of the
 chat's transcript, of which Cerberus reads only the error type and the reset time; it never
 shows, logs or stores anything else from a transcript.
+
+#### Alerts
+
+When a chat finishes a turn, hits a usage limit or ends by itself while you are not looking at
+it (its tab is hidden, or the Cerberus window is not focused), Windows shows a notification such
+as "planner · alpha" with "Finished" or "Hit its limit, resets 6:40pm". Clicking it, while it is
+still on screen, brings Cerberus forward on that tab. A tab gets at most one per turn, and a
+notification names only the tab and its project: never chat text or an account. Alerts are on
+by default; turn them off in **Accounts**.
 
 ### Continuing a chat on another account
 

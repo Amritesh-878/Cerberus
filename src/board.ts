@@ -21,6 +21,37 @@ export type Mark =
   | { kind: "limited"; resetsAt: number | null }
   | { kind: "done" };
 
+/** A report about a tab: a live state, or its chat ending by itself. */
+export type Change = LiveState | { state: "ended" };
+
+export type Alert =
+  | { kind: "finished" }
+  | { kind: "limited"; resetsAt: number | null }
+  | { kind: "ended" };
+
+export interface View {
+  shown: TabId | undefined;
+  focused: boolean;
+  alertsOn: boolean;
+}
+
+/** Only the end of a turn alerts, so a tab gets at most one per turn and a restored tab none. */
+export function alertFor(
+  board: Board,
+  tab: TabId,
+  change: Change,
+  view: View,
+): Alert | undefined {
+  const seen = view.focused && view.shown === tab;
+  if (!view.alertsOn || seen) return undefined;
+  if (board.get(tab)?.life.state !== "working") return undefined;
+  if (change.state === "idle") return { kind: "finished" };
+  if (change.state === "limited") {
+    return { kind: "limited", resetsAt: change.resetsAt };
+  }
+  return change.state === "ended" ? { kind: "ended" } : undefined;
+}
+
 export function reported(
   board: Board,
   tab: TabId,

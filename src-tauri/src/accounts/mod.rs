@@ -58,7 +58,7 @@ pub struct Account {
     pub config_dir: PathBuf,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Profiles {
     pub accounts: Vec<Account>,
@@ -69,12 +69,35 @@ pub struct Profiles {
     /// In pixels; `None` keeps the app's default.
     #[serde(default)]
     pub sidebar_width: Option<u32>,
+    /// Desktop notifications when a chat in another tab needs you.
+    #[serde(default = "on")]
+    pub alerts: bool,
     // Raised on every save, so the webview can drop a reply that a newer one already replaced.
     #[serde(default)]
     pub revision: u64,
     // Ids are never reused, so something saved under a removed account cannot land on a new one.
     #[serde(skip)]
     next_id: AccountId,
+}
+
+// Written out because alerts start on, on a first run as in a file saved before the setting existed.
+impl Default for Profiles {
+    fn default() -> Self {
+        Self {
+            accounts: Vec::new(),
+            default_account: None,
+            shell: None,
+            start_folder: None,
+            sidebar_width: None,
+            alerts: true,
+            revision: 0,
+            next_id: 0,
+        }
+    }
+}
+
+fn on() -> bool {
+    true
 }
 
 impl Profiles {
@@ -225,6 +248,13 @@ impl Accounts {
         let width = width.clamp(*SIDEBAR_WIDTHS.start(), *SIDEBAR_WIDTHS.end());
         self.update(|p| {
             p.sidebar_width = Some(width);
+            Ok(())
+        })
+    }
+
+    pub fn set_alerts(&self, on: bool) -> Result<Profiles, AccountsError> {
+        self.update(|p| {
+            p.alerts = on;
             Ok(())
         })
     }
@@ -544,6 +574,20 @@ mod tests {
             Some(560)
         );
         assert_eq!(accounts.load().unwrap().sidebar_width, Some(560));
+    }
+
+    #[test]
+    fn alerts_start_on_and_the_choice_is_saved_in_the_profiles_file() {
+        let home = TestDir::new();
+        let app = home.path().join("app");
+        let accounts = Accounts::new(&app, home.path().to_path_buf());
+
+        assert!(accounts.load().unwrap().alerts);
+        assert!(!accounts.set_alerts(false).unwrap().alerts);
+        assert!(!accounts.load().unwrap().alerts);
+        let saved = fs::read_to_string(app.join("profiles.json")).unwrap();
+        assert!(saved.contains(r#""alerts": false"#));
+        assert!(accounts.set_alerts(true).unwrap().alerts);
     }
 
     #[test]

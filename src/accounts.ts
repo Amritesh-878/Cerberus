@@ -18,6 +18,8 @@ export interface Profiles {
   startFolder: string | null;
   /** In pixels; `null` keeps the default. */
   sidebarWidth: number | null;
+  /** Desktop notifications when a chat in another tab needs you. */
+  alerts: boolean;
   revision: number;
 }
 
@@ -77,6 +79,10 @@ export function setStartFolder(folder: string | null): Promise<Profiles> {
 
 export function setSidebarWidth(width: number): Promise<Profiles> {
   return invoke<Profiles>("set_sidebar_width", { width });
+}
+
+export function setAlerts(on: boolean): Promise<Profiles> {
+  return invoke<Profiles>("set_alerts", { on });
 }
 
 export function setShell(shell: string): Promise<Profiles> {

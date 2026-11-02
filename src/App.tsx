@@ -39,6 +39,7 @@ import {
 import { AppIcon, CloseIcon, MenuIcon, PanelIcon } from "./icons";
 import { KEY_HELP, shortcutFor } from "./keys";
 import { type Launch, NewTab } from "./NewTab";
+import { createNotifier } from "./notify";
 import { followOpenRequests } from "./open";
 import { listPrograms } from "./pty";
 import {
@@ -284,6 +285,16 @@ export function App() {
     showPage(undefined);
     setDrawer(false);
   };
+  const notify = createNotifier({
+    tree,
+    board,
+    shown,
+    alertsOn: () => profiles()?.alerts ?? true,
+    open: (id) => {
+      setOpening(undefined);
+      select(id);
+    },
+  });
 
   // The account each moving tab's chat is going to, shown on its row and pane until it restarts.
   const [moving, setMoving] = createSignal<ReadonlyMap<TabId, string>>(
@@ -670,11 +681,15 @@ export function App() {
                               pastesImages={tab().launch.pastesImages}
                               input={tab().launch.input}
                               active={shown() === id}
-                              onState={(state) =>
-                                setBoard((b) => reported(b, id, state, shown()))
-                              }
+                              onState={(state) => {
+                                notify(id, state);
+                                setBoard((b) =>
+                                  reported(b, id, state, shown()),
+                                );
+                              }}
                               onExit={() => setBoard((b) => exited(b, id))}
                               onEnded={() => {
+                                notify(id, { state: "ended" });
                                 markEnded(id, true);
                                 setBoard((b) => cleared(b, id));
                               }}

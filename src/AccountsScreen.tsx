@@ -5,6 +5,7 @@ import {
   pickFolder,
   preselectedAccount,
   type Profiles,
+  setAlerts,
   setDefaultAccount,
   setShell,
   setStartFolder,
@@ -47,6 +48,8 @@ export function AccountsScreen(props: {
           onProfiles={props.onProfiles}
         />
       </section>
+      <h3>Alerts</h3>
+      <AlertsSetting profiles={props.profiles} onProfiles={props.onProfiles} />
       <nav class="step-nav">
         <button
           type="button"
@@ -195,6 +198,42 @@ function StartFolderSetting(props: {
           Clear
         </button>
       </Show>
+      <Show when={error()}>
+        <p class="error">{error()}</p>
+      </Show>
+    </div>
+  );
+}
+
+function AlertsSetting(props: {
+  profiles: Profiles;
+  onProfiles: (profiles: Profiles) => void;
+}) {
+  const [error, setError] = createSignal<string>();
+
+  return (
+    <div class="alerts-setting">
+      <label>
+        <input
+          type="checkbox"
+          checked={props.profiles.alerts}
+          onChange={(event) => {
+            const box = event.currentTarget;
+            setAlerts(box.checked)
+              .then((profiles) => {
+                setError(undefined);
+                props.onProfiles(profiles);
+              })
+              .catch((e: unknown) => {
+                // The saved choice did not change, so the box goes back to it.
+                box.checked = props.profiles.alerts;
+                setError(String(e));
+              });
+          }}
+        />
+        Notify me when a chat in a tab I'm not looking at finishes, hits its
+        limit or ends
+      </label>
       <Show when={error()}>
         <p class="error">{error()}</p>
       </Show>

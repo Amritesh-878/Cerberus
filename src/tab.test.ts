@@ -86,6 +86,7 @@ const PROFILES: Profiles = {
   shell: null,
   startFolder: null,
   sidebarWidth: null,
+  alerts: true,
   revision: 0,
 };
 

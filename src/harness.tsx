@@ -1,4 +1,4 @@
-import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
+import { clearMocks, mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import { render } from "solid-js/web";
 
 import type { Profiles } from "./accounts";
@@ -41,6 +41,7 @@ export const EMPTY: Profiles = {
   shell: null,
   startFolder: null,
   sidebarWidth: null,
+  alerts: true,
   revision: 0,
 };
 
@@ -53,6 +54,7 @@ export const SAVED: Profiles = {
   shell: null,
   startFolder: null,
   sidebarWidth: null,
+  alerts: true,
   revision: 0,
 };
 
@@ -76,6 +78,8 @@ export async function renderApp(
           return [];
         case "account_status":
           return { state: "loggedIn", summary: "user@example.com · Pro" };
+        case "plugin:window|is_focused":
+          return true;
         case "tree_load":
           return {
             tree: { projects: [], tabs: [], nextId: 1 },
@@ -87,6 +91,7 @@ export async function renderApp(
     },
     { shouldMockEvents: true },
   );
+  mockWindows("main");
   const root = document.createElement("div");
   document.body.append(root);
   dispose = render(() => <App />, root);
@@ -155,4 +160,44 @@ export function press(key: string, mods: KeyboardEventInit = {}): void {
 export function field(args: unknown, key: string): unknown {
   if (typeof args !== "object" || args === null) return undefined;
   return Object.entries(args).find(([k]) => k === key)?.[1];
+}
+
+export function row(root: HTMLElement, title: string): HTMLElement {
+  const found = [...root.querySelectorAll<HTMLElement>(".tab-row")].find(
+    (r) => r.querySelector(".tab-title")?.textContent === title,
+  );
+  if (!found) throw new Error(`no ${title} row`);
+  return found;
+}
+
+export async function open(root: HTMLElement, title: string): Promise<void> {
+  row(root, title).querySelector<HTMLButtonElement>(".tab-select")?.click();
+  await settle();
+}
+
+// The mocked core delivers channel messages through the callback the channel registered.
+interface MockInternals {
+  runCallback: (id: number, data: unknown) => void;
+}
+
+const sentCount = new Map<number, number>();
+
+/** Sends `messages` on the channel the `nth` spawn was given, as the core would. */
+export function emit(
+  spawned: unknown[],
+  nth: number,
+  ...messages: unknown[]
+): void {
+  const channel = field(spawned[nth], "events") as { id: number };
+  const internals = (
+    window as unknown as { __TAURI_INTERNALS__: MockInternals }
+  ).__TAURI_INTERNALS__;
+  const sent = (sentCount.get(channel.id) ?? 0) + messages.length;
+  messages.forEach((message, i) => {
+    internals.runCallback(channel.id, {
+      index: sent - messages.length + i,
+      message,
+    });
+  });
+  sentCount.set(channel.id, sent);
 }

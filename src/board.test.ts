@@ -1,7 +1,9 @@
 import { expect, test } from "vitest";
 
 import {
+  alertFor,
   type Board,
+  type Change,
   cleared,
   exited,
   markOf,
@@ -121,4 +123,75 @@ test("a stopped tab's state is forgotten", () => {
 
   expect(markOf(board, 1)).toBeUndefined();
   expect(cleared(board, 1)).toBe(board);
+});
+
+const AWAY = { shown: 2, focused: true, alertsOn: true };
+const LIMIT = { state: "limited", resetsAt: 1_800_000_000 } as const;
+
+// Feeds each change to the rule and then to the board, as the app does, and keeps what alerted.
+function alertsOver(changes: Change[], view = AWAY) {
+  let board: Board = EMPTY;
+  const alerts = [];
+  for (const change of changes) {
+    alerts.push(alertFor(board, 1, change, view));
+    board =
+      change.state === "ended"
+        ? cleared(board, 1)
+        : reported(board, 1, change, view.shown);
+  }
+  return alerts.filter((a) => a !== undefined);
+}
+
+test("a turn that ends in a hidden tab alerts once", () => {
+  expect(alertsOver([WORKING, IDLE, IDLE])).toEqual([{ kind: "finished" }]);
+});
+
+test("a turn that ends in the shown tab alerts only while the window is unfocused", () => {
+  const looking = { shown: 1, focused: true, alertsOn: true };
+  expect(alertsOver([WORKING, IDLE], looking)).toEqual([]);
+
+  expect(alertsOver([WORKING, IDLE], { ...looking, focused: false })).toEqual([
+    { kind: "finished" },
+  ]);
+});
+
+test("a hidden tab alerts in an unfocused window too", () => {
+  expect(alertsOver([WORKING, IDLE], { ...AWAY, focused: false })).toEqual([
+    { kind: "finished" },
+  ]);
+});
+
+test("nothing alerts with alerts off", () => {
+  const off = { ...AWAY, alertsOn: false };
+  expect(alertsOver([WORKING, IDLE, WORKING, LIMIT], off)).toEqual([]);
+  expect(alertsOver([WORKING, { state: "ended" }], off)).toEqual([]);
+});
+
+test("a limit alerts once with its reset time, and not again as finished", () => {
+  expect(alertsOver([WORKING, LIMIT, LIMIT, IDLE])).toEqual([
+    { kind: "limited", resetsAt: 1_800_000_000 },
+  ]);
+});
+
+test("each new turn can alert again", () => {
+  expect(alertsOver([WORKING, IDLE, WORKING, IDLE])).toEqual([
+    { kind: "finished" },
+    { kind: "finished" },
+  ]);
+});
+
+test("a chat that ends alerts only if it was working", () => {
+  expect(alertsOver([WORKING, { state: "ended" }])).toEqual([
+    { kind: "ended" },
+  ]);
+  expect(alertsOver([WORKING, IDLE, { state: "ended" }])).toEqual([
+    { kind: "finished" },
+  ]);
+  expect(alertsOver([{ state: "ended" }])).toEqual([]);
+});
+
+test("a restored tab's first report alerts nothing, a limit included", () => {
+  expect(alertsOver([IDLE])).toEqual([]);
+  expect(alertsOver([LIMIT])).toEqual([]);
+  expect(alertsOver([WORKING, WORKING])).toEqual([]);
 });
