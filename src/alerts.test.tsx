@@ -313,6 +313,38 @@ test("alerts saves stay in click order after Accounts is closed and reopened", a
   expect(saved.alerts).toBe(false);
 });
 
+test("a choice still saving shows on a reopened Accounts, and its failure shows after closing", async () => {
+  let finish: (() => void) | undefined;
+  const root = await renderApp(() => SAVED, {
+    set_alerts: () =>
+      new Promise<Profiles>((_, reject) => {
+        finish = () => {
+          reject(new Error("disk full"));
+        };
+      }),
+  });
+  const box = async () => {
+    click(root, "Accounts");
+    await settle();
+    const found = root.querySelector<HTMLInputElement>(".alerts-setting input");
+    if (!found) throw new Error("no alerts box");
+    return found;
+  };
+
+  (await box()).click();
+  click(root, "Done");
+  await settle();
+  expect((await box()).checked).toBe(false);
+
+  click(root, "Done");
+  finish?.();
+  await settle();
+  expect(root.querySelector(".save-error")?.textContent).toBe(
+    "Alerts setting not saved",
+  );
+  expect((await box()).checked).toBe(true);
+});
+
 test("the accounts screen turns alerts off and keeps the box in step on a failed save", async () => {
   let fail = false;
   const saves: unknown[] = [];
@@ -341,7 +373,10 @@ test("the accounts screen turns alerts off and keeps the box in step on a failed
   await settle();
   expect(saves).toEqual([false, true]);
   expect(box.checked).toBe(false);
-  expect(root.querySelector(".alerts-setting .error")?.textContent).toContain(
+  expect(root.querySelector(".save-error")?.textContent).toBe(
+    "Alerts setting not saved",
+  );
+  expect(root.querySelector(".save-error")?.getAttribute("title")).toContain(
     "disk full",
   );
 });

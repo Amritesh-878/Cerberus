@@ -5,7 +5,6 @@ import {
   pickFolder,
   preselectedAccount,
   type Profiles,
-  setAlerts,
   setDefaultAccount,
   setShell,
   setStartFolder,
@@ -18,6 +17,8 @@ export function AccountsScreen(props: {
   profiles: Profiles;
   programs: ProgramChoice[];
   statuses: Statuses;
+  alerts: boolean;
+  onAlerts: (on: boolean) => void;
   onProfiles: (profiles: Profiles) => void;
   onOpen: (tab: Tab) => void;
   onClose: () => void;
@@ -49,7 +50,19 @@ export function AccountsScreen(props: {
         />
       </section>
       <h3>Alerts</h3>
-      <AlertsSetting profiles={props.profiles} onProfiles={props.onProfiles} />
+      <div class="alerts-setting">
+        <label>
+          <input
+            type="checkbox"
+            checked={props.alerts}
+            onChange={(event) => {
+              props.onAlerts(event.currentTarget.checked);
+            }}
+          />
+          Notify me when a chat in a tab I'm not looking at finishes, hits its
+          limit or ends
+        </label>
+      </div>
       <nav class="step-nav">
         <button
           type="button"
@@ -198,51 +211,6 @@ function StartFolderSetting(props: {
           Clear
         </button>
       </Show>
-      <Show when={error()}>
-        <p class="error">{error()}</p>
-      </Show>
-    </div>
-  );
-}
-
-function AlertsSetting(props: {
-  profiles: Profiles;
-  onProfiles: (profiles: Profiles) => void;
-}) {
-  const [error, setError] = createSignal<string>();
-  // The latest click, shown until every queued save is back, so an earlier reply cannot flip the box.
-  const [choice, setChoice] = createSignal<boolean>();
-  let unsettled = 0;
-
-  return (
-    <div class="alerts-setting">
-      <label>
-        <input
-          type="checkbox"
-          checked={choice() ?? props.profiles.alerts}
-          onChange={(event) => {
-            const on = event.currentTarget.checked;
-            setChoice(on);
-            unsettled += 1;
-            setAlerts(on)
-              .then(
-                (profiles) => {
-                  setError(undefined);
-                  props.onProfiles(profiles);
-                },
-                (e: unknown) => {
-                  setError(String(e));
-                },
-              )
-              .finally(() => {
-                unsettled -= 1;
-                if (unsettled === 0) setChoice(undefined);
-              });
-          }}
-        />
-        Notify me when a chat in a tab I'm not looking at finishes, hits its
-        limit or ends
-      </label>
       <Show when={error()}>
         <p class="error">{error()}</p>
       </Show>

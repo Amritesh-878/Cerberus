@@ -25,6 +25,7 @@ import {
   statusText,
 } from "./accounts";
 import { AccountsScreen } from "./AccountsScreen";
+import { createAlertsSetting } from "./alerting";
 import { continueOnAccount } from "./carry";
 import {
   type Board,
@@ -105,6 +106,7 @@ export function App() {
     setLoadError(String(error));
   };
   loadProfiles().then(loaded, fail);
+  const alertsSetting = createAlertsSetting(profiles, changed);
   const [programs, { refetch: recheckPrograms }] = createResource(listPrograms);
   // Solid types a resource error as `any`.
   const programsError = (): unknown => programs.error;
@@ -289,7 +291,7 @@ export function App() {
     tree,
     board,
     shown,
-    alertsOn: () => profiles()?.alerts ?? true,
+    alertsOn: alertsSetting.on,
     open: (id) => {
       setOpening(undefined);
       select(id);
@@ -592,6 +594,13 @@ export function App() {
                     </span>
                   )}
                 </Show>
+                <Show when={alertsSetting.error()}>
+                  {(error) => (
+                    <span class="save-error" role="status" title={error()}>
+                      Alerts setting not saved
+                    </span>
+                  )}
+                </Show>
                 <Show when={shownTab()?.launch.account}>
                   {(account) => (
                     <span
@@ -735,6 +744,8 @@ export function App() {
                           profiles={loaded()}
                           programs={programs.latest ?? []}
                           statuses={statuses}
+                          alerts={alertsSetting.on()}
+                          onAlerts={alertsSetting.save}
                           onProfiles={changed}
                           onOpen={openSetupTab}
                           onClose={() => {
