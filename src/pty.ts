@@ -16,9 +16,12 @@ export interface ProgramChoice {
   /** `null` when the program is not installed. */
   program: string | null;
   args: string[];
-  pastesImages: boolean;
+  /** Sent for a paste of only an image, so the program reads the clipboard itself. */
+  imagePasteKey: string | null;
   /** Whether the Shell button can open it. */
   isShell: boolean;
+  /** What a shell runs to install the program while it is missing. */
+  installCommand: string | null;
 }
 
 export interface Size {

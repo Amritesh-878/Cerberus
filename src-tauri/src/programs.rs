@@ -11,11 +11,24 @@ pub struct ProgramChoice {
     /// Absolute path to run, or `None` when the program is not installed.
     pub program: Option<String>,
     pub args: Vec<String>,
-    /// Whether Ctrl+V with only an image on the clipboard should send the program's image-paste key.
-    pub pastes_images: bool,
+    /// What a paste of only an image sends, so the program reads the clipboard itself; `None` pastes nothing.
+    pub image_paste_key: Option<&'static str>,
     /// Whether the Shell button can open it.
     pub is_shell: bool,
+    /// What a shell runs to install the program, shown while it is missing.
+    pub install_command: Option<&'static str>,
 }
+
+// Claude Code's image-paste key: Alt+V on Windows, Ctrl+V elsewhere.
+#[cfg(windows)]
+const CLAUDE_IMAGE_PASTE: &str = "\x1bv";
+#[cfg(not(windows))]
+const CLAUDE_IMAGE_PASTE: &str = "\x16";
+
+#[cfg(windows)]
+const CLAUDE_INSTALL: &str = "irm https://claude.ai/install.ps1 | iex";
+#[cfg(not(windows))]
+const CLAUDE_INSTALL: &str = "curl -fsSL https://claude.ai/install.sh | bash";
 
 /// The shell the Shell button opens: the saved choice when installed, else the first shell installed.
 pub fn pick_shell(choices: Vec<ProgramChoice>, saved: Option<&str>) -> Option<ProgramChoice> {
@@ -106,8 +119,9 @@ impl Finder {
             label: "Claude Code",
             program: shown(self.find("claude")),
             args: Vec::new(),
-            pastes_images: true,
+            image_paste_key: Some(CLAUDE_IMAGE_PASTE),
             is_shell: false,
+            install_command: Some(CLAUDE_INSTALL),
         };
         std::iter::once(claude).chain(self.shells()).collect()
     }
@@ -169,8 +183,9 @@ fn shell(
         label,
         program: shown(path),
         args: args.iter().map(|&a| a.to_owned()).collect(),
-        pastes_images: false,
+        image_paste_key: None,
         is_shell: true,
+        install_command: None,
     }
 }
 
@@ -312,8 +327,12 @@ mod tests {
         assert_eq!(choices[0].program, None);
         assert_eq!(choices[1].program.as_deref(), Some(r"C:\w\powershell.exe"));
         assert_eq!(choices[2].program, None);
-        let pastes_images: Vec<_> = choices.iter().map(|c| c.pastes_images).collect();
-        assert_eq!(pastes_images, [true, false, false]);
+        let paste_keys: Vec<_> = choices.iter().map(|c| c.image_paste_key).collect();
+        assert_eq!(paste_keys, [Some("\x1bv"), None, None]);
+        assert_eq!(
+            choices[0].install_command,
+            Some("irm https://claude.ai/install.ps1 | iex")
+        );
         let shells: Vec<_> = choices.iter().map(|c| c.is_shell).collect();
         assert_eq!(shells, [false, true, true]);
     }
@@ -379,6 +398,13 @@ mod tests {
             Some("/opt/homebrew/bin/fish")
         );
         assert_eq!(choices[1].args, ["-l"]);
+        assert_eq!(choices[0].image_paste_key, Some("\x16"));
+        assert_eq!(choices[1].image_paste_key, None);
+        assert!(
+            choices[0]
+                .install_command
+                .is_some_and(|c| c.contains("install.sh"))
+        );
     }
 
     #[cfg(unix)]

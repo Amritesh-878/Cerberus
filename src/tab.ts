@@ -11,7 +11,7 @@ export interface Tab {
   program: string;
   label: string;
   spec: SpawnSpec;
-  pastesImages: boolean;
+  imagePasteKey: string | null;
   account: TabAccount | null;
   /** Typed into the program once it starts, never followed by Enter. */
   input: string | null;
@@ -41,7 +41,7 @@ export function tabFor(
       cwd: options.cwd,
       account: account?.id ?? null,
     },
-    pastesImages: choice.pastesImages,
+    imagePasteKey: choice.imagePasteKey,
     account: account && { id: account.id, name: account.name },
     input: options.input ?? null,
     signIn: options.signIn ?? false,

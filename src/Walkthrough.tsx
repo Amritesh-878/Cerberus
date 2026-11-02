@@ -5,10 +5,9 @@ import { AccountsStep } from "./AccountsStep";
 import type { Profiles } from "./accounts";
 import type { ProgramChoice } from "./pty";
 import type { Statuses } from "./statuses";
-import { installed, type Tab, tabFor } from "./tab";
+import { installed, shellChoice, type Tab, tabFor } from "./tab";
 import {
   finishBlocker,
-  INSTALL_COMMAND,
   nextStep,
   previousStep,
   type Step,
@@ -42,6 +41,7 @@ export function Walkthrough(props: Props) {
       <Switch>
         <Match when={step() === "install"}>
           <InstallStep
+            profiles={props.profiles}
             programs={props.programs}
             onOpen={props.onOpen}
             onRecheck={props.onRecheckPrograms}
@@ -96,16 +96,22 @@ export function Walkthrough(props: Props) {
 }
 
 function InstallStep(props: {
+  profiles: Profiles;
   programs: ProgramChoice[];
   onOpen: (tab: Tab) => void;
   onRecheck: () => void;
 }) {
   const claude = () => installed(props.programs, "claude");
+  const command = () =>
+    props.programs.find((p) => p.id === "claude")?.installCommand ?? null;
+  const shell = () => shellChoice(props.profiles, props.programs);
   const openInstaller = () => {
-    const shell = installed(props.programs, "powershell");
+    const using = shell();
+    const input = command();
     const tab =
-      shell &&
-      tabFor(shell, { account: null, cwd: null, input: INSTALL_COMMAND });
+      using &&
+      input !== null &&
+      tabFor(using, { account: null, cwd: null, input });
     if (tab) props.onOpen(tab);
   };
 
@@ -116,17 +122,17 @@ function InstallStep(props: {
         fallback={
           <>
             <p>
-              Claude Code isn't installed yet. To install it, run this in
-              PowerShell:
+              Claude Code isn't installed yet. To install it, run this in{" "}
+              {shell()?.label ?? "a terminal"}:
             </p>
-            <pre>{INSTALL_COMMAND}</pre>
+            <pre>{command()}</pre>
             <p>
               <button
                 type="button"
-                disabled={!installed(props.programs, "powershell")}
+                disabled={shell() === undefined || command() === null}
                 onClick={openInstaller}
               >
-                Open in PowerShell
+                Open in {shell()?.label ?? "a shell"}
               </button>{" "}
               <button
                 type="button"

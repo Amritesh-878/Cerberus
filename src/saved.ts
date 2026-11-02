@@ -97,7 +97,7 @@ function launchOf(
       cwd: saved.cwd,
       account: saved.account,
     },
-    pastesImages: choice?.pastesImages ?? false,
+    imagePasteKey: choice?.imagePasteKey ?? null,
     account,
     input: null,
     signIn: false,

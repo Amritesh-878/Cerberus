@@ -56,22 +56,23 @@ function pasted(text: string, itemTypes: string[]): PastedData {
 }
 
 describe("pasteInput", () => {
-  test("an image with no text sends Alt+V to a program that pastes images", () => {
-    expect(pasteInput(pasted("", ["image/png"]), true)).toBe("v");
+  test("an image with no text sends the program's image-paste key", () => {
+    expect(pasteInput(pasted("", ["image/png"]), "\x1bv")).toBe("\x1bv");
+    expect(pasteInput(pasted("", ["image/png"]), "\x16")).toBe("\x16");
   });
 
   test.each([
     [
       "text, in a program that pastes images",
       pasted("hello", ["text/plain"]),
-      true,
+      "\x1bv",
     ],
-    ["text beside an image", pasted("hello", ["image/png"]), true],
-    ["an image in a shell", pasted("", ["image/png"]), false],
-    ["a non-image file", pasted("", ["application/pdf"]), true],
-    ["an empty clipboard", pasted("", []), true],
-  ])("leaves %s to xterm", (_name, data, pastesImages) => {
-    expect(pasteInput(data, pastesImages)).toBeUndefined();
+    ["text beside an image", pasted("hello", ["image/png"]), "\x1bv"],
+    ["an image in a shell", pasted("", ["image/png"]), null],
+    ["a non-image file", pasted("", ["application/pdf"]), "\x1bv"],
+    ["an empty clipboard", pasted("", []), "\x1bv"],
+  ])("leaves %s to xterm", (_name, data, imagePasteKey) => {
+    expect(pasteInput(data, imagePasteKey)).toBeUndefined();
   });
 });
 

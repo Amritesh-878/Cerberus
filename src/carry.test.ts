@@ -24,7 +24,7 @@ function tab(
       program,
       label: program,
       spec: { program, args: [], cwd: null, account },
-      pastesImages: false,
+      imagePasteKey: null,
       account: account === null ? null : { id: account, name: "x" },
       input: null,
       signIn: false,

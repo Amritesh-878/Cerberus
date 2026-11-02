@@ -43,7 +43,7 @@ function copySelection(term: Terminal): void {
 export function TerminalView(props: {
   tab: number;
   spec: SpawnSpec;
-  pastesImages: boolean;
+  imagePasteKey: string | null;
   input: string | null;
   active: boolean;
   onState: (state: LiveState) => void;
@@ -75,7 +75,7 @@ export function TerminalView(props: {
     // Read once: a pane keeps its tab and program spec for its whole life.
     const spec = props.spec;
     const tab = props.tab;
-    let pastesImages = props.pastesImages;
+    let imagePasteKey = props.imagePasteKey;
     let noticeTimer: ReturnType<typeof setTimeout> | undefined;
     const showNotice = (text: string, ms: number) => {
       clearTimeout(noticeTimer);
@@ -127,7 +127,7 @@ export function TerminalView(props: {
       void current.resume.then((resume) => {
         if (disposed || resume === "new") return;
         if (resume === "ended") {
-          pastesImages = false;
+          imagePasteKey = null;
           props.onEnded();
           showNotice(ENDED, MISSING_NOTICE_MS);
         } else if (resume === "resuming") {
@@ -143,7 +143,7 @@ export function TerminalView(props: {
     // Capture phase, so an image paste never reaches xterm's own text-paste handler.
     const onPaste = (event: ClipboardEvent) => {
       const input =
-        event.clipboardData && pasteInput(event.clipboardData, pastesImages);
+        event.clipboardData && pasteInput(event.clipboardData, imagePasteKey);
       if (!input) return;
       event.preventDefault();
       event.stopPropagation();

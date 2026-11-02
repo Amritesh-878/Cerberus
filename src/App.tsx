@@ -667,7 +667,7 @@ export function App() {
                             <TerminalView
                               tab={id}
                               spec={tab().launch.spec}
-                              pastesImages={tab().launch.pastesImages}
+                              imagePasteKey={tab().launch.imagePasteKey}
                               input={tab().launch.input}
                               active={shown() === id}
                               onState={(state) =>

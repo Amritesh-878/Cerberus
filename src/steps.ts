@@ -10,8 +10,6 @@ export const STEP_TITLES: Record<Step, string> = {
   defaults: "New tabs",
 };
 
-export const INSTALL_COMMAND = "irm https://claude.ai/install.ps1 | iex";
-
 export function nextStep(step: Step): Step | undefined {
   return STEPS[STEPS.indexOf(step) + 1];
 }

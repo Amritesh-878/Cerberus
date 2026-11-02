@@ -29,6 +29,22 @@ test("a first run with no accounts opens the walkthrough", async () => {
   expect(root.textContent).toContain("Claude Code isn't installed yet");
 });
 
+test("the install step shows the command and shell the core reports", async () => {
+  const root = await renderApp(() => EMPTY, {
+    list_programs: () => [
+      { ...CHOICES[0], program: null, installCommand: "curl -fsSL x | bash" },
+      { ...CHOICES[1], id: "zsh", label: "zsh", program: "/bin/zsh" },
+    ],
+  });
+
+  expect(root.textContent).toContain("run this in zsh:");
+  expect(root.querySelector("pre")?.textContent).toBe("curl -fsSL x | bash");
+  const open = Array.from(root.querySelectorAll("button")).find(
+    (b) => b.textContent === "Open in zsh",
+  );
+  expect(open?.disabled).toBe(false);
+});
+
 test("the walkthrough's last step asks only which account new tabs use", async () => {
   const root = await renderApp(() => EMPTY);
 
