@@ -120,7 +120,7 @@ fn linked(home: &Path, login_path: Option<&str>, shell: Option<&str>) -> Linked 
             "{done} Cerberus couldn't read your login shell's PATH. If a new terminal says `cerberus` is not found,"
         ),
     };
-    match startup_line(shell) {
+    match startup_line(home, shell) {
         Some((file, line)) => Linked {
             message: format!("{missing} add this line to {file}, then open a new terminal:"),
             path_line: Some(line),
@@ -133,22 +133,34 @@ fn linked(home: &Path, login_path: Option<&str>, shell: Option<&str>) -> Linked 
 }
 
 /// The file and line for shells whose syntax is known; another shell gets no line it might not parse.
-fn startup_line(shell: Option<&str>) -> Option<(&'static str, String)> {
+fn startup_line(home: &Path, shell: Option<&str>) -> Option<(&'static str, String)> {
     let name = shell.and_then(|s| s.rsplit('/').next()).unwrap_or("zsh");
     let export = || format!(r#"export PATH="$HOME/{LINK_DIR}:$PATH""#);
     let setenv = || format!(r#"setenv PATH "$HOME/{LINK_DIR}:$PATH""#);
     match name {
         "zsh" => Some(("~/.zshrc", export())),
-        "bash" => Some(("~/.bash_profile", export())),
+        "bash" => Some((
+            read_first(home, &["~/.bash_profile", "~/.bash_login", "~/.profile"]),
+            export(),
+        )),
         "sh" | "dash" | "ksh" => Some(("~/.profile", export())),
         "fish" => Some((
             "~/.config/fish/config.fish",
             format!("fish_add_path ~/{LINK_DIR}"),
         )),
-        "tcsh" => Some(("~/.tcshrc", setenv())),
+        "tcsh" => Some((read_first(home, &["~/.tcshrc", "~/.cshrc"]), setenv())),
         "csh" => Some(("~/.cshrc", setenv())),
         _ => None,
     }
+}
+
+// A login bash or tcsh reads only the first of its files that exists, so a new earlier one would hide the user's own.
+fn read_first(home: &Path, files: &[&'static str]) -> &'static str {
+    files
+        .iter()
+        .copied()
+        .find(|file| home.join(file.trim_start_matches("~/")).exists())
+        .unwrap_or(files[0])
 }
 
 #[cfg(test)]
@@ -218,6 +230,55 @@ mod tests {
                 .message
                 .contains("~/.profile")
         );
+    }
+
+    #[test]
+    fn bash_and_tcsh_name_the_first_startup_file_the_home_already_has() {
+        let cases: [(&str, &[&str], &str); 7] = [
+            ("/bin/bash", &[], "~/.bash_profile"),
+            ("/bin/bash", &[".profile"], "~/.profile"),
+            ("/bin/bash", &[".bash_login", ".profile"], "~/.bash_login"),
+            (
+                "/bin/bash",
+                &[".bash_profile", ".profile"],
+                "~/.bash_profile",
+            ),
+            ("/bin/tcsh", &[], "~/.tcshrc"),
+            ("/bin/tcsh", &[".cshrc"], "~/.cshrc"),
+            ("/bin/tcsh", &[".tcshrc", ".cshrc"], "~/.tcshrc"),
+        ];
+        for (shell, files, expected) in cases {
+            let home = TestDir::new();
+            for file in files {
+                fs::write(home.path().join(file), "").unwrap();
+            }
+
+            let advice = linked(home.path(), Some("/usr/bin"), Some(shell));
+
+            assert!(
+                advice
+                    .message
+                    .contains(&format!("add this line to {expected},")),
+                "{shell} with {files:?}: {}",
+                advice.message
+            );
+        }
+    }
+
+    #[test]
+    fn zsh_fish_and_sh_keep_their_one_file_whatever_the_home_has() {
+        let home = TestDir::new();
+        fs::write(home.path().join(".profile"), "").unwrap();
+        fs::write(home.path().join(".bash_profile"), "").unwrap();
+        let file = |shell| {
+            startup_line(home.path(), Some(shell))
+                .map(|(file, _)| file)
+                .unwrap()
+        };
+
+        assert_eq!(file("/bin/zsh"), "~/.zshrc");
+        assert_eq!(file("/opt/homebrew/bin/fish"), "~/.config/fish/config.fish");
+        assert_eq!(file("/bin/sh"), "~/.profile");
     }
 
     #[test]
