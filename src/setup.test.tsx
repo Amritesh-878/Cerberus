@@ -157,3 +157,41 @@ test("a failed save keeps setup open and says why", async () => {
     "Setup progress not saved: Error: disk full",
   );
 });
+
+function sheetOpen(root: HTMLElement): boolean {
+  return root.querySelector(".sheet") !== null;
+}
+
+function sheetChord(): void {
+  press("?", { ctrlKey: true, shiftKey: true, code: "Slash" });
+}
+
+test("the shortcuts chord opens the sheet, and Escape or the chord again closes it", async () => {
+  const root = await renderApp(() => SAVED);
+
+  sheetChord();
+  await settle();
+  expect(root.querySelector(".sheet h2")?.textContent).toBe(
+    "Keyboard shortcuts",
+  );
+  press("Escape");
+  await settle();
+  expect(sheetOpen(root)).toBe(false);
+  sheetChord();
+  await settle();
+  sheetChord();
+  await settle();
+
+  expect(sheetOpen(root)).toBe(false);
+});
+
+test("the shortcuts sheet opens during setup too, without leaving it", async () => {
+  const setup = midSetup();
+  const root = await renderApp(setup.profiles, setup.core);
+
+  sheetChord();
+  await settle();
+
+  expect(sheetOpen(root)).toBe(true);
+  expect(heading(root)).toBe("Set up Cerberus");
+});

@@ -1,3 +1,4 @@
+import { listen } from "@tauri-apps/api/event";
 import {
   batch,
   createEffect,
@@ -59,6 +60,7 @@ import { Sidebar } from "./Sidebar";
 import { createStatuses } from "./statuses";
 import { setupGaps, type Step, stepFor } from "./steps";
 import { type Tab, tabFor } from "./tab";
+import { ShortcutsSheet } from "./ShortcutsSheet";
 import { SidebarEdge } from "./SidebarEdge";
 import { menuAccount, type MenuPlace, TabMenu } from "./TabMenu";
 import { TerminalView } from "./Terminal";
@@ -138,6 +140,7 @@ export function App() {
   const [active, setActive] = createSignal<TabId>();
   const [opening, setOpening] = createSignal<Opening>();
   const [pillMenu, setPillMenu] = createSignal<MenuPlace>();
+  const [sheet, setSheet] = createSignal(false);
   // Held while dragging, so the edge follows the pointer before the saved value comes back.
   const [dragged, setDragged] = createSignal<number>();
   const sidebarWidth = () =>
@@ -503,6 +506,10 @@ export function App() {
       if (!shortcut || profiles() === undefined) return;
       event.preventDefault();
       event.stopPropagation();
+      if (shortcut === "shortcuts") {
+        setSheet((open) => !open);
+        return;
+      }
       if (inSetup() && shortcut !== "closeTab") return;
       if (shortcut === "nextTab" || shortcut === "previousTab") {
         const id = stepTab(tree(), shown(), shortcut === "nextTab" ? 1 : -1);
@@ -520,8 +527,13 @@ export function App() {
       }
     };
     window.addEventListener("keydown", onKey, true);
+    // The macOS Help menu item sends this, since its Cmd+/ never reaches the page.
+    const fromMenu = listen("show-shortcuts", () => setSheet((open) => !open));
     onCleanup(() => {
       window.removeEventListener("keydown", onKey, true);
+      void fromMenu.then((stop) => {
+        stop();
+      });
     });
   });
 
@@ -840,6 +852,9 @@ export function App() {
                 </Show>
               </div>
             </section>
+            <Show when={sheet()}>
+              <ShortcutsSheet onClose={() => setSheet(false)} />
+            </Show>
             <Show when={pillMenu() && shownTab()}>
               {(tab) => (
                 <TabMenu

@@ -53,7 +53,12 @@ export function pasteInput(
 }
 
 export type Shortcut =
-  "nextTab" | "previousTab" | "newTab" | "closeTab" | "nextWaiting";
+  | "nextTab"
+  | "previousTab"
+  | "newTab"
+  | "closeTab"
+  | "nextWaiting"
+  | "shortcuts";
 
 type Chords = readonly (readonly [Shortcut, string])[];
 
@@ -64,6 +69,8 @@ const OTHER_CHORDS: Chords = [
   ["newTab", "Ctrl+Shift+T"],
   ["nextWaiting", "Ctrl+Shift+A"],
   ["closeTab", "Ctrl+Shift+W"],
+  // Ctrl+/ stays with the terminal, where editors and shells use it.
+  ["shortcuts", "Ctrl+Shift+/"],
 ];
 
 // xterm never encodes Cmd keys on macOS, so Terminal.app's keys take nothing from Claude Code.
@@ -75,6 +82,7 @@ const MAC_CHORDS: Chords = [
   ["newTab", "Cmd+T"],
   ["nextWaiting", "Cmd+Shift+A"],
   ["closeTab", "Cmd+W"],
+  ["shortcuts", "Cmd+/"],
 ];
 
 function chordsFor(platform: Platform): Chords {
@@ -84,10 +92,11 @@ function chordsFor(platform: Platform): Chords {
 /** Renames the sidebar row or project that has focus. */
 export const RENAME_KEY = "F2";
 
-// Shift turns `]` into `}` on a US layout, so brackets match by physical key.
+// Shift turns `]` into `}` and `/` into `?` on a US layout, so these match by physical key.
 const CODE_KEYS: Readonly<Record<string, string>> = {
   BracketLeft: "[",
   BracketRight: "]",
+  Slash: "/",
 };
 
 function matches(chord: KeyChord, keys: string): boolean {
@@ -115,15 +124,19 @@ export type TerminalAction =
   { kind: "send"; bytes: string } | { kind: "clear" } | { kind: "selectAll" };
 
 // Terminal.app's natural text editing, with the bytes Ghostty sends by default on macOS.
-const MAC_TERMINAL_KEYS: readonly (readonly [string, TerminalAction])[] = [
-  ["Cmd+ArrowLeft", { kind: "send", bytes: "\x01" }],
-  ["Cmd+ArrowRight", { kind: "send", bytes: "\x05" }],
-  ["Cmd+Backspace", { kind: "send", bytes: "\x15" }],
-  ["Option+ArrowLeft", { kind: "send", bytes: "\x1bb" }],
-  ["Option+ArrowRight", { kind: "send", bytes: "\x1bf" }],
-  ["Option+Backspace", { kind: "send", bytes: "\x1b\x7f" }],
-  ["Cmd+K", { kind: "clear" }],
-  ["Cmd+A", { kind: "selectAll" }],
+const MAC_TERMINAL_KEYS: readonly (readonly [
+  string,
+  TerminalAction,
+  string,
+])[] = [
+  ["Cmd+ArrowLeft", { kind: "send", bytes: "\x01" }, "Start of line"],
+  ["Cmd+ArrowRight", { kind: "send", bytes: "\x05" }, "End of line"],
+  ["Cmd+Backspace", { kind: "send", bytes: "\x15" }, "Delete to start of line"],
+  ["Option+ArrowLeft", { kind: "send", bytes: "\x1bb" }, "Word back"],
+  ["Option+ArrowRight", { kind: "send", bytes: "\x1bf" }, "Word forward"],
+  ["Option+Backspace", { kind: "send", bytes: "\x1b\x7f" }, "Delete word back"],
+  ["Cmd+K", { kind: "clear" }, "Clear the screen"],
+  ["Cmd+A", { kind: "selectAll" }, "Select all"],
 ];
 
 /** Only macOS remaps keys; Windows keys reach xterm unchanged. */
@@ -165,5 +178,43 @@ export function keyHelp(
     { keys: keys("nextWaiting"), does: "Next chat waiting on you" },
     { keys: RENAME_KEY, does: "Rename" },
     { keys: keys("closeTab"), does: "Close tab" },
+    { keys: keys("shortcuts"), does: "Keyboard shortcuts" },
   ];
+}
+
+export interface SheetSection {
+  title: string;
+  rows: readonly { does: string; keys: readonly string[] }[];
+}
+
+const SHEET_ROWS: readonly (readonly [Shortcut, string])[] = [
+  ["nextTab", "Next tab"],
+  ["previousTab", "Previous tab"],
+  ["newTab", "New tab"],
+  ["closeTab", "Close tab"],
+  ["nextWaiting", "Next chat waiting on you"],
+  ["shortcuts", "Show or hide this sheet"],
+];
+
+/** Every key Cerberus answers to, alternates included, read from the tables the handlers use. */
+export function shortcutSheet(
+  platform: Platform = PLATFORM,
+): readonly SheetSection[] {
+  const chords = chordsFor(platform);
+  const app: SheetSection = {
+    title: "Tabs",
+    rows: [
+      ...SHEET_ROWS.map(([shortcut, does]) => ({
+        does,
+        keys: chords.filter(([s]) => s === shortcut).map(([, keys]) => keys),
+      })),
+      { does: "Rename the focused tab or project", keys: [RENAME_KEY] },
+    ],
+  };
+  if (platform !== "mac") return [app];
+  const terminal: SheetSection = {
+    title: "Terminal",
+    rows: MAC_TERMINAL_KEYS.map(([keys, , does]) => ({ does, keys: [keys] })),
+  };
+  return [app, terminal];
 }

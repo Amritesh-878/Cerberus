@@ -3,8 +3,18 @@ use tauri::{Builder, Runtime};
 /// Cmd+C, Cmd+V and Cmd+Q reach a macOS webview only through a menu, and Tauri's own binds Cmd+W to Close Window.
 #[cfg(target_os = "macos")]
 pub fn with_app_menu<R: Runtime>(builder: Builder<R>) -> Builder<R> {
-    builder.menu(app_menu)
+    builder.menu(app_menu).on_menu_event(|app, event| {
+        if event.id() == SHORTCUTS {
+            use tauri::Emitter;
+            // Fails only once the window is gone, and then there is no sheet to show.
+            let _ = app.emit("show-shortcuts", ());
+        }
+    })
 }
+
+/// The menu item's id; its Cmd+/ is the same chord the webview answers to elsewhere.
+#[cfg(target_os = "macos")]
+const SHORTCUTS: &str = "shortcuts";
 
 #[cfg(not(target_os = "macos"))]
 pub fn with_app_menu<R: Runtime>(builder: Builder<R>) -> Builder<R> {
@@ -13,7 +23,7 @@ pub fn with_app_menu<R: Runtime>(builder: Builder<R>) -> Builder<R> {
 
 #[cfg(target_os = "macos")]
 fn app_menu<R: Runtime>(app: &tauri::AppHandle<R>) -> tauri::Result<tauri::menu::Menu<R>> {
-    use tauri::menu::{Menu, PredefinedMenuItem as Item, Submenu};
+    use tauri::menu::{Menu, MenuItem, PredefinedMenuItem as Item, Submenu};
     let name = app.package_info().name.clone();
     let app_items = Submenu::with_items(
         app,
@@ -48,5 +58,7 @@ fn app_menu<R: Runtime>(app: &tauri::AppHandle<R>) -> tauri::Result<tauri::menu:
         true,
         &[&Item::minimize(app, None)?, &Item::maximize(app, None)?],
     )?;
-    Menu::with_items(app, &[&app_items, &edit, &window])
+    let shortcuts = MenuItem::with_id(app, SHORTCUTS, "Keyboard Shortcuts", true, Some("Cmd+/"))?;
+    let help = Submenu::with_items(app, "Help", true, &[&shortcuts])?;
+    Menu::with_items(app, &[&app_items, &edit, &window, &help])
 }

@@ -1537,3 +1537,74 @@ pre {
 .error {
   color: #f07070;
 }
+
+.sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgb(0 0 0 / 45%);
+}
+
+.sheet {
+  box-sizing: border-box;
+  width: min(520px, 100%);
+  max-height: calc(100vh - 32px);
+  padding: 18px 20px 20px;
+  overflow: auto;
+  background: #202020;
+  border: 1px solid #333;
+  border-radius: 12px;
+  box-shadow: 0 16px 40px rgb(0 0 0 / 50%);
+  animation: popover-in 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.sheet:focus {
+  outline: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sheet {
+    animation: none;
+  }
+}
+
+.sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.sheet-head h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.sheet-section h3 {
+  margin: 16px 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--faint);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.sheet-keys {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px 24px;
+  align-items: center;
+  margin: 0;
+  color: var(--dim);
+}
+
+.sheet-keys dd {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+}
