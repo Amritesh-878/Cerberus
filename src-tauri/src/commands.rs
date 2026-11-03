@@ -7,7 +7,7 @@ use tauri::ipc::{Channel, InvokeResponseBody, IpcResponse};
 use tauri::{AppHandle, Manager, State};
 
 use crate::accounts::{
-    AccountId, Accounts, AccountsError, AuthState, AuthStatus, Candidate, Profiles,
+    AccountId, Accounts, AccountsError, AuthState, AuthStatus, Candidate, Profiles, Removal,
 };
 use crate::cli_link::{self, LinkError, Linked};
 use crate::handover::{ContinueError, RunningTabs, continue_chat};
@@ -257,9 +257,11 @@ pub fn rename_account(
 #[tauri::command(async)]
 pub fn remove_account(
     accounts: State<'_, Accounts>,
+    saved: State<'_, Saved>,
     id: AccountId,
-) -> Result<Profiles, AccountsError> {
-    accounts.update(|p| p.remove(id))
+    confirmed: bool,
+) -> Result<Removal, AccountsError> {
+    accounts.remove(id, confirmed, |account| saved.tabs_on(account))
 }
 
 #[tauri::command(async)]

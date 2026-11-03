@@ -305,6 +305,27 @@ impl Saved {
         snapshot.tree.tabs.iter().find(|t| t.id == tab).cloned()
     }
 
+    /// The saved tabs on an account, as "project / tab", so removing it can name them.
+    pub fn tabs_on(&self, account: AccountId) -> Vec<String> {
+        let Ok(live) = self.live() else {
+            return Vec::new();
+        };
+        let snapshot = lock(&live.snapshot);
+        let tree = &snapshot.tree;
+        tree.tabs
+            .iter()
+            .filter(|t| t.account == Some(account))
+            .map(|t| {
+                let project = tree
+                    .projects
+                    .iter()
+                    .find(|p| p.id == t.project_id)
+                    .map_or("", |p| p.name.as_str());
+                format!("{project} / {}", t.title)
+            })
+            .collect()
+    }
+
     pub fn session_of(&self, tab: TabId) -> Option<String> {
         let live = self.live().ok()?;
         lock(&live.snapshot).sessions.get(&tab).cloned()
@@ -490,6 +511,22 @@ pub(crate) mod tests {
             ],
             next_id: 8,
         }
+    }
+
+    #[test]
+    fn the_tabs_on_an_account_are_named_with_their_project() {
+        let dir = TestDir::new();
+        let saved = Saved::open(&dir.path().join("tree.db"), |_| {});
+        let mut tree = two_projects();
+        for tab in &mut tree.tabs {
+            if tab.id == 4 || tab.id == 7 {
+                tab.account = Some(5);
+            }
+        }
+        saved.save(tree).unwrap();
+
+        assert_eq!(saved.tabs_on(5), ["app / tab 4", "site / tab 7"]);
+        assert!(saved.tabs_on(9).is_empty());
     }
 
     #[test]

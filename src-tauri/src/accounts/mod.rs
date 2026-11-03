@@ -1,4 +1,5 @@
 mod detect;
+mod removal;
 mod status;
 mod store;
 
@@ -10,6 +11,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize, Serializer};
 
 pub use crate::accounts::detect::Candidate;
+pub use crate::accounts::removal::Removal;
 pub use crate::accounts::status::{AuthState, AuthStatus};
 use crate::accounts::store::Store;
 use crate::programs::Finder;
@@ -40,6 +42,10 @@ pub enum AccountsError {
     NoSuchDir(String),
     #[error("no account {0}")]
     NoAccount(AccountId),
+    #[error(
+        "{0} is the only account, and Cerberus needs one. Add another account before removing it."
+    )]
+    LastAccount(String),
     #[error("not a shell Cerberus knows: {0}")]
     UnknownShell(String),
 }
@@ -75,6 +81,9 @@ pub struct Profiles {
     /// Shell tabs suggest from history as you type, through each shell's own feature.
     #[serde(default = "on")]
     pub suggestions: bool,
+    /// Removed accounts, kept so a tab left on one can still carry its chat to another account.
+    #[serde(default)]
+    pub retired: Vec<Account>,
     // Raised on every save, so the webview can drop a reply that a newer one already replaced.
     #[serde(default)]
     pub revision: u64,
@@ -94,6 +103,7 @@ impl Default for Profiles {
             sidebar_width: None,
             alerts: true,
             suggestions: true,
+            retired: Vec::new(),
             revision: 0,
             next_id: 0,
         }
@@ -141,8 +151,12 @@ impl Profiles {
 
     /// Forgets the account; its folder and everything in it stay on disk.
     pub fn remove(&mut self, id: AccountId) -> Result<(), AccountsError> {
-        self.account(id)?;
+        let account = self.account(id)?.clone();
+        if self.accounts.len() == 1 {
+            return Err(AccountsError::LastAccount(account.name));
+        }
         self.accounts.retain(|a| a.id != id);
+        self.retired.push(account);
         if self.default_account == Some(id) {
             self.default_account = self.accounts.first().map(|a| a.id);
         }
@@ -205,6 +219,14 @@ impl Profiles {
         }
         if let Some(id) = self.default_account {
             replay.set_default_account(id)?;
+        }
+        for account in &self.retired {
+            if account.id >= self.next_id || replay.account(account.id).is_ok() {
+                return Err(AccountsError::Corrupt(format!(
+                    "removed account id {} is invalid",
+                    account.id
+                )));
+            }
         }
         replay.set_start_folder(self.start_folder.clone())
     }
@@ -331,6 +353,23 @@ impl Accounts {
         };
         let dir = self.load()?.account(id)?.config_dir.clone();
         Ok(env_dir(&self.home, dir))
+    }
+
+    /// Where a tab's chat lives, a removed account's folder included, so the chat can still move.
+    pub fn chat_home(&self, account: Option<AccountId>) -> Result<PathBuf, AccountsError> {
+        let Some(id) = account else {
+            return self.claude_home(None);
+        };
+        let profiles = self.load()?;
+        match profiles.account(id) {
+            Ok(account) => Ok(account.config_dir.clone()),
+            Err(e) => profiles
+                .retired
+                .iter()
+                .find(|a| a.id == id)
+                .map(|a| a.config_dir.clone())
+                .ok_or(e),
+        }
     }
 
     /// The folder Claude Code uses for this account, where `sessions/` and `projects/` live.
