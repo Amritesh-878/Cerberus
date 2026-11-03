@@ -80,6 +80,8 @@ export function Sidebar(props: {
     at: MenuPlace;
     chosen?: Account;
   }>();
+  // A removed account's tab cannot resume there; only moving the chat applies.
+  const resumable = (id: TabId) => props.ended(id) && !props.removed(id);
   const targetsOf = (tab: TreeTab) =>
     continueTargets(tab, props.profiles.accounts, props.statuses.get);
 
@@ -189,7 +191,7 @@ export function Sidebar(props: {
                       onMenu={(at) => {
                         if (
                           targetsOf(row.tab).length > 0 ||
-                          props.ended(row.tab.id)
+                          resumable(row.tab.id)
                         )
                           setMenu({ tab: row.tab, at });
                       }}
@@ -229,7 +231,7 @@ export function Sidebar(props: {
             targets={targetsOf(open().tab)}
             running={props.running(open().tab.id)}
             busy={props.movingTo(open().tab.id) !== undefined}
-            ended={props.ended(open().tab.id)}
+            ended={resumable(open().tab.id)}
             onResume={() => {
               const id = open().tab.id;
               setMenu(undefined);

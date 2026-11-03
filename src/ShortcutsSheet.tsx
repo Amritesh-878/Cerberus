@@ -3,16 +3,41 @@ import { For, onCleanup, onMount } from "solid-js";
 import { CloseIcon } from "./icons";
 import { shortcutSheet } from "./keys";
 
+/** Wraps Tab and Shift+Tab inside the sheet, so focus never reaches the page behind a modal. */
+function keepInside(sheet: HTMLElement, event: KeyboardEvent): boolean {
+  const stops = [...sheet.querySelectorAll<HTMLElement>("button")];
+  const first = stops[0];
+  const last = stops.at(-1);
+  const active = document.activeElement;
+  if (!first || !last) return true;
+  const target =
+    active === null || !sheet.contains(active)
+      ? first
+      : event.shiftKey && (active === first || active === sheet)
+        ? last
+        : !event.shiftKey && active === last
+          ? first
+          : undefined;
+  target?.focus();
+  return target !== undefined;
+}
+
 /** Every app shortcut, over whatever is showing; Escape, a click outside or its own chord closes it. */
 export function ShortcutsSheet(props: { onClose: () => void }) {
   let sheet: HTMLDivElement | undefined;
   onMount(() => {
+    // Usually the terminal, which should have the keyboard back once the sheet closes.
+    const opener = document.activeElement;
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") props.onClose();
+      else if (event.key === "Tab" && sheet && keepInside(sheet, event)) {
+        event.preventDefault();
+      }
     };
     window.addEventListener("keydown", onKey);
     onCleanup(() => {
       window.removeEventListener("keydown", onKey);
+      if (opener instanceof HTMLElement && opener.isConnected) opener.focus();
     });
     sheet?.focus();
   });

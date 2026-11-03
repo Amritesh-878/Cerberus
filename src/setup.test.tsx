@@ -195,3 +195,52 @@ test("the shortcuts sheet opens during setup too, without leaving it", async () 
   expect(sheetOpen(root)).toBe(true);
   expect(heading(root)).toBe("Set up Cerberus");
 });
+
+test("setup saves reach the core in click order, so a late step cannot undo Skip", async () => {
+  const setup = midSetup("install");
+  const calls: unknown[] = [];
+  let release: () => void = () => undefined;
+  const root = await renderApp(setup.profiles, {
+    ...setup.core,
+    set_setup_step: (args: unknown) => {
+      calls.push(field(args, "step"));
+      const reply = {
+        ...SAVED,
+        setup: field(args, "step") as Profiles["setup"],
+      };
+      if (calls.length > 1) return reply;
+      return new Promise((resolve) => {
+        release = () => {
+          resolve(reply);
+        };
+      });
+    },
+  });
+
+  click(root, "Next");
+  click(root, "Skip setup");
+  await settle();
+  expect(calls).toEqual(["accounts"]);
+  release();
+  await settle();
+
+  expect(calls).toEqual(["accounts", null]);
+});
+
+test("the shortcuts sheet keeps Tab inside and gives focus back when it closes", async () => {
+  const root = await renderApp(() => SAVED);
+  const before = document.createElement("button");
+  document.body.append(before);
+  before.focus();
+
+  sheetChord();
+  await settle();
+  const close = root.querySelector<HTMLButtonElement>(".sheet button");
+  close?.focus();
+  press("Tab");
+  expect(document.activeElement).toBe(close);
+  press("Escape");
+  await settle();
+
+  expect(document.activeElement).toBe(before);
+});

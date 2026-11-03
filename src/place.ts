@@ -36,7 +36,7 @@ export function placeBox(
     const left = anchor.left - GAP - box.width;
     const x = right <= maxLeft ? right : left >= MARGIN ? left : maxLeft;
     return {
-      left: Math.max(MARGIN, x),
+      left: Math.max(MARGIN, Math.min(x, maxLeft)),
       top: Math.max(MARGIN, Math.min(anchor.top, maxTop)),
     };
   }

@@ -88,3 +88,9 @@ test("a trigger in a closed drawer or outside the window is not on screen", () =
   expect(onScreen(rect(-60, 26), SCREEN)).toBe(false);
   expect(onScreen(rect(214, 0), SCREEN)).toBe(false);
 });
+
+test("beside an anchor left outside a narrowed window the box still stays inside it", () => {
+  const narrow = { width: 700, height: 800 };
+
+  expect(placeBox(button(1200, 58), BOX, narrow, "beside").left).toBe(412);
+});

@@ -642,6 +642,13 @@ button {
   margin: 0;
 }
 
+.removed-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+
 .removed-note .secondary {
   width: auto;
   padding: 0 14px;

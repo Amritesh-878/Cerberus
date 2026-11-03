@@ -140,7 +140,8 @@ export function App() {
   const [tree, setTree] = createSignal<Tree>(emptyTree());
   const [active, setActive] = createSignal<TabId>();
   const [opening, setOpening] = createSignal<Opening>();
-  const [pillMenu, setPillMenu] = createSignal<MenuPlace>();
+  // Holds the tab it opened for, so switching tabs while it is open cannot move another chat.
+  const [pillMenu, setPillMenu] = createSignal<{ at: MenuPlace; tab: TabId }>();
   const [sheet, setSheet] = createSignal(false);
   // Held while dragging, so the edge follows the pointer before the saved value comes back.
   const [dragged, setDragged] = createSignal<number>();
@@ -378,6 +379,14 @@ export function App() {
         restart();
       },
     );
+  };
+
+  // A shell has no chat to carry, so a shell left on a removed account just starts again on another.
+  const restartOn = (id: TabId, account: Account) => {
+    batch(() => {
+      setTree(moveToAccount(tree(), id, account));
+      setRun(id, runOf(id) + 1);
+    });
   };
 
   const resume = (id: TabId) => {
@@ -672,7 +681,12 @@ export function App() {
                       aria-expanded={pillMenu() !== undefined}
                       onClick={(event) => {
                         const box = event.currentTarget.getBoundingClientRect();
-                        setPillMenu({ x: box.left, y: box.bottom });
+                        const id = shown();
+                        if (id !== undefined)
+                          setPillMenu({
+                            at: { x: box.left, y: box.bottom },
+                            tab: id,
+                          });
                       }}
                     >
                       <AccountDot
@@ -742,27 +756,57 @@ export function App() {
                                 when={moving().get(id)}
                                 fallback={
                                   <Show when={onRemoved(id)}>
-                                    <div class="pane-note removed-note">
-                                      <p>
-                                        {tab().launch.account?.name} was
-                                        removed, so this tab's program closed.
-                                        Its chat is saved.
-                                      </p>
-                                      <button
-                                        type="button"
-                                        class="secondary"
-                                        onClick={(event) => {
-                                          const box =
-                                            event.currentTarget.getBoundingClientRect();
-                                          setPillMenu({
-                                            x: box.left,
-                                            y: box.bottom + 4,
-                                          });
-                                        }}
-                                      >
-                                        Continue on another account…
-                                      </button>
-                                    </div>
+                                    <Show
+                                      when={tab().launch.program === "claude"}
+                                      fallback={
+                                        <div class="pane-note removed-note">
+                                          <p>
+                                            {tab().launch.account?.name} was
+                                            removed, so this shell closed.
+                                          </p>
+                                          <div class="removed-actions">
+                                            <For each={loaded().accounts}>
+                                              {(account) => (
+                                                <button
+                                                  type="button"
+                                                  class="secondary"
+                                                  onClick={() => {
+                                                    restartOn(id, account);
+                                                  }}
+                                                >
+                                                  Restart on {account.name}
+                                                </button>
+                                              )}
+                                            </For>
+                                          </div>
+                                        </div>
+                                      }
+                                    >
+                                      <div class="pane-note removed-note">
+                                        <p>
+                                          {tab().launch.account?.name} was
+                                          removed, so this tab's program closed.
+                                          Its chat is saved.
+                                        </p>
+                                        <button
+                                          type="button"
+                                          class="secondary"
+                                          onClick={(event) => {
+                                            const box =
+                                              event.currentTarget.getBoundingClientRect();
+                                            setPillMenu({
+                                              at: {
+                                                x: box.left,
+                                                y: box.bottom + 4,
+                                              },
+                                              tab: id,
+                                            });
+                                          }}
+                                        >
+                                          Continue on another account…
+                                        </button>
+                                      </div>
+                                    </Show>
                                   </Show>
                                 }
                               >
@@ -859,7 +903,12 @@ export function App() {
             <Show when={sheet()}>
               <ShortcutsSheet onClose={() => setSheet(false)} />
             </Show>
-            <Show when={pillMenu() && shownTab()}>
+            <Show
+              when={(() => {
+                const open = pillMenu();
+                return open === undefined ? undefined : tabById(open.tab);
+              })()}
+            >
               {(tab) => (
                 <TabMenu
                   title={tab().title}
@@ -877,15 +926,18 @@ export function App() {
                   )}
                   running={isRunning(tab().id)}
                   busy={moving().has(tab().id)}
-                  ended={ended().has(tab().id)}
-                  at={pillMenu() ?? { x: 0, y: 0 }}
+                  ended={ended().has(tab().id) && !onRemoved(tab().id)}
+                  at={pillMenu()?.at ?? { x: 0, y: 0 }}
                   onContinue={(account) => {
+                    // Read before closing, since closing unmounts what holds the tab.
+                    const id = tab().id;
                     setPillMenu(undefined);
-                    continueOn(tab().id, account);
+                    continueOn(id, account);
                   }}
                   onResume={() => {
+                    const id = tab().id;
                     setPillMenu(undefined);
-                    resume(tab().id);
+                    resume(id);
                   }}
                   onAccounts={() => {
                     setPillMenu(undefined);

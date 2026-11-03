@@ -6,6 +6,7 @@ import {
   cleanup,
   click,
   field,
+  press,
   ptyCore,
   renderApp,
   SAVED,
@@ -476,4 +477,61 @@ test("a colour picked on an account row is saved and every dot of that account f
     row(root, "Claude Code · work").querySelector<HTMLElement>(".dot")?.style
       .background,
   ).toBe("#4fb5a8");
+});
+
+test("a confirm from the account pill moves the tab it was opened for, even after switching tabs", async () => {
+  const app = core();
+  const root = await renderApp(() => SAVED, app.core);
+  await open(root, "shell");
+  await openPill(root);
+  click(root.querySelector(".tab-menu") ?? root, "Continue on personal…");
+  await settle();
+  expect(root.querySelector(".menu-confirm")).not.toBeNull();
+
+  press("Tab", { ctrlKey: true, shiftKey: true });
+  await settle();
+  click(root.querySelector(".menu-confirm") ?? root, "Continue");
+  await settle();
+
+  expect(app.continued).toEqual([{ tab: 2, account: 0 }]);
+});
+
+test("a shell left on a removed account restarts on another, with no chat to move", async () => {
+  const fake = removing([]);
+  const root = await renderApp(fake.profiles, fake.core);
+  click(root, "Accounts");
+  await settle();
+  click(accountRow(root, "work"), "Remove");
+  await settle();
+  click(root.querySelector(".row-confirm") ?? root, "Remove work");
+  await settle();
+
+  await open(root, "shell");
+  expect(root.querySelector(".removed-note")?.textContent).toContain(
+    "work was removed, so this shell closed.",
+  );
+  click(root.querySelector(".removed-note") ?? root, "Restart on personal");
+  await settle();
+
+  expect(fake.app.pty.spawned.map((s) => field(s, "account"))).toEqual([0]);
+  expect(root.querySelector(".removed-note")).toBeNull();
+});
+
+test("an ended chat on a removed account offers no Resume chat, only a move", async () => {
+  const app = core();
+  const root = await renderApp(
+    () => ({
+      ...SAVED,
+      accounts: SAVED.accounts.filter((a) => a.id !== 1),
+      retired: SAVED.accounts.filter((a) => a.id === 1),
+    }),
+    {
+      ...app.core,
+      tree_load: () => ({ tree: TREE, notice: null, ended: [2] }),
+    },
+  );
+
+  await openMenu(root, "Claude Code · work");
+
+  expect(menuItems(root)).toEqual(["Continue on personal…", "Accounts"]);
 });

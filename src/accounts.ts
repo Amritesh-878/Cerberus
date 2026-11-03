@@ -132,9 +132,16 @@ export function setSuggestions(on: boolean): Promise<Profiles> {
   return saved;
 }
 
+// One save at a time, in click order, so a step saved late cannot reopen setup after Skip or Finish.
+let setupSaving: Promise<unknown> = Promise.resolve();
+
 /** `null` ends setup, by Finish or Skip. */
 export function setSetupStep(step: Step | null): Promise<Profiles> {
-  return invoke<Profiles>("set_setup_step", { step });
+  const saved = setupSaving.then(() =>
+    invoke<Profiles>("set_setup_step", { step }),
+  );
+  setupSaving = saved.catch(() => undefined);
+  return saved;
 }
 
 export function setShell(shell: string): Promise<Profiles> {
