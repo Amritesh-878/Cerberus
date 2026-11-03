@@ -85,8 +85,9 @@ function launchOf(
       : {
           id: saved.account,
           name:
-            profiles.accounts.find((a) => a.id === saved.account)?.name ??
-            "removed account",
+            [...profiles.accounts, ...profiles.retired].find(
+              (a) => a.id === saved.account,
+            )?.name ?? "removed account",
         };
   return {
     program: saved.program,

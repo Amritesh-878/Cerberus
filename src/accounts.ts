@@ -22,6 +22,8 @@ export interface Profiles {
   alerts: boolean;
   /** Shell tabs suggest from history as you type, through each shell's own feature. */
   suggestions: boolean;
+  /** Removed accounts, still named on the tabs left on them. */
+  retired: Account[];
   revision: number;
 }
 
@@ -67,8 +69,29 @@ export function renameAccount(id: AccountId, name: string): Promise<Profiles> {
   return invoke<Profiles>("rename_account", { id, name });
 }
 
-export function removeAccount(id: AccountId): Promise<Profiles> {
-  return invoke<Profiles>("remove_account", { id });
+/** `inUse` changes nothing: it names the saved tabs on the account, so the user can be asked first. */
+export type Removal =
+  { kind: "inUse"; tabs: string[] } | { kind: "removed"; profiles: Profiles };
+
+export function removeAccount(
+  id: AccountId,
+  confirmed: boolean,
+): Promise<Removal> {
+  return invoke<Removal>("remove_account", { id, confirmed });
+}
+
+/** A removed account's tabs stay, but nothing may run on it until the chat moves. */
+export function isRemoved(profiles: Profiles, id: AccountId): boolean {
+  return !profiles.accounts.some((a) => a.id === id);
+}
+
+/** The line a tab's menu shows beside its account. */
+export function accountState(
+  profiles: Profiles,
+  status: AuthStatus | undefined,
+  id: AccountId,
+): string {
+  return isRemoved(profiles, id) ? "removed" : statusText(status);
 }
 
 export function setDefaultAccount(id: AccountId): Promise<Profiles> {

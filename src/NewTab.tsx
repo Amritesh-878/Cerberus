@@ -6,10 +6,9 @@ import {
   type Profiles,
   statusText,
 } from "./accounts";
-import { ClaudeIcon, ShellIcon } from "./icons";
-import { placeBox } from "./place";
+import { AccountDot, ClaudeIcon, ShellIcon } from "./icons";
+import { type Anchor, placeBox, type Side } from "./place";
 import type { ProgramChoice } from "./pty";
-import { AccountDot } from "./Sidebar";
 import type { Statuses } from "./statuses";
 import { installed, shellChoice } from "./tab";
 import type { Project, TabId, TreeTab } from "./tree";
@@ -29,7 +28,8 @@ export function NewTab(props: {
   programs: ProgramChoice[] | undefined;
   programsError: unknown;
   statuses: Statuses;
-  anchor: DOMRect | undefined;
+  anchor: Anchor | undefined;
+  side: Side;
   onLaunch: (launch: Launch) => void;
   onDismiss: () => void;
 }) {
@@ -49,6 +49,7 @@ export function NewTab(props: {
       props.anchor,
       { width: WIDTH, height: height() },
       viewport(),
+      props.side,
     );
     return { left: `${String(place.left)}px`, top: `${String(place.top)}px` };
   };
@@ -64,7 +65,7 @@ export function NewTab(props: {
       setViewport({ width: innerWidth, height: innerHeight });
     };
     window.addEventListener("resize", onResize);
-    // Measured once drawn, so a box near the bottom can open above its button instead.
+    // Measured once drawn, so a box near the bottom moves up to stay in the window.
     const observer = new ResizeObserver(() => {
       setHeight(box?.offsetHeight ?? 0);
     });
@@ -78,7 +79,7 @@ export function NewTab(props: {
       observer.disconnect();
       window.removeEventListener("resize", onResize);
     });
-    primary?.focus();
+    (primary?.disabled ? box?.querySelector("button") : primary)?.focus();
   });
 
   return (
@@ -89,7 +90,7 @@ export function NewTab(props: {
       }}
     >
       <div
-        class="popover new-tab"
+        class="popover menu new-tab"
         ref={(el) => {
           box = el;
         }}
@@ -97,11 +98,11 @@ export function NewTab(props: {
         aria-label={`New tab in ${props.project.name}`}
         style={position()}
       >
-        <p class="popover-where">
+        <p class="menu-title">
           New tab in <strong>{props.project.name}</strong>
         </p>
         <Show when={props.profiles.accounts.length > 0}>
-          <p class="field-label">Account</p>
+          <p class="menu-label">Account</p>
           <div class="choices">
             <For each={props.profiles.accounts}>
               {(account) => (
@@ -119,7 +120,7 @@ export function NewTab(props: {
           </div>
         </Show>
         <Show when={props.planners.length > 0}>
-          <p class="field-label">Place</p>
+          <p class="menu-label">Place</p>
           <div class="choices">
             <button
               type="button"
@@ -141,9 +142,11 @@ export function NewTab(props: {
             </For>
           </div>
         </Show>
+        <div class="menu-sep" role="separator" />
         <button
           type="button"
-          class="primary"
+          class="menu-item"
+          aria-label="Claude Code"
           disabled={!claude()}
           ref={(el) => {
             primary = el;
@@ -152,23 +155,26 @@ export function NewTab(props: {
             launch(claude());
           }}
         >
-          <ClaudeIcon size={16} /> Claude Code
+          <ClaudeIcon size={14} />
+          <span class="menu-text">Claude Code</span>
+          <span class="menu-key">Enter</span>
         </button>
         <button
           type="button"
-          class="secondary"
+          class="menu-item"
           disabled={!shell()}
           onClick={() => {
             launch(shell());
           }}
         >
-          <ShellIcon /> Shell
+          <ShellIcon />
+          <span class="menu-text">Shell</span>
         </button>
         <Show when={props.programs && !claude()}>
-          <p class="hint">Claude Code isn't installed.</p>
+          <p class="menu-note-line">Claude Code isn't installed.</p>
         </Show>
         <Show when={props.programsError !== undefined}>
-          <p class="error">
+          <p class="menu-note-line error">
             Could not list programs: {String(props.programsError)}
           </p>
         </Show>

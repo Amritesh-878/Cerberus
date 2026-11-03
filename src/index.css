@@ -31,6 +31,7 @@ button {
   color: inherit;
 }
 
+/* The last column stays empty until the right panel has something to show. */
 .app {
   position: relative;
   display: grid;
@@ -300,6 +301,15 @@ button {
   white-space: nowrap;
 }
 
+/* The same box and place as the close button, so the dot sits centred where the × appears. */
+.tab-account {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+}
+
 /* Laid over the row's end, so a hidden close button takes no room from the title. */
 .tab-row .close {
   position: absolute;
@@ -323,6 +333,15 @@ button {
 /* A program that exited: the row stays, quieter. */
 .tab-row.done .tab-title {
   color: var(--faint);
+}
+
+/* Its account was removed: the row stays, dimmed, until the chat moves to another account. */
+.tab-row.removed .tab-title {
+  color: var(--faint);
+}
+
+.tab-row.removed :is(.badge, .tab-select > svg, .dot) {
+  opacity: 0.4;
 }
 
 .mark {
@@ -502,11 +521,25 @@ button {
   gap: 6px;
   align-items: center;
   height: 24px;
-  padding: 0 8px;
+  padding: 0 10px 0 8px;
   color: var(--dim);
   white-space: nowrap;
+  cursor: pointer;
   background: #222;
+  border: 1px solid transparent;
   border-radius: 12px;
+}
+
+.account-pill:hover,
+.account-pill[aria-expanded="true"] {
+  color: var(--text);
+  background: #262626;
+  border-color: #353535;
+}
+
+.account-pill:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .menu-button {
@@ -593,41 +626,53 @@ button {
   color: var(--dim);
 }
 
+.removed-note {
+  display: grid;
+  gap: 12px;
+  justify-items: center;
+  max-width: 420px;
+  text-align: center;
+}
+
+.removed-note p {
+  margin: 0;
+}
+
+.removed-note .secondary {
+  width: auto;
+  padding: 0 14px;
+  margin: 0;
+}
+
 .tab-menu {
-  width: 240px;
-  padding: 6px;
+  width: 260px;
 }
 
-.tab-menu [role="menuitem"] {
+.tab-menu:focus {
+  outline: none;
+}
+
+.menu-account {
   display: flex;
-  gap: 8px;
-  align-items: baseline;
-  justify-content: space-between;
-  width: 100%;
-  padding: 7px 8px;
-  text-align: left;
-  cursor: pointer;
-  background: none;
-  border: 0;
-  border-radius: 6px;
+  gap: 10px;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 8px;
 }
 
-.tab-menu [role="menuitem"]:hover:not(:disabled),
-.tab-menu [role="menuitem"]:focus-visible {
-  background: var(--hover);
-}
-
-.tab-menu [role="menuitem"]:disabled {
-  color: var(--faint);
-  cursor: default;
-}
-
-.menu-note {
-  font-size: 11px;
+.menu-account .menu-key {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .menu-confirm p {
-  margin: 4px 4px 10px;
+  margin: 6px 8px 10px;
+}
+
+.menu-confirm .confirm-actions {
+  padding: 0 6px 4px;
 }
 
 .tab-alert {
@@ -680,32 +725,38 @@ button {
   inset: 0;
   overflow: auto;
   background: var(--bg);
+  scrollbar-color: #3a3a3a transparent;
 }
 
 .home {
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  align-items: center;
+  gap: 12px;
+  align-items: stretch;
   justify-content: center;
-  width: min(420px, 100%);
+  width: min(460px, 100%);
   min-height: 100%;
-  padding: 32px 16px;
+  padding: 32px 24px 10vh;
   margin: 0 auto;
-  text-align: center;
+}
+
+.home-head {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 4px;
 }
 
 .home .app-icon {
-  color: var(--faint);
+  flex: none;
+  color: var(--dim);
 }
 
 .home h1 {
-  margin: 0 0 6px;
-  font-size: 15px;
-  font-weight: 500;
-  color: var(--dim);
-  letter-spacing: 0.02em;
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
 }
 
 .home p {
@@ -717,12 +768,14 @@ button {
   font-weight: 600;
 }
 
+.home .hint {
+  margin-top: -6px;
+}
+
 .home-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  justify-content: center;
-  margin-top: 8px;
 }
 
 .home-actions .primary,
@@ -734,50 +787,45 @@ button {
   font-size: 13px;
 }
 
+.home .home-label {
+  margin-top: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--faint);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
 .home-keys {
   display: grid;
-  grid-template-columns: auto auto;
-  gap: 6px 16px;
-  margin: 28px 0 0;
-  font-size: 12px;
+  grid-template-columns: auto 1fr;
+  gap: 8px 24px;
+  align-items: center;
+  margin: 0;
+  font-size: 13px;
   color: var(--dim);
-  text-align: left;
 }
 
 .home-keys dt {
-  font-family: "Cascadia Mono", Consolas, monospace;
-  font-size: 11px;
-  text-align: right;
+  white-space: nowrap;
 }
 
 .home-keys dd {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
   margin: 0;
 }
 
-.panel {
-  display: flex;
-  flex-direction: column;
-  width: 300px;
-  background: var(--bar);
-  border-left: 1px solid var(--line);
-}
-
-.panel-head {
-  display: flex;
-  align-items: center;
-  height: 38px;
-  padding: 0 8px 0 14px;
-  color: var(--dim);
-  border-bottom: 1px solid var(--line);
-}
-
-.panel-empty {
-  padding: 24px 14px;
-  margin: 14px;
-  color: var(--faint);
-  text-align: center;
-  border: 1px dashed #333;
-  border-radius: 8px;
+kbd {
+  padding: 2px 6px;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 11px;
+  color: var(--text);
+  background: #242424;
+  border: 1px solid #333;
+  border-bottom-color: #3d3d3d;
+  border-radius: 4px;
 }
 
 .popover-backdrop {
@@ -812,6 +860,101 @@ button {
   .popover {
     animation: none;
   }
+}
+
+.popover.menu {
+  padding: 6px;
+}
+
+.menu-title {
+  margin: 4px 8px 4px;
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.menu-title strong {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.menu-label {
+  margin: 10px 8px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--faint);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.menu .choices {
+  padding: 0 8px;
+}
+
+.menu .choices button {
+  height: 28px;
+  padding: 0 10px;
+}
+
+.menu-sep {
+  height: 1px;
+  margin: 8px -6px 6px;
+  background: #2e2e2e;
+}
+
+.menu-item {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 30px;
+  padding: 0 8px;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  background: none;
+  border: 0;
+  border-radius: 6px;
+}
+
+/* Lighter than the sidebar's hover, which is one shade off the popover's own background. */
+.menu-item:hover:not(:disabled),
+.menu-item:focus {
+  background: #2c2c2c;
+  outline: none;
+}
+
+.menu-item:focus-visible {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.menu-item:disabled {
+  color: var(--faint);
+  cursor: default;
+}
+
+.menu-item:disabled :is(svg, .dot) {
+  opacity: 0.45;
+}
+
+.menu-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.menu-key {
+  font-size: 11px;
+  color: var(--faint);
+}
+
+.popover .menu-note-line {
+  margin: 6px 8px 2px;
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.popover .menu-note-line.error {
+  color: #f07070;
 }
 
 .popover-where {
@@ -902,17 +1045,7 @@ button {
   margin: 10px 0 0;
 }
 
-/* Narrow windows: the sidebar becomes a drawer and the panel lies over the terminal. */
-
-@media (width <= 1100px) {
-  .panel {
-    position: fixed;
-    inset: 0 0 0 auto;
-    z-index: 15;
-    width: min(300px, 85vw);
-    box-shadow: -8px 0 24px rgb(0 0 0 / 50%);
-  }
-}
+/* Narrow windows: the sidebar becomes a drawer. */
 
 @media (width <= 720px) {
   .app {
@@ -954,21 +1087,51 @@ button {
 }
 
 .walkthrough {
-  max-width: 880px;
-  padding: 24px;
-  font-size: 14px;
+  box-sizing: border-box;
+  max-width: 720px;
+  padding: 40px 32px 48px;
+  margin: 0 auto;
+}
+
+.walkthrough h1 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.walkthrough > h1 {
+  margin-bottom: 20px;
+}
+
+.walkthrough h3 {
+  margin: 28px 0 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.walkthrough p {
+  margin: 0 0 12px;
 }
 
 .walkthrough button,
 .walkthrough input,
 .walkthrough select,
 .start-folder button {
-  padding: 6px 10px;
+  box-sizing: border-box;
+  height: 30px;
+  padding: 0 12px;
   font: inherit;
   color: inherit;
-  background: #2a2a2a;
-  border: 1px solid #3a3a3a;
-  border-radius: 4px;
+  background: #242424;
+  border: 1px solid #343434;
+  border-radius: 6px;
+}
+
+.walkthrough input {
+  padding: 0 10px;
 }
 
 .walkthrough button {
@@ -977,68 +1140,289 @@ button {
 
 .walkthrough button:disabled {
   cursor: default;
-  opacity: 0.5;
+  opacity: 0.45;
 }
 
-.walkthrough button:hover:not(:disabled),
-.walkthrough :is(button, input, select):focus-visible {
+.walkthrough button:hover:not(:disabled) {
+  background: #2b2b2b;
+  border-color: #464646;
+}
+
+.walkthrough :is(input, select):focus {
   border-color: var(--accent);
   outline: none;
 }
 
+.walkthrough button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.walkthrough .go {
+  font-weight: 600;
+  color: var(--bg);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.walkthrough .go:hover:not(:disabled) {
+  background: var(--accent);
+  border-color: var(--accent);
+  filter: brightness(1.08);
+}
+
+.walkthrough .link {
+  height: auto;
+  padding: 4px 6px;
+  color: var(--dim);
+  background: none;
+  border: 0;
+}
+
+.walkthrough .link:hover:not(:disabled) {
+  color: var(--text);
+  background: none;
+}
+
+.setup-head {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+}
+
 .steps {
   display: flex;
-  gap: 24px;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
   padding: 0;
-  color: var(--dim);
+  margin: 24px 0 16px;
   list-style: none;
-  counter-reset: step;
 }
 
-.steps li::before {
-  content: counter(step) ". ";
-  counter-increment: step;
+.steps li {
+  display: flex;
+  gap: 8px;
+  align-items: center;
 }
 
-.steps .current {
-  color: inherit;
+.steps li + li::before {
+  width: 28px;
+  height: 1px;
+  content: "";
+  background: #333;
+}
+
+.walkthrough .steps button {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  height: 28px;
+  padding: 0 10px 0 3px;
+  color: var(--dim);
+  background: none;
+  border: 0;
+  border-radius: 14px;
+}
+
+.walkthrough .steps button:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--hover);
+}
+
+.step-num {
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  width: 22px;
+  height: 22px;
+  font-size: 11px;
   font-weight: 600;
+  border: 1px solid #3a3a3a;
+  border-radius: 50%;
+}
+
+.steps .done .step-num {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.walkthrough .steps .current button {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.steps .current .step-num {
+  color: var(--bg);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.step-card {
+  padding: 24px;
+  background: #1e1e1e;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.step-card h2 {
+  margin: 0 0 4px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.walkthrough .step-lead {
+  margin: 0 0 20px;
+  color: var(--dim);
+}
+
+.walkthrough .step-card h3 {
+  margin-top: 24px;
+}
+
+.step-ok {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.step-ok svg {
+  color: #7fb27f;
+}
+
+.walkthrough .step-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .accounts {
   display: grid;
   gap: 8px;
   padding: 0;
+  margin: 0;
   list-style: none;
 }
 
 .accounts li {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px 12px;
-  align-items: baseline;
-  padding: 8px 12px;
-  background: #222;
+  gap: 12px;
+  align-items: center;
+  min-height: 34px;
+  padding: 10px 12px 10px 14px;
+  background: #242424;
   border: 1px solid #2e2e2e;
-  border-radius: 4px;
+  border-radius: 8px;
+}
+
+.account-text {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+
+.account-line {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  min-width: 0;
+}
+
+.account-status {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--dim);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-status.out {
+  color: #d6b45a;
+}
+
+.accounts li:has(.row-confirm, .row-error) {
+  flex-wrap: wrap;
+}
+
+.walkthrough .row-confirm,
+.walkthrough .row-error {
+  flex-basis: 100%;
+  margin: 2px 0 0;
+}
+
+.row-confirm {
+  padding: 12px 14px;
+  background: #2a201c;
+  border: 1px solid #4a3328;
+  border-radius: 6px;
+}
+
+.walkthrough .row-confirm p {
+  margin: 0 0 6px;
+}
+
+.row-confirm-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.walkthrough .danger {
+  font-weight: 600;
+  color: #fff;
+  background: #a8473a;
+  border-color: #a8473a;
+}
+
+.walkthrough .danger:hover:not(:disabled) {
+  background: #b9503f;
+  border-color: #b9503f;
+}
+
+.walkthrough .row-error {
+  font-size: 12px;
 }
 
 .accounts .actions {
   display: flex;
+  flex: none;
   gap: 6px;
   margin-left: auto;
+}
+
+.walkthrough .accounts-empty {
+  padding: 14px 16px;
+  margin: 0 0 8px;
+  color: var(--dim);
+  text-align: center;
+  border: 1px dashed #353535;
+  border-radius: 8px;
+}
+
+.add-account {
+  margin-bottom: 8px;
 }
 
 .add-account,
 .accounts form {
   display: flex;
-  flex-wrap: wrap;
+  flex: 1;
   gap: 8px;
+  min-width: 0;
 }
 
-.add-account input {
+.add-account input,
+.accounts form input {
   flex: 1;
-  min-width: 240px;
+  min-width: 0;
+}
+
+.walkthrough .folder {
+  margin: 8px 0 0;
+  color: var(--dim);
 }
 
 .folder,
@@ -1054,7 +1438,7 @@ button {
 
 .defaults label {
   display: grid;
-  gap: 4px;
+  gap: 6px;
 }
 
 .alerts-setting {
@@ -1074,12 +1458,53 @@ button {
 
 .step-nav {
   display: flex;
-  gap: 8px;
-  margin-top: 24px;
+  gap: 10px;
+  align-items: center;
+  margin-top: 20px;
 }
 
-.step-nav .leave {
-  margin-left: auto;
+.home-setup {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 14px 16px;
+  margin: 6px 0;
+  text-align: left;
+  background: #231f1b;
+  border: 1px solid #45372b;
+  border-radius: 10px;
+}
+
+.home .home-setup-title {
+  margin: 0 0 8px;
+  font-weight: 600;
+}
+
+.home-setup ul {
+  display: grid;
+  gap: 6px;
+  padding: 0;
+  margin: 0 0 12px;
+  color: var(--dim);
+  list-style: none;
+}
+
+.home-setup li {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.home-setup li svg {
+  flex: none;
+  margin-top: 1px;
+  color: #d6b45a;
+}
+
+.home-setup .secondary {
+  width: auto;
+  height: 30px;
+  padding: 0 12px;
+  margin: 0;
 }
 
 .hint {

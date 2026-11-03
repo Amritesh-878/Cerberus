@@ -1,4 +1,6 @@
 import { Show } from "solid-js";
+
+import { type AccountId, accountColor } from "./accounts";
 export function ClaudeIcon(props: { size?: number }) {
   return (
     <svg
@@ -116,16 +118,6 @@ export function PeopleIcon() {
   );
 }
 
-export function PanelIcon() {
-  return (
-    <Stroke
-      d="M3.5 3h9A1.5 1.5 0 0 1 14 4.5v7a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 11.5v-7A1.5 1.5 0 0 1 3.5 3M10 3v10"
-      size={16}
-      width={1.4}
-    />
-  );
-}
-
 /** The app's mark, a terminal window with three tabs, drawn in the text colour. */
 export function AppIcon(props: { size?: number }) {
   return (
@@ -144,6 +136,24 @@ export function AppIcon(props: { size?: number }) {
       <rect x="5" y="9" width="30" height="24" rx="3" />
       <path d="M5 15h30M9 12h4M15 12h4M21 12h4M11 21l4 3-4 3M18 28h6" />
     </svg>
+  );
+}
+
+export function AccountDot(props: { id: AccountId }) {
+  return <span class="dot" style={{ background: accountColor(props.id) }} />;
+}
+
+export function CheckIcon() {
+  return <Stroke d="m3.5 8.5 3 3 6-7" size={12} width={2} />;
+}
+
+export function WarnIcon() {
+  return (
+    <Stroke
+      d="M8 5.5v3.2M8 11h0M7.1 2.6 1.9 11.8c-.4.7.1 1.7 1 1.7h10.2c.9 0 1.4-1 1-1.7L8.9 2.6c-.4-.7-1.4-.7-1.8 0"
+      size={14}
+      width={1.5}
+    />
   );
 }
 

@@ -1,7 +1,8 @@
 import { createSignal, For, onCleanup, onMount, Show, untrack } from "solid-js";
 
-import type { Account } from "./accounts";
+import type { Account, AccountId } from "./accounts";
 import type { Target } from "./carry";
+import { AccountDot } from "./icons";
 import { placeBox } from "./place";
 
 export interface MenuPlace {
@@ -9,8 +10,49 @@ export interface MenuPlace {
   y: number;
 }
 
+/** The account a tab runs on, shown at the top of its menu. */
+export interface MenuAccount {
+  id: AccountId;
+  name: string;
+  status: string;
+}
+
+/** The header a tab's menu shows, or none for a tab with no account. */
+export function menuAccount(
+  account: { id: AccountId; name: string } | null | undefined,
+  status: (id: AccountId) => string,
+): MenuAccount | undefined {
+  return account
+    ? { id: account.id, name: account.name, status: status(account.id) }
+    : undefined;
+}
+
+const ITEMS = '[role="menuitem"]:not(:disabled)';
+
+/** Up, Down, Home and End walk the enabled items, wrapping at the ends as a native menu does. */
+function moveFocus(menu: HTMLElement, key: string): boolean {
+  const items = [...menu.querySelectorAll<HTMLElement>(ITEMS)];
+  if (items.length === 0) return false;
+  const at = items.findIndex((item) => item === document.activeElement);
+  const next =
+    key === "Home"
+      ? 0
+      : key === "End"
+        ? items.length - 1
+        : key === "ArrowDown"
+          ? (at + 1) % items.length
+          : key === "ArrowUp"
+            ? (at - 1 + items.length) % items.length
+            : -1;
+  if (next < 0) return false;
+  items[next]?.focus();
+  return true;
+}
+
 export function TabMenu(props: {
   title: string;
+  /** The tab's own account; the account pill's menu shows it first. */
+  account?: MenuAccount;
   targets: Target[];
   running: boolean;
   /** A move of this tab is under way, so nothing more can be picked until it ends. */
@@ -22,6 +64,8 @@ export function TabMenu(props: {
   ended: boolean;
   onContinue: (account: Account) => void;
   onResume: () => void;
+  /** Last in the menu, so a signed-out account can be signed in from there. */
+  onAccounts?: () => void;
   onDismiss: () => void;
 }) {
   // Read once: the shortcut opens the menu already at its confirm step.
@@ -40,7 +84,12 @@ export function TabMenu(props: {
   // Kept inside the window, flipping above the click when there is no room below.
   const position = () => {
     const place = placeBox(
-      { left: props.at.x, top: props.at.y, bottom: props.at.y },
+      {
+        left: props.at.x,
+        right: props.at.x,
+        top: props.at.y,
+        bottom: props.at.y,
+      },
       size(),
       viewport(),
     );
@@ -68,7 +117,10 @@ export function TabMenu(props: {
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("resize", onResize);
     });
-    box?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
+    // The menu holds focus even with nothing to pick, so Escape and the arrow keys reach it.
+    (
+      box?.querySelector<HTMLButtonElement>("button:not(:disabled)") ?? box
+    )?.focus();
   });
 
   return (
@@ -79,35 +131,56 @@ export function TabMenu(props: {
       }}
     >
       <div
-        class="popover tab-menu"
+        class="popover menu tab-menu"
         ref={(el) => {
           box = el;
         }}
         role="menu"
+        tabIndex={-1}
         aria-label={`${props.title} menu`}
         aria-busy={props.busy}
         style={position()}
+        onKeyDown={(event) => {
+          if (moveFocus(event.currentTarget, event.key)) event.preventDefault();
+        }}
       >
         <Show
           when={confirming()}
           fallback={
             <>
+              <Show when={props.account}>
+                {(account) => (
+                  <>
+                    <div class="menu-account">
+                      <AccountDot id={account().id} />
+                      <span class="menu-text">{account().name}</span>
+                      <span class="menu-key">{account().status}</span>
+                    </div>
+                    <div class="menu-sep" role="separator" />
+                  </>
+                )}
+              </Show>
               <Show when={props.ended}>
                 <button
                   type="button"
+                  class="menu-item"
                   role="menuitem"
                   disabled={props.busy}
                   onClick={() => {
                     props.onResume();
                   }}
                 >
-                  Resume chat
+                  <span class="menu-text">Resume chat</span>
                 </button>
+                <Show when={props.targets.length > 0}>
+                  <div class="menu-sep" role="separator" />
+                </Show>
               </Show>
               <For each={props.targets}>
                 {(target) => (
                   <button
                     type="button"
+                    class="menu-item"
                     role="menuitem"
                     disabled={!target.signedIn || props.busy}
                     title={target.signedIn ? undefined : "Signed out"}
@@ -115,13 +188,31 @@ export function TabMenu(props: {
                       pick(target.account);
                     }}
                   >
-                    Continue on {target.account.name}…
+                    <AccountDot id={target.account.id} />
+                    <span class="menu-text">
+                      Continue on {target.account.name}…
+                    </span>
                     <Show when={!target.signedIn}>
-                      <span class="menu-note">signed out</span>
+                      <span class="menu-key">signed out</span>
                     </Show>
                   </button>
                 )}
               </For>
+              <Show when={props.onAccounts}>
+                <Show when={props.targets.length > 0 || props.ended}>
+                  <div class="menu-sep" role="separator" />
+                </Show>
+                <button
+                  type="button"
+                  class="menu-item"
+                  role="menuitem"
+                  onClick={() => {
+                    props.onAccounts?.();
+                  }}
+                >
+                  <span class="menu-text">Accounts</span>
+                </button>
+              </Show>
             </>
           }
         >

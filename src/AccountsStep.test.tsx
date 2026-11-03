@@ -16,6 +16,7 @@ const EMPTY: Profiles = {
   sidebarWidth: null,
   alerts: true,
   suggestions: true,
+  retired: [],
   revision: 0,
 };
 

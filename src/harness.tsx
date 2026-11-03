@@ -47,6 +47,7 @@ export const EMPTY: Profiles = {
   sidebarWidth: null,
   alerts: true,
   suggestions: true,
+  retired: [],
   revision: 0,
 };
 
@@ -61,6 +62,7 @@ export const SAVED: Profiles = {
   sidebarWidth: null,
   alerts: true,
   suggestions: true,
+  retired: [],
   revision: 0,
 };
 

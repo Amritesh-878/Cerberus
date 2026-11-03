@@ -94,6 +94,7 @@ const PROFILES: Profiles = {
   sidebarWidth: null,
   alerts: true,
   suggestions: true,
+  retired: [],
   revision: 0,
 };
 

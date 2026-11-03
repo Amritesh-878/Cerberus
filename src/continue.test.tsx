@@ -113,6 +113,7 @@ test("a Claude tab's menu offers the other accounts, and a signed-out one cannot
   expect(menuItems(root)).toEqual([
     "Continue on personal…",
     "Continue on spare…signed out (off)",
+    "Accounts",
   ]);
 });
 
@@ -220,7 +221,7 @@ test("a limited tab offers the move on its row", async () => {
   expect(app.continued).toEqual([{ tab: 2, account: 0 }]);
 });
 
-test("while a move is under way the tab's menu offers nothing, so it moves once", async () => {
+test("while a move is under way the tab's menu offers no move, so it moves once", async () => {
   const app = core();
   let finish: () => void = () => undefined;
   const root = await renderApp(() => SAVED, {
@@ -235,7 +236,7 @@ test("while a move is under way the tab's menu offers nothing, so it moves once"
   click(root.querySelector(".tab-menu") ?? root, "Continue on personal…");
   await settle();
   await openMenu(root, "Claude Code · work");
-  expect(menuItems(root)).toEqual(["Continue on personal… (off)"]);
+  expect(menuItems(root)).toEqual(["Continue on personal… (off)", "Accounts"]);
   click(root.querySelector(".tab-menu") ?? root, "Continue on personal…");
   await settle();
 
@@ -305,4 +306,138 @@ test.each([
   await settle();
 
   expect(showsShell(root)).toBe(stillEnded);
+});
+
+async function openPill(root: HTMLElement): Promise<void> {
+  await open(root, "Claude Code · work");
+  root.querySelector<HTMLButtonElement>(".account-pill")?.click();
+  await settle();
+}
+
+test("the account pill names the tab's account and offers the others, then Accounts", async () => {
+  const root = await renderApp(() => SAVED, core().core);
+
+  await openPill(root);
+
+  expect(root.querySelector(".menu-account")?.textContent).toBe(
+    "workuser@example.com · Pro",
+  );
+  expect(menuItems(root)).toEqual(["Continue on personal…", "Accounts"]);
+});
+
+test("with one account the account pill offers only Accounts, which opens the page", async () => {
+  const root = await renderApp(
+    () => ({ ...SAVED, accounts: SAVED.accounts.slice(1) }),
+    core().core,
+  );
+
+  await openPill(root);
+  expect(menuItems(root)).toEqual(["Accounts"]);
+  click(root.querySelector(".tab-menu") ?? root, "Accounts");
+  await settle();
+
+  expect(root.querySelector(".tab-menu")).toBeNull();
+  expect(root.querySelector("main h1")?.textContent).toBe("Accounts");
+});
+
+function removing(confirmedRemoves: unknown[]) {
+  let profiles = SAVED;
+  const app = core();
+  return {
+    app,
+    profiles: () => profiles,
+    core: {
+      ...app.core,
+      remove_account: (args: unknown) => {
+        confirmedRemoves.push(field(args, "confirmed"));
+        if (field(args, "confirmed") !== true)
+          return { kind: "inUse", tabs: ["alpha / Claude Code · work"] };
+        profiles = {
+          ...SAVED,
+          accounts: SAVED.accounts.filter((a) => a.id !== 1),
+          retired: SAVED.accounts.filter((a) => a.id === 1),
+          revision: 1,
+        };
+        return { kind: "removed", profiles };
+      },
+    },
+  };
+}
+
+function accountRow(root: HTMLElement, name: string): HTMLElement {
+  const found = [...root.querySelectorAll<HTMLElement>(".accounts li")].find(
+    (li) => li.querySelector("strong")?.textContent === name,
+  );
+  if (!found) throw new Error(`no ${name} account row`);
+  return found;
+}
+
+test("removing an account with tabs asks first, then closes their programs and keeps the tabs", async () => {
+  const asked: unknown[] = [];
+  const fake = removing(asked);
+  const root = await renderApp(fake.profiles, fake.core);
+  await open(root, "Claude Code · work");
+  click(root, "Accounts");
+  await settle();
+
+  click(accountRow(root, "work"), "Remove");
+  await settle();
+  expect(root.querySelector(".row-confirm")?.textContent).toContain(
+    "1 tab uses work: alpha / Claude Code · work.",
+  );
+  expect(fake.app.pty.killed).toEqual([]);
+  click(root.querySelector(".row-confirm") ?? root, "Remove work");
+  await settle();
+
+  expect(asked).toEqual([false, true]);
+  expect(fake.app.pty.killed).toEqual([1]);
+  expect(
+    [...root.querySelectorAll(".tab-row.removed .tab-title")].map(
+      (t) => t.textContent,
+    ),
+  ).toEqual(["Claude Code · work", "shell"]);
+  await open(root, "Claude Code · work");
+  expect(root.querySelector(".removed-note")?.textContent).toContain(
+    "work was removed, so this tab's program closed. Its chat is saved.",
+  );
+  expect(fake.app.pty.spawned).toHaveLength(1);
+});
+
+test("Cancel keeps an account its tabs use, and their programs run on", async () => {
+  const asked: unknown[] = [];
+  const fake = removing(asked);
+  const root = await renderApp(fake.profiles, fake.core);
+  await open(root, "Claude Code · work");
+  click(root, "Accounts");
+  await settle();
+
+  click(accountRow(root, "work"), "Remove");
+  await settle();
+  click(root.querySelector(".row-confirm") ?? root, "Cancel");
+  await settle();
+
+  expect(asked).toEqual([false]);
+  expect(root.querySelector(".row-confirm")).toBeNull();
+  expect(fake.app.pty.killed).toEqual([]);
+});
+
+test("the core's refusal to remove the last account shows on its row", async () => {
+  const root = await renderApp(
+    () => ({ ...SAVED, accounts: SAVED.accounts.slice(1) }),
+    {
+      ...core().core,
+      remove_account: () => {
+        throw new Error("work is the only account, and Cerberus needs one.");
+      },
+    },
+  );
+  click(root, "Accounts");
+  await settle();
+
+  click(accountRow(root, "work"), "Remove");
+  await settle();
+
+  expect(
+    accountRow(root, "work").querySelector(".row-error")?.textContent,
+  ).toBe("Error: work is the only account, and Cerberus needs one.");
 });

@@ -12,14 +12,15 @@ import {
 
 import {
   type Account,
-  accountColor,
   type AccountId,
+  accountState,
   type Profiles,
   statusText,
 } from "./accounts";
 import { type Mark, resetText } from "./board";
 import { continueTargets, limitShortcut } from "./carry";
 import {
+  AccountDot,
   ChevronIcon,
   ClockIcon,
   CloseIcon,
@@ -31,7 +32,7 @@ import {
 } from "./icons";
 import { RENAME_KEY } from "./keys";
 import type { Statuses } from "./statuses";
-import { type MenuPlace, TabMenu } from "./TabMenu";
+import { menuAccount, type MenuPlace, TabMenu } from "./TabMenu";
 import type { TabAccount } from "./tab";
 import {
   groups,
@@ -55,6 +56,8 @@ export function Sidebar(props: {
   movingTo: (id: TabId) => string | undefined;
   /** The tab's chat ended, so it runs the shell until Resume chat. */
   ended: (id: TabId) => boolean;
+  /** The tab's account was removed, so it runs nothing until its chat moves. */
+  removed: (id: TabId) => boolean;
   onContinue: (id: TabId, account: Account) => void;
   onResume: (id: TabId) => void;
   onSelect: (id: TabId) => void;
@@ -150,6 +153,7 @@ export function Sidebar(props: {
                       active={props.active === row.tab.id}
                       mark={props.mark(row.tab.id)}
                       ended={props.ended(row.tab.id)}
+                      removed={props.removed(row.tab.id)}
                       movingTo={props.movingTo(row.tab.id)}
                       shortcut={
                         props.movingTo(row.tab.id) !== undefined
@@ -197,6 +201,9 @@ export function Sidebar(props: {
         {(open) => (
           <TabMenu
             title={open().tab.title}
+            account={menuAccount(accountOf(open().tab), (id) =>
+              accountState(props.profiles, props.statuses.get(id), id),
+            )}
             targets={targetsOf(open().tab)}
             running={props.running(open().tab.id)}
             busy={props.movingTo(open().tab.id) !== undefined}
@@ -212,6 +219,10 @@ export function Sidebar(props: {
               const id = open().tab.id;
               setMenu(undefined);
               props.onContinue(id, account);
+            }}
+            onAccounts={() => {
+              setMenu(undefined);
+              props.onAccounts();
             }}
             onDismiss={() => {
               setMenu(undefined);
@@ -252,6 +263,7 @@ function TabRow(props: {
   active: boolean;
   mark: Mark | undefined;
   ended: boolean;
+  removed: boolean;
   movingTo: string | undefined;
   shortcut: Account | undefined;
   renaming: boolean;
@@ -294,6 +306,7 @@ function TabRow(props: {
           last: props.row.last,
           active: props.active,
           done: props.mark?.kind === "done",
+          removed: props.removed,
           waiting: props.mark?.kind === "waiting",
         }}
       >
@@ -323,6 +336,7 @@ function TabRow(props: {
               <Show when={props.account}>
                 {(account) => (
                   <span
+                    class="tab-account"
                     title={`${account().name} · ${props.status(account().id)}`}
                   >
                     <AccountDot id={account().id} />
@@ -427,10 +441,6 @@ function StateMark(props: { mark: Mark | undefined }) {
       </Match>
     </Switch>
   );
-}
-
-export function AccountDot(props: { id: AccountId }) {
-  return <span class="dot" style={{ background: accountColor(props.id) }} />;
 }
 
 function ProjectHeader(props: {
