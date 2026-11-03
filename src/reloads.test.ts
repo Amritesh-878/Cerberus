@@ -62,6 +62,33 @@ test("the webview's menu is cancelled, but text boxes keep theirs", () => {
   expect(rightClick(area)).toBe(false);
 });
 
+test.each(["password", "email", "url", "number", "search", "tel"])(
+  "a %s box keeps its menu",
+  (type) => {
+    const input = add("input");
+    input.type = type;
+
+    expect(rightClick(input)).toBe(false);
+  },
+);
+
+test.each([
+  ["true", false],
+  ["", false],
+  ["plaintext-only", false],
+  ["false", true],
+])(
+  "a click inside contenteditable=%j cancels the menu: %s",
+  (value, cancelled) => {
+    const editor = add("div");
+    editor.setAttribute("contenteditable", value);
+    const inner = document.createElement("span");
+    editor.append(inner);
+
+    expect(rightClick(inner)).toBe(cancelled);
+  },
+);
+
 test("an app menu opened by a row still opens", () => {
   const row = add("div");
   let opened = false;

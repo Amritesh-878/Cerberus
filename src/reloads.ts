@@ -1,11 +1,28 @@
 import { isReloadKey, type Platform, PLATFORM } from "./keys";
 
-// Text boxes keep their own menu (cut, copy, paste); xterm's input is one of them.
-const EDITABLE =
-  'input:not([type]), input[type="text"], input[type="search"], textarea, [contenteditable="true"], [contenteditable=""]';
+// Inputs of these types take no typed text, so their menu is the page's, with Reload in it.
+const NOT_TEXT = new Set([
+  "button",
+  "checkbox",
+  "color",
+  "file",
+  "hidden",
+  "image",
+  "radio",
+  "range",
+  "reset",
+  "submit",
+]);
+const EDITABLE_CONTENT = new Set(["", "true", "plaintext-only"]);
 
+// Text boxes keep their own menu (cut, copy, paste); xterm's input is one of them.
 function isEditable(target: EventTarget | null): boolean {
-  return target instanceof Element && target.closest(EDITABLE) !== null;
+  if (!(target instanceof Element)) return false;
+  const field = target.closest("input, textarea, [contenteditable]");
+  if (field instanceof HTMLInputElement) return !NOT_TEXT.has(field.type);
+  if (field instanceof HTMLTextAreaElement) return true;
+  const content = field?.getAttribute("contenteditable") ?? null;
+  return content !== null && EDITABLE_CONTENT.has(content.toLowerCase());
 }
 
 /** A reload drops the page that owns every tab, so the core ends their programs. */
