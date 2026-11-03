@@ -430,8 +430,8 @@ mod tests {
         assert_eq!(s.for_tab(true, false, "zsh", &[]), None);
     }
 
-    /// Runs a real login, interactive zsh with only the given environment and prints what its startup left behind.
-    #[cfg(unix)]
+    /// Runs a real login, interactive zsh and prints what its startup left behind; only macOS always ships `/bin/zsh`.
+    #[cfg(target_os = "macos")]
     fn zsh_state(home: &Path, data: &Path, user_zdotdir: Option<&Path>) -> String {
         let s = Suggestions {
             user_zdotdir: user_zdotdir.map(|d| d.as_os_str().to_owned()),
@@ -471,7 +471,7 @@ mod tests {
             .to_owned()
     }
 
-    #[cfg(unix)]
+    #[cfg(target_os = "macos")]
     fn user_files(dir: &Path, rc_extra: &str) {
         fs::create_dir_all(dir).unwrap();
         fs::write(dir.join(".zshenv"), "USER_ENV=1\n").unwrap();
@@ -480,7 +480,7 @@ mod tests {
         fs::write(dir.join(".zlogin"), "USER_LOGIN=1\n").unwrap();
     }
 
-    #[cfg(unix)]
+    #[cfg(target_os = "macos")]
     #[test]
     fn a_real_zsh_runs_your_startup_files_then_has_the_plugin() {
         let root = TestDir::new();
@@ -503,7 +503,7 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
+    #[cfg(target_os = "macos")]
     #[test]
     fn a_real_zsh_with_the_plugin_already_loaded_does_not_load_it_again() {
         let root = TestDir::new();
@@ -515,7 +515,7 @@ mod tests {
         assert!(state.contains(" rc=1 login=1 start=1 bind=0 "), "{state}");
     }
 
-    #[cfg(unix)]
+    #[cfg(target_os = "macos")]
     #[test]
     fn a_real_zsh_whose_zshrc_unsets_zdotdir_still_runs_your_zlogin() {
         let root = TestDir::new();
@@ -530,7 +530,7 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
+    #[cfg(target_os = "macos")]
     #[test]
     fn a_real_zsh_reads_your_files_from_your_own_zdotdir() {
         let root = TestDir::new();
