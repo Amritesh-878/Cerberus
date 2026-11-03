@@ -3,7 +3,7 @@ use std::io::Read;
 use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::{Command, Stdio};
-use std::sync::mpsc;
+use std::sync::{OnceLock, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -13,10 +13,20 @@ const MARK: &str = "__CERBERUS_PATH__";
 const TIMEOUT: Duration = Duration::from_secs(5);
 const EXIT_POLL: Duration = Duration::from_millis(10);
 
+static LOGIN_PATH: OnceLock<String> = OnceLock::new();
+
+/// The login shell's `PATH` as read at start, or `None` when it could not be read.
+pub fn login_dirs() -> Option<&'static str> {
+    LOGIN_PATH.get().map(String::as_str)
+}
+
 /// An app opened from Finder or the Dock gets launchd's bare PATH, where `claude` is rarely found.
 pub fn adopt() {
     // Only a terminal sets TERM, and a PATH from there is already the user's.
     if std::env::var_os("TERM").is_some() {
+        if let Ok(path) = std::env::var("PATH") {
+            let _ = LOGIN_PATH.set(path);
+        }
         return;
     }
     let shell = std::env::var_os("SHELL")
@@ -29,8 +39,10 @@ pub fn adopt() {
         return;
     };
     let current = std::env::var("PATH").unwrap_or_default();
+    let merged = merge(&login, &current);
+    let _ = LOGIN_PATH.set(login);
     // SAFETY: runs first thing in `run`, before the app has started any thread that reads the environment.
-    unsafe { std::env::set_var("PATH", merge(&login, &current)) };
+    unsafe { std::env::set_var("PATH", merged) };
 }
 
 // fish quotes a list with spaces between items, so it joins `PATH` itself.

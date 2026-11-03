@@ -9,6 +9,7 @@ use tauri::{AppHandle, Manager, State};
 use crate::accounts::{
     AccountId, Accounts, AccountsError, AuthState, AuthStatus, Candidate, Profiles,
 };
+use crate::cli_link::{self, LinkError, Linked};
 use crate::handover::{ContinueError, RunningTabs, continue_chat};
 use crate::programs::{Finder, ProgramChoice, pick_shell};
 use crate::pty::{Exit, PtyError, PtyManager, SessionId, SpawnRequest};
@@ -314,4 +315,9 @@ pub fn continue_on_account(
 ) -> Result<(), ContinueError> {
     let signed_in = |id| Ok(accounts.status(id)?.state == AuthState::LoggedIn);
     continue_chat(&saved, &accounts, &running, signed_in, tab, account)
+}
+
+#[tauri::command(async)]
+pub fn install_cli(app: AppHandle) -> Result<Linked, LinkError> {
+    cli_link::install(app.path().home_dir().ok())
 }
