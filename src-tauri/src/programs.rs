@@ -163,7 +163,7 @@ impl Finder {
     }
 }
 
-// Homebrew's fish is often installed without being added to `/etc/shells`.
+// Listed ahead of `/etc/shells`, whose macOS order puts csh, dash, ksh and sh before zsh; Homebrew's fish is often missing from it.
 #[cfg(any(unix, test))]
 const KNOWN_SHELLS: [&str; 4] = [
     "/bin/zsh",
@@ -185,7 +185,7 @@ fn unix_shells(
         .map(|line| line.split('#').next().unwrap_or_default().trim())
         .filter(|line| line.starts_with('/'));
     let mut paths: Vec<&str> = Vec::new();
-    for path in listed.chain(KNOWN_SHELLS).chain(login) {
+    for path in KNOWN_SHELLS.into_iter().chain(listed).chain(login) {
         if !paths.contains(&path) && installed(path) {
             paths.push(path);
         }
@@ -412,10 +412,32 @@ mod tests {
 
         let shells = shells_with(MAC_ETC_SHELLS, &files, None);
 
-        assert_eq!(ids(&shells), ["bash", "sh", "tcsh", "zsh"]);
+        assert_eq!(ids(&shells), ["zsh", "bash", "sh", "tcsh"]);
         assert!(shells.iter().all(|s| s.is_shell && s.args == ["-l"]));
-        assert_eq!(shells[2].program.as_deref(), Some("/bin/tcsh"));
-        assert_eq!(shells[2].label, "tcsh");
+        assert_eq!(shells[3].program.as_deref(), Some("/bin/tcsh"));
+        assert_eq!(shells[3].label, "tcsh");
+    }
+
+    #[test]
+    fn a_stock_mac_lists_the_login_shell_then_zsh_bash_and_fish_then_the_rest() {
+        let files = [
+            "/bin/bash",
+            "/bin/csh",
+            "/bin/dash",
+            "/bin/ksh",
+            "/bin/sh",
+            "/bin/tcsh",
+            "/bin/zsh",
+            "/opt/homebrew/bin/fish",
+        ];
+        let order = |login| ids(&shells_with(MAC_ETC_SHELLS, &files, Some(login))).join(" ");
+
+        assert_eq!(order("/bin/zsh"), "zsh bash fish csh dash ksh sh tcsh");
+        assert_eq!(
+            order("/opt/homebrew/bin/fish"),
+            "fish zsh bash csh dash ksh sh tcsh"
+        );
+        assert_eq!(order("/bin/ksh"), "ksh zsh bash fish csh dash sh tcsh");
     }
 
     #[test]
@@ -574,7 +596,7 @@ mod tests {
         );
         let choices = f.choices();
 
-        assert_eq!(ids(&choices), ["claude", "fish", "bash", "zsh"]);
+        assert_eq!(ids(&choices), ["claude", "fish", "zsh", "bash"]);
         assert_eq!(choices[0].image_paste_key, Some("\x16"));
         assert_eq!(choices[1].image_paste_key, None);
         assert!(

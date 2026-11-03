@@ -125,7 +125,7 @@ the disk image. In a dev build the command is `src-tauri/target/debug/cerberus-c
 | Claude Code | `claude` from `PATH` |
 | PowerShell (Windows) | `pwsh` from `PATH`, else Windows PowerShell |
 | Git Bash (Windows) | `bin\bash.exe` under Git's install folder |
-| Shells (macOS) | Your login shell first, then each installed shell in `/etc/shells`, `/bin/zsh`, `/bin/bash` and Homebrew's `fish`, each with `-l` |
+| Shells (macOS) | Your login shell first, then `/bin/zsh`, `/bin/bash` and Homebrew's `fish`, then each other installed shell in `/etc/shells`, each with `-l` |
 
 A tab under an account other than the default gets `CLAUDE_CONFIG_DIR` set to its folder, so
 `claude` there, or typed in a shell tab, runs on that account. The variables a Claude Code session
