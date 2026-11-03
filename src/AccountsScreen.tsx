@@ -203,23 +203,26 @@ function SuggestionsSetting(props: {
   };
 
   return (
-    <div class="alerts-setting suggestions-setting">
-      <label>
-        <input
-          type="checkbox"
-          checked={choice() ?? props.profiles.suggestions}
-          onChange={(event) => {
-            save(event.currentTarget.checked);
-          }}
-        />
-        Suggestions in shell tabs: a grey suggestion from your history as you
-        type, accepted with the Right arrow (zsh and PowerShell 7; fish has its
-        own). New shell tabs only.
-      </label>
-      <Show when={error()}>
-        <p class="error">Suggestions setting not saved: {error()}</p>
-      </Show>
-    </div>
+    <>
+      <h3>Shell tabs</h3>
+      <div class="alerts-setting suggestions-setting">
+        <label>
+          <input
+            type="checkbox"
+            checked={choice() ?? props.profiles.suggestions}
+            onChange={(event) => {
+              save(event.currentTarget.checked);
+            }}
+          />
+          Suggestions in shell tabs: a grey suggestion from your history as you
+          type, and the Right arrow accepts it. zsh and PowerShell 7 get it,
+          fish has its own, and it applies to shell tabs started after a change.
+        </label>
+        <Show when={error()}>
+          <p class="error">Suggestions setting not saved: {error()}</p>
+        </Show>
+      </div>
+    </>
   );
 }
 
