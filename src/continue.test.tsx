@@ -441,3 +441,39 @@ test("the core's refusal to remove the last account shows on its row", async () 
     accountRow(root, "work").querySelector(".row-error")?.textContent,
   ).toBe("Error: work is the only account, and Cerberus needs one.");
 });
+
+test("a colour picked on an account row is saved and every dot of that account follows it", async () => {
+  const saved: unknown[] = [];
+  let profiles = SAVED;
+  const root = await renderApp(() => profiles, {
+    ...core().core,
+    set_account_color: (args: unknown) => {
+      saved.push(args);
+      profiles = {
+        ...SAVED,
+        accounts: SAVED.accounts.map((a) =>
+          a.id === field(args, "id")
+            ? { ...a, color: String(field(args, "color")) }
+            : a,
+        ),
+        revision: 1,
+      };
+      return profiles;
+    },
+  });
+  click(root, "Accounts");
+  await settle();
+
+  accountRow(root, "work")
+    .querySelector<HTMLButtonElement>(".dot-button")
+    ?.click();
+  await settle();
+  click(accountRow(root, "work"), "Teal");
+  await settle();
+
+  expect(saved).toEqual([{ id: 1, color: "teal" }]);
+  expect(
+    row(root, "Claude Code · work").querySelector<HTMLElement>(".dot")?.style
+      .background,
+  ).toBe("#4fb5a8");
+});

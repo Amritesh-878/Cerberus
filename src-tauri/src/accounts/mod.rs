@@ -1,4 +1,5 @@
 mod detect;
+mod palette;
 mod removal;
 mod status;
 mod store;
@@ -48,6 +49,8 @@ pub enum AccountsError {
     LastAccount(String),
     #[error("not a shell Cerberus knows: {0}")]
     UnknownShell(String),
+    #[error("not a colour Cerberus knows: {0}")]
+    UnknownColor(String),
 }
 
 impl Serialize for AccountsError {
@@ -62,6 +65,9 @@ pub struct Account {
     pub id: AccountId,
     pub name: String,
     pub config_dir: PathBuf,
+    /// A palette name; `None` keeps the colour the account's id gave it before colours were saved.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
 }
 
 /// A walkthrough step, saved so a restart part way through setup reopens it there.
@@ -142,10 +148,12 @@ impl Profiles {
         }
         let id = self.next_id;
         self.next_id += 1;
+        let color = palette::first_free(&self.accounts);
         self.accounts.push(Account {
             id,
             name,
             config_dir,
+            color,
         });
         self.default_account.get_or_insert(id);
         Ok(id)
@@ -174,6 +182,32 @@ impl Profiles {
             self.default_account = self.accounts.first().map(|a| a.id);
         }
         Ok(())
+    }
+
+    pub fn set_color(&mut self, id: AccountId, color: &str) -> Result<(), AccountsError> {
+        if !palette::is_known(color) {
+            return Err(AccountsError::UnknownColor(color.to_owned()));
+        }
+        let account = self
+            .accounts
+            .iter_mut()
+            .find(|a| a.id == id)
+            .ok_or(AccountsError::NoAccount(id))?;
+        account.color = Some(color.to_owned());
+        Ok(())
+    }
+
+    /// A colour from a newer build's palette is dropped, so the account shows its old colour, not an error.
+    fn forget_unknown_colors(&mut self) {
+        for account in self.accounts.iter_mut().chain(self.retired.iter_mut()) {
+            if account
+                .color
+                .as_deref()
+                .is_some_and(|c| !palette::is_known(c))
+            {
+                account.color = None;
+            }
+        }
     }
 
     pub fn set_default_account(&mut self, id: AccountId) -> Result<(), AccountsError> {
@@ -624,6 +658,37 @@ mod tests {
             profiles.remove(0),
             Err(AccountsError::NoAccount(0))
         ));
+    }
+
+    #[test]
+    fn a_new_account_takes_the_first_colour_no_other_shows() {
+        let mut profiles = two_accounts();
+        profiles.accounts[0].color = None;
+        profiles.accounts[1].color = Some("blue".to_owned());
+
+        let id = profiles.add("third", dir(r"C:\h\.claude-3")).unwrap();
+
+        // Account 0 shows terracotta by its id, and blue is saved on account 1.
+        assert_eq!(
+            profiles.account(id).unwrap().color.as_deref(),
+            Some("green")
+        );
+    }
+
+    #[test]
+    fn a_colour_outside_the_palette_is_refused() {
+        let mut profiles = two_accounts();
+
+        assert!(matches!(
+            profiles.set_color(0, "#ff0000"),
+            Err(AccountsError::UnknownColor(c)) if c == "#ff0000"
+        ));
+        assert!(matches!(
+            profiles.set_color(9, "teal"),
+            Err(AccountsError::NoAccount(9))
+        ));
+        profiles.set_color(0, "teal").unwrap();
+        assert_eq!(profiles.account(0).unwrap().color.as_deref(), Some("teal"));
     }
 
     #[test]

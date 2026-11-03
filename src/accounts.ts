@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 
+import palette from "./palette.json";
 import type { Step } from "./steps";
 
 export type AccountId = number;
@@ -9,6 +10,8 @@ export interface Account {
   id: AccountId;
   name: string;
   configDir: string;
+  /** A palette name; absent keeps the colour the account's id gave it before colours were saved. */
+  color?: string;
 }
 
 export interface Profiles {
@@ -152,10 +155,44 @@ export function preselectedAccount(profiles: Profiles): AccountId | null {
   return (saved ?? profiles.accounts[0])?.id ?? null;
 }
 
-const ACCOUNT_COLORS = ["#d97757", "#7aa2c8", "#7fb27f", "#b58ad6", "#d6b45a"];
+export interface Swatch {
+  name: string;
+  label: string;
+  hex: string;
+}
 
-export function accountColor(id: AccountId): string {
-  return ACCOUNT_COLORS[id % ACCOUNT_COLORS.length] ?? "#8a8a8a";
+/** The colours an account can take; the core checks names against the same file. */
+export const PALETTE: readonly Swatch[] = palette;
+
+// Before colours were saved, an account's id picked one of the first five.
+const LEGACY_COLOURS = 5;
+
+/** The swatch an account shows: its saved one, else the one its id gave it. */
+export function swatchOf(id: AccountId, color: string | undefined): Swatch {
+  const saved = PALETTE.find((s) => s.name === color);
+  return saved ?? PALETTE[id % LEGACY_COLOURS] ?? FALLBACK;
+}
+
+const FALLBACK: Swatch = { name: "grey", label: "Grey", hex: "#8a8a8a" };
+
+export function accountColor(id: AccountId, color: string | undefined): string {
+  return swatchOf(id, color).hex;
+}
+
+/** An account's saved colour by id, a removed one included, for dots on tabs that only know the id. */
+export function savedColor(
+  profiles: Profiles,
+  id: AccountId,
+): string | undefined {
+  return [...profiles.accounts, ...profiles.retired].find((a) => a.id === id)
+    ?.color;
+}
+
+export function setAccountColor(
+  id: AccountId,
+  color: string,
+): Promise<Profiles> {
+  return invoke<Profiles>("set_account_color", { id, color });
 }
 
 export function statusText(status: AuthStatus | undefined): string {

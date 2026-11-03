@@ -1,6 +1,11 @@
 import { createSignal, For, onCleanup, onMount, Show, untrack } from "solid-js";
 
-import type { Account, AccountId } from "./accounts";
+import {
+  type Account,
+  type AccountId,
+  type Profiles,
+  savedColor,
+} from "./accounts";
 import type { Target } from "./carry";
 import { AccountDot } from "./icons";
 import { placeBox } from "./place";
@@ -15,15 +20,22 @@ export interface MenuAccount {
   id: AccountId;
   name: string;
   status: string;
+  color: string | undefined;
 }
 
 /** The header a tab's menu shows, or none for a tab with no account. */
 export function menuAccount(
   account: { id: AccountId; name: string } | null | undefined,
+  profiles: Profiles,
   status: (id: AccountId) => string,
 ): MenuAccount | undefined {
   return account
-    ? { id: account.id, name: account.name, status: status(account.id) }
+    ? {
+        id: account.id,
+        name: account.name,
+        status: status(account.id),
+        color: savedColor(profiles, account.id),
+      }
     : undefined;
 }
 
@@ -152,7 +164,7 @@ export function TabMenu(props: {
                 {(account) => (
                   <>
                     <div class="menu-account">
-                      <AccountDot id={account().id} />
+                      <AccountDot id={account().id} color={account().color} />
                       <span class="menu-text">{account().name}</span>
                       <span class="menu-key">{account().status}</span>
                     </div>
@@ -188,7 +200,10 @@ export function TabMenu(props: {
                       pick(target.account);
                     }}
                   >
-                    <AccountDot id={target.account.id} />
+                    <AccountDot
+                      id={target.account.id}
+                      color={target.account.color}
+                    />
                     <span class="menu-text">
                       Continue on {target.account.name}…
                     </span>

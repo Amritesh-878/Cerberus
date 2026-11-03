@@ -8,9 +8,12 @@ import {
   type Profiles,
   removeAccount,
   renameAccount,
+  setAccountColor,
   statusText,
   suggestConfigDir,
+  swatchOf,
 } from "./accounts";
+import { ColorPicker } from "./ColorPicker";
 import { AccountDot } from "./icons";
 import type { ProgramChoice } from "./pty";
 import type { Statuses } from "./statuses";
@@ -31,6 +34,8 @@ export function AccountsStep(props: {
   const [newName, setNewName] = createSignal("");
   const [newDir, setNewDir] = createSignal("");
   const [dirPicked, setDirPicked] = createSignal(false);
+  // The account whose colour swatches are open.
+  const [picking, setPicking] = createSignal<number>();
   // The account whose removal waits on a yes, with the tabs that use it.
   const [asking, setAsking] = createSignal<{ id: number; tabs: string[] }>();
   // Shown on the row it is about, since a refusal names that account.
@@ -112,7 +117,20 @@ export function AccountsStep(props: {
         <For each={props.profiles.accounts}>
           {(account) => (
             <li>
-              <AccountDot id={account.id} />
+              <button
+                type="button"
+                class="dot-button"
+                aria-label={`Colour: ${swatchOf(account.id, account.color).label}. Change ${account.name}'s colour`}
+                aria-expanded={picking() === account.id}
+                title="Change colour"
+                onClick={() => {
+                  setPicking((open) =>
+                    open === account.id ? undefined : account.id,
+                  );
+                }}
+              >
+                <AccountDot id={account.id} color={account.color} />
+              </button>
               <Show
                 when={editing() === account.id}
                 fallback={
@@ -230,6 +248,16 @@ export function AccountsStep(props: {
                     </span>
                   </div>
                 )}
+              </Show>
+              <Show when={picking() === account.id}>
+                <ColorPicker
+                  id={account.id}
+                  name={account.name}
+                  color={account.color}
+                  onPick={(color) => {
+                    change(setAccountColor(account.id, color));
+                  }}
+                />
               </Show>
               <Show when={rowError()?.id === account.id && rowError()}>
                 {(refused) => (

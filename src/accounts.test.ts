@@ -1,6 +1,13 @@
 import { expect, test } from "vitest";
 
-import { preselectedAccount, type Profiles, statusText } from "./accounts";
+import {
+  accountColor,
+  PALETTE,
+  preselectedAccount,
+  type Profiles,
+  savedColor,
+  statusText,
+} from "./accounts";
 
 const PROFILES: Profiles = {
   accounts: [
@@ -38,4 +45,33 @@ test("a status still being checked says so", () => {
   expect(
     statusText({ state: "loggedIn", summary: "user@example.com · Pro" }),
   ).toBe("user@example.com · Pro");
+});
+
+test("a dot takes the saved colour, else the one its id gave it before colours were saved", () => {
+  expect(accountColor(6, "teal")).toBe("#4fb5a8");
+  expect(accountColor(6, undefined)).toBe("#7aa2c8");
+  expect(accountColor(6, "magenta")).toBe("#7aa2c8");
+});
+
+test("the palette keeps today's five colours first, in their old order", () => {
+  expect(PALETTE.map((s) => s.hex).slice(0, 5)).toEqual([
+    "#d97757",
+    "#7aa2c8",
+    "#7fb27f",
+    "#b58ad6",
+    "#d6b45a",
+  ]);
+  expect(PALETTE).toHaveLength(8);
+});
+
+test("a tab on a removed account still finds that account's colour", () => {
+  const profiles: Profiles = {
+    ...PROFILES,
+    retired: [
+      { id: 9, name: "old", configDir: String.raw`C:\h\.o`, color: "rose" },
+    ],
+  };
+
+  expect(savedColor(profiles, 9)).toBe("rose");
+  expect(savedColor(profiles, 4)).toBeUndefined();
 });

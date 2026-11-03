@@ -112,7 +112,7 @@ export function NewTab(props: {
                   title={statusText(props.statuses.get(account.id))}
                   onClick={() => setAccountId(account.id)}
                 >
-                  <AccountDot id={account.id} />
+                  <AccountDot id={account.id} color={account.color} />
                   {account.name}
                 </button>
               )}

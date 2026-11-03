@@ -20,6 +20,7 @@ import {
   accountState,
   isNewer,
   isRemoved,
+  savedColor,
   loadProfiles,
   pickFolder,
   type Profiles,
@@ -674,7 +675,10 @@ export function App() {
                         setPillMenu({ x: box.left, y: box.bottom });
                       }}
                     >
-                      <AccountDot id={account().id} />
+                      <AccountDot
+                        id={account().id}
+                        color={savedColor(loaded(), account().id)}
+                      />
                       {loaded().accounts.find((a) => a.id === account().id)
                         ?.name ?? account().name}
                     </button>
@@ -863,6 +867,7 @@ export function App() {
                     loaded().accounts.find(
                       (a) => a.id === tab().launch.account?.id,
                     ) ?? tab().launch.account,
+                    loaded(),
                     (id) => accountState(loaded(), statuses.get(id), id),
                   )}
                   targets={continueTargets(

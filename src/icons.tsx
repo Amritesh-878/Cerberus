@@ -139,8 +139,16 @@ export function AppIcon(props: { size?: number }) {
   );
 }
 
-export function AccountDot(props: { id: AccountId }) {
-  return <span class="dot" style={{ background: accountColor(props.id) }} />;
+export function AccountDot(props: {
+  id: AccountId;
+  color: string | undefined;
+}) {
+  return (
+    <span
+      class="dot"
+      style={{ background: accountColor(props.id, props.color) }}
+    />
+  );
 }
 
 export function CheckIcon() {

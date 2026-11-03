@@ -266,6 +266,15 @@ pub fn remove_account(
 }
 
 #[tauri::command(async)]
+pub fn set_account_color(
+    accounts: State<'_, Accounts>,
+    id: AccountId,
+    color: String,
+) -> Result<Profiles, AccountsError> {
+    accounts.update(|p| p.set_color(id, &color))
+}
+
+#[tauri::command(async)]
 pub fn set_default_account(
     accounts: State<'_, Accounts>,
     id: AccountId,

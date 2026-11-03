@@ -15,6 +15,7 @@ import {
   type AccountId,
   accountState,
   type Profiles,
+  savedColor,
   statusText,
 } from "./accounts";
 import { type Mark, resetText } from "./board";
@@ -162,6 +163,14 @@ export function Sidebar(props: {
                     <TabRow
                       row={row}
                       account={accountOf(row.tab)}
+                      color={
+                        row.tab.launch.account
+                          ? savedColor(
+                              props.profiles,
+                              row.tab.launch.account.id,
+                            )
+                          : undefined
+                      }
                       status={(id) => statusText(props.statuses.get(id))}
                       active={props.active === row.tab.id}
                       mark={props.mark(row.tab.id)}
@@ -214,7 +223,7 @@ export function Sidebar(props: {
         {(open) => (
           <TabMenu
             title={open().tab.title}
-            account={menuAccount(accountOf(open().tab), (id) =>
+            account={menuAccount(accountOf(open().tab), props.profiles, (id) =>
               accountState(props.profiles, props.statuses.get(id), id),
             )}
             targets={targetsOf(open().tab)}
@@ -272,6 +281,8 @@ export function Sidebar(props: {
 function TabRow(props: {
   row: Row;
   account: TabAccount | null;
+  /** The account's saved colour, so a choice in Accounts reaches tabs already open. */
+  color: string | undefined;
   status: (id: AccountId) => string;
   active: boolean;
   mark: Mark | undefined;
@@ -352,7 +363,7 @@ function TabRow(props: {
                     class="tab-account"
                     title={`${account().name} · ${props.status(account().id)}`}
                   >
-                    <AccountDot id={account().id} />
+                    <AccountDot id={account().id} color={props.color} />
                   </span>
                 )}
               </Show>

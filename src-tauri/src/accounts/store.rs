@@ -125,6 +125,7 @@ fn parse(bytes: &[u8]) -> Result<Profiles, AccountsError> {
         mut profiles,
     } = serde_json::from_value(saved).map_err(corrupt)?;
     profiles.next_id = next_id;
+    profiles.forget_unknown_colors();
     profiles.validate().map_err(|e| match e {
         AccountsError::Corrupt(_) => e,
         other => AccountsError::Corrupt(other.to_string()),
@@ -322,6 +323,51 @@ mod tests {
         let loaded = write_raw(&dir, text).load().unwrap();
 
         assert_eq!(loaded.shell, None);
+    }
+
+    #[test]
+    fn a_saved_colour_survives_a_restart_and_an_account_without_one_saves_none() {
+        let dir = TestDir::new();
+        let store = Store::new(dir.path().join("profiles.json"));
+        store
+            .update(|p| {
+                p.add("work", native(r"C:\h\.claude-work"))?;
+                p.add("home", native(r"C:\h\.claude-home"))?;
+                p.accounts[1].color = None;
+                p.set_color(0, "teal")
+            })
+            .unwrap();
+
+        let raw = fs::read_to_string(dir.path().join("profiles.json")).unwrap();
+        let loaded = Store::new(dir.path().join("profiles.json")).load().unwrap();
+
+        assert_eq!(loaded.accounts[0].color.as_deref(), Some("teal"));
+        assert_eq!(loaded.accounts[1].color, None);
+        assert_eq!(raw.matches("\"color\"").count(), 1);
+    }
+
+    #[test]
+    fn an_account_saved_before_colours_loads_with_none_and_keeps_its_old_one() {
+        let dir = TestDir::new();
+        let text = r#"{"version":3,"nextId":1,"accounts":[
+            {"id":0,"name":"work","configDir":"C:\\h\\.claude-work"}],
+            "defaultAccount":0,"shell":null,"startFolder":null}"#;
+
+        let loaded = write_raw(&dir, text).load().unwrap();
+
+        assert_eq!(loaded.accounts[0].color, None);
+    }
+
+    #[test]
+    fn a_colour_from_a_newer_palette_loads_as_none_not_as_a_broken_file() {
+        let dir = TestDir::new();
+        let text = r#"{"version":3,"nextId":1,"accounts":[
+            {"id":0,"name":"work","configDir":"C:\\h\\.claude-work","color":"magenta"}],
+            "defaultAccount":0,"shell":null,"startFolder":null}"#;
+
+        let loaded = write_raw(&dir, text).load().unwrap();
+
+        assert_eq!(loaded.accounts[0].color, None);
     }
 
     #[test]
