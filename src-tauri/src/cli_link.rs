@@ -108,42 +108,47 @@ fn linked(home: &Path, login_path: Option<&str>, shell: Option<&str>) -> Linked 
     let done = format!("Linked ~/{LINK_DIR}/{LINK_NAME} to this app.");
     let dir = home.join(LINK_DIR);
     let on_path = login_path.map(|path| path.split(':').any(|d| Path::new(d) == dir));
-    let (file, line) = startup_line(shell);
-    match on_path {
-        Some(true) => Linked {
-            message: format!("{done} Open a new terminal and run `cerberus`."),
-            path_line: None,
-        },
-        Some(false) => Linked {
-            message: format!(
-                "{done} ~/{LINK_DIR} isn't on your login shell's PATH, so add this line to {file}, then open a new terminal:"
-            ),
+    let missing = match on_path {
+        Some(true) => {
+            return Linked {
+                message: format!("{done} Open a new terminal and run `cerberus`."),
+                path_line: None,
+            };
+        }
+        Some(false) => format!("{done} ~/{LINK_DIR} isn't on your login shell's PATH, so"),
+        None => format!(
+            "{done} Cerberus couldn't read your login shell's PATH. If a new terminal says `cerberus` is not found,"
+        ),
+    };
+    match startup_line(shell) {
+        Some((file, line)) => Linked {
+            message: format!("{missing} add this line to {file}, then open a new terminal:"),
             path_line: Some(line),
         },
         None => Linked {
-            message: format!(
-                "{done} Cerberus couldn't read your login shell's PATH. If a new terminal says `cerberus` is not found, add this line to {file}:"
-            ),
-            path_line: Some(line),
+            message: format!("{missing} add ~/{LINK_DIR} to your shell's PATH."),
+            path_line: None,
         },
     }
 }
 
-fn startup_line(shell: Option<&str>) -> (&'static str, String) {
+/// The file and line for shells whose syntax is known; another shell gets no line it might not parse.
+fn startup_line(shell: Option<&str>) -> Option<(&'static str, String)> {
     let name = shell.and_then(|s| s.rsplit('/').next()).unwrap_or("zsh");
+    let export = || format!(r#"export PATH="$HOME/{LINK_DIR}:$PATH""#);
+    let setenv = || format!(r#"setenv PATH "$HOME/{LINK_DIR}:$PATH""#);
     match name {
-        "fish" => (
+        "zsh" => Some(("~/.zshrc", export())),
+        "bash" => Some(("~/.bash_profile", export())),
+        "sh" | "dash" | "ksh" => Some(("~/.profile", export())),
+        "fish" => Some((
             "~/.config/fish/config.fish",
             format!("fish_add_path ~/{LINK_DIR}"),
-        ),
-        "bash" => ("~/.bash_profile", export_line()),
-        "zsh" => ("~/.zshrc", export_line()),
-        _ => ("your shell's startup file", export_line()),
+        )),
+        "tcsh" => Some(("~/.tcshrc", setenv())),
+        "csh" => Some(("~/.cshrc", setenv())),
+        _ => None,
     }
-}
-
-fn export_line() -> String {
-    format!(r#"export PATH="$HOME/{LINK_DIR}:$PATH""#)
 }
 
 #[cfg(test)]
@@ -199,11 +204,32 @@ mod tests {
             line("/opt/homebrew/bin/fish").as_deref(),
             Some("fish_add_path ~/.local/bin")
         );
+        assert_eq!(
+            line("/bin/tcsh").as_deref(),
+            Some(r#"setenv PATH "$HOME/.local/bin:$PATH""#)
+        );
         let bash = linked(home, path, Some("/bin/bash"));
         assert!(bash.message.contains("~/.bash_profile"), "{}", bash.message);
         assert!(bash.message.contains("isn't on your login shell's PATH"));
-        let tcsh = linked(home, path, Some("/bin/tcsh"));
-        assert!(tcsh.message.contains("your shell's startup file"));
+        let csh = linked(home, path, Some("/bin/csh"));
+        assert!(csh.message.contains("~/.cshrc"), "{}", csh.message);
+        assert!(
+            linked(home, path, Some("/bin/ksh"))
+                .message
+                .contains("~/.profile")
+        );
+    }
+
+    #[test]
+    fn a_shell_of_unknown_syntax_gets_no_line_to_paste() {
+        let nu = linked(Path::new(HOME), Some("/usr/bin"), Some("/opt/local/bin/nu"));
+
+        assert_eq!(nu.path_line, None);
+        assert!(
+            nu.message.contains("add ~/.local/bin to your shell's PATH"),
+            "{}",
+            nu.message
+        );
     }
 
     #[test]
