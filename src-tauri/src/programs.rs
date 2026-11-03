@@ -190,14 +190,21 @@ fn unix_shells(
             paths.push(path);
         }
     }
+    let name_of = |path: &str| path.rsplit('/').next().unwrap_or_default().to_owned();
+    // Ids are saved with each tab, so the bare name goes to the system copy wherever others are listed.
+    let owner = |name: &str| {
+        let named = || paths.iter().copied().filter(|p| name_of(p) == name);
+        named()
+            .find(|p| p.starts_with("/bin/") || p.starts_with("/usr/bin/"))
+            .or_else(|| named().next())
+    };
     let mut shells: Vec<ProgramChoice> = Vec::new();
-    for path in paths {
-        let name = path.rsplit('/').next().unwrap_or_default();
-        // Ids are saved with each tab, so the first of a name keeps it wherever it is installed.
-        let id = if name.is_empty() || shells.iter().any(|s| s.id == name) {
-            path
+    for &path in &paths {
+        let name = name_of(path);
+        let id = if !name.is_empty() && owner(&name) == Some(path) {
+            name.as_str()
         } else {
-            name
+            path
         };
         shells.push(shell(id, id, Some(PathBuf::from(path)), &["-l"]));
     }
@@ -452,14 +459,28 @@ mod tests {
 
     #[test]
     fn a_second_shell_of_the_same_name_is_told_apart_by_its_path() {
-        let etc = "/bin/bash\n/opt/homebrew/bin/bash\n";
         let files = ["/bin/bash", "/opt/homebrew/bin/bash"];
 
-        let shells = shells_with(etc, &files, Some("/opt/homebrew/bin/bash"));
+        for etc in [
+            "/bin/bash\n/opt/homebrew/bin/bash\n",
+            "/opt/homebrew/bin/bash\n/bin/bash\n",
+        ] {
+            let shells = shells_with(etc, &files, Some("/opt/homebrew/bin/bash"));
+            let bash = shells.iter().find(|s| s.id == "bash").unwrap();
 
-        assert_eq!(ids(&shells), ["/opt/homebrew/bin/bash", "bash"]);
-        assert_eq!(shells[0].label, "/opt/homebrew/bin/bash");
-        assert_eq!(shells[1].program.as_deref(), Some("/bin/bash"));
+            assert_eq!(shells[0].id, "/opt/homebrew/bin/bash", "{etc}");
+            assert_eq!(shells[0].label, "/opt/homebrew/bin/bash");
+            assert_eq!(bash.program.as_deref(), Some("/bin/bash"), "{etc}");
+        }
+    }
+
+    #[test]
+    fn a_moved_homebrew_shell_keeps_its_id() {
+        let arm = shells_with("", &["/opt/homebrew/bin/fish"], None);
+        let intel = shells_with("", &["/usr/local/bin/fish"], None);
+
+        assert_eq!(ids(&arm), ["fish"]);
+        assert_eq!(ids(&intel), ["fish"]);
     }
 
     #[test]
