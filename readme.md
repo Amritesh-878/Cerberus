@@ -20,7 +20,8 @@ Applications. It isn't signed by Apple, so clear the block once:
 xattr -dr com.apple.quarantine /Applications/Cerberus.app
 ```
 
-To use `cerberus` in a terminal, link it next to `claude`:
+To use `cerberus` in a terminal, click **Install `cerberus` command** in **Accounts**, or link it
+yourself next to `claude`:
 
 ```sh
 mkdir -p ~/.local/bin
@@ -59,6 +60,17 @@ More detail on each, and how it works: [`docs/guide.md`](docs/guide.md).
 
 They leave Claude Code's own keys alone (Ctrl+T, Ctrl+C, Ctrl+V, Alt+V, Shift+Tab). Paste an image
 into Claude Code with Alt+V on Windows, or Cmd+V on macOS.
+
+In a terminal on macOS, the editing keys of Terminal.app:
+
+| Action | macOS |
+|---|---|
+| Start or end of line | Cmd+Left / Cmd+Right |
+| Delete to start of line | Cmd+Backspace |
+| Word back or forward | Option+Left / Option+Right |
+| Delete a word | Option+Backspace |
+| Clear the screen and scrollback | Cmd+K |
+| Select all | Cmd+A |
 
 ## Open a tab from the command line
 

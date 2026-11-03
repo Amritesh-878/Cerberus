@@ -55,6 +55,10 @@ the same folder and account, with Claude Code's "Resume this session with" line 
 prompt. It stays a shell after a restart. **Resume chat** in its right-click menu brings the chat
 back. Closing Cerberus, a crash, or moving the chat never counts as ended.
 
+A reload of the window would end every tab's program, so an installed Cerberus blocks it: the
+window's own right-click menu (text boxes and the app's menus keep theirs), F5, Ctrl+R and
+Ctrl+Shift+R (Cmd+R and Cmd+Shift+R on macOS). Ctrl+R in a terminal still reaches the shell.
+
 If a save fails, the bar shows "Tabs not saved" and Cerberus retries. Starting Cerberus again
 brings the open window forward instead of opening a second one. An unreadable `tree.db` is kept
 as `tree.db.bad` and Cerberus starts with no saved tabs.
@@ -108,8 +112,11 @@ app or brings it forward.
 
 `cerberus` is a small console command beside the app, so a shell waits for it and sees what it
 prints. The Windows installer adds it as `cerberus.com` in `%LOCALAPPDATA%\Cerberus`, on your
-`PATH`. On macOS it is `Cerberus.app/Contents/MacOS/cerberus-cli`, linked as shown in the README.
-In a dev build it is `src-tauri/target/debug/cerberus-cli`.
+`PATH`. On macOS it is `Cerberus.app/Contents/MacOS/cerberus-cli`: **Install `cerberus` command**
+in **Accounts** links it as `~/.local/bin/cerberus`, replacing an older link but never a file of
+your own. If `~/.local/bin` isn't on your login shell's `PATH`, it shows the line to add to your
+shell's startup file; Cerberus never edits that file itself. It refuses while Cerberus runs from
+the disk image. In a dev build the command is `src-tauri/target/debug/cerberus-cli`.
 
 ## Programs and environment
 
@@ -118,7 +125,7 @@ In a dev build it is `src-tauri/target/debug/cerberus-cli`.
 | Claude Code | `claude` from `PATH` |
 | PowerShell (Windows) | `pwsh` from `PATH`, else Windows PowerShell |
 | Git Bash (Windows) | `bin\bash.exe` under Git's install folder |
-| Login shell (macOS) | `$SHELL -l`, then `/bin/zsh -l` and `/bin/bash -l` |
+| Shells (macOS) | Your login shell first, then each installed shell in `/etc/shells`, `/bin/zsh`, `/bin/bash` and Homebrew's `fish`, each with `-l` |
 
 A tab under an account other than the default gets `CLAUDE_CONFIG_DIR` set to its folder, so
 `claude` there, or typed in a shell tab, runs on that account. The variables a Claude Code session
@@ -137,10 +144,12 @@ pastes an image (Cmd+V or Ctrl+V on macOS).
 - Cerberus's keys use Cmd, so Ctrl keys reach the terminal, except Ctrl+Tab and Ctrl+Shift+Tab,
   which switch tabs as in Terminal.app. Option works as Meta, so
   Option+B, Option+F and Option+arrows move by word in a shell.
+- In a terminal, Cmd+Left and Cmd+Right go to the start and end of the line, Cmd+Backspace
+  deletes to the start, Option+Backspace deletes a word, Cmd+K clears the screen and scrollback,
+  and Cmd+A selects all, with the bytes Ghostty sends. They are sent only when you press them.
+- The terminal font is SF Mono, falling back to Menlo, in regular and bold alike.
 - If `xattr` isn't an option: open Cerberus once, close the warning, then choose **Open Anyway**
   in **System Settings > Privacy & Security**. (Right-click > Open stopped working in macOS 15.)
-- If `command -v cerberus` prints nothing after linking it, add
-  `export PATH="$HOME/.local/bin:$PATH"` to `~/.zshrc` and open a new terminal.
 - Windows only: the installer, its `PATH` entry and the uninstaller.
 - The macOS build is built and tested in CI, and is in its first hands-on testing.
 
