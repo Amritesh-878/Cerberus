@@ -26,17 +26,31 @@ const ENDED = "The chat ended. Resume chat is in the tab's menu.";
 const ENDED_LINE =
   "\r\n\x1b[2m[the chat ended; this tab is now a shell]\x1b[0m\r\n";
 
-function useWebgl(term: Terminal): void {
-  try {
-    const webgl = new WebglAddon();
-    // Disposing the addon on a lost context hands drawing back to the DOM renderer.
-    webgl.onContextLoss(() => {
-      webgl.dispose();
-    });
-    term.loadAddon(webgl);
-  } catch (error) {
-    console.warn("WebGL unavailable, using the DOM renderer:", error);
-  }
+// WebKit keeps only a few WebGL contexts alive, so only the tab on screen holds one.
+function createRenderer(term: Terminal): {
+  show: () => void;
+  hide: () => void;
+} {
+  let webgl: WebglAddon | undefined;
+  const hide = () => {
+    webgl?.dispose();
+    webgl = undefined;
+  };
+  const show = () => {
+    if (webgl) return;
+    try {
+      const addon = new WebglAddon();
+      // Disposing the addon on a lost context hands drawing back to the DOM renderer.
+      addon.onContextLoss(() => {
+        if (webgl === addon) hide();
+      });
+      term.loadAddon(addon);
+      webgl = addon;
+    } catch (error) {
+      console.warn("WebGL unavailable, using the DOM renderer:", error);
+    }
+  };
+  return { show, hide };
 }
 
 function run(term: Terminal, action: TerminalAction): void {
@@ -83,7 +97,7 @@ export function TerminalView(props: {
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(element);
-    useWebgl(term);
+    const renderer = createRenderer(term);
     fit.fit();
     term.attachCustomKeyEventHandler((event) => {
       const action =
@@ -190,7 +204,12 @@ export function TerminalView(props: {
     const observer = new ResizeObserver(refit.call);
     observer.observe(element);
     createEffect(() => {
-      if (props.active) term.focus();
+      if (!props.active) {
+        renderer.hide();
+        return;
+      }
+      renderer.show();
+      term.focus();
     });
 
     onCleanup(() => {
