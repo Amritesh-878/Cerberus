@@ -116,4 +116,5 @@ Stack: Tauri 2, Rust, Solid + TypeScript with Vite, xterm.js over `portable-pty`
 ## License
 
 MIT, see `LICENSE`. Skills under `.claude/skills/` keep their own MIT notices in
-`.claude/skills/notice.md`.
+`.claude/skills/notice.md`. The bundled zsh-autosuggestions (MIT) is listed with its version and
+licence in `src-tauri/vendor/notice.md`.

@@ -18,7 +18,7 @@ The first launch opens a short walkthrough:
 
 **Accounts** (the person button at the bottom of the sidebar) adds, renames or removes accounts,
 and sets the account new tabs use, the shell the **Shell** button opens, where **New project**
-opens its folder picker, and whether alerts are on. Removing an account only forgets it; its
+opens its folder picker, and whether alerts and shell suggestions are on. Removing an account only forgets it; its
 folder stays on disk.
 
 ## Projects and tabs
@@ -136,6 +136,27 @@ sets for its own shells (`CLAUDECODE`, `CLAUDE_CODE_SESSION_ID` and the like, wi
 Selecting text copies it. Ctrl+V pastes text (Cmd+V on macOS). In Claude Code, Alt+V or Ctrl+V
 pastes an image (Cmd+V or Ctrl+V on macOS).
 
+## Suggestions in shell tabs
+
+As you type in a shell tab, a grey suggestion from your history appears after the cursor, and the
+Right arrow accepts it. Cerberus doesn't draw these itself: it turns on what each shell already
+has, through environment variables and startup files only, and your own config still loads first.
+Cerberus never types into the shell.
+
+| Shell | What it gets |
+|---|---|
+| zsh (macOS) | `ZDOTDIR` points at a folder Cerberus writes. Its `.zshenv`, `.zprofile`, `.zshrc` and `.zlogin` each run yours, from your own `ZDOTDIR` or else your home folder, and then the `.zshrc` puts `ZDOTDIR` back and loads a bundled [zsh-autosuggestions](https://github.com/zsh-users/zsh-autosuggestions) v0.7.1. If your config already loads zsh-autosuggestions, it isn't loaded twice. Your history file stays where it was |
+| PowerShell 7 (`pwsh`) | After your profile, `Set-PSReadLineOption -PredictionSource History`, but only when PSReadLine is 2.1 or newer and predictions are off. A prediction source you already chose is kept |
+| Windows PowerShell 5.1 | Nothing changes: it ships PSReadLine 2.0, which has no predictions. Install PowerShell 7, or PSReadLine 2.1 or newer, to get them |
+| fish | Nothing: fish suggests by itself |
+| bash and Git Bash | Nothing yet |
+
+The setting is **Accounts > Suggestions in shell tabs**, on by default, and applies to shell tabs
+started after you change it. Off, shells start exactly as before. Claude Code tabs never get it;
+a tab whose chat ended and became a shell does. A shell tab started with its own command or
+script (`pwsh -c ...`) is left alone, and so is the login shell Cerberus reads `PATH` from at
+start on macOS.
+
 ## macOS notes
 
 - Opened from Finder or the Dock, an app gets a short `PATH`. Cerberus reads `PATH` from your
@@ -159,6 +180,7 @@ pastes an image (Cmd+V or Ctrl+V on macOS).
 |---|---|---|
 | Accounts and settings (`profiles.json`) | `%APPDATA%\com.cerberus.terminal` | `~/Library/Application Support/com.cerberus.terminal` |
 | Saved tabs (`tree.db`) | same folder | same folder |
+| zsh suggestion files (`shell/zsh`) | same folder | same folder |
 
 Uninstalling on Windows keeps this folder unless you tick the box to delete the app data. An
 unreadable `profiles.json` is kept as `profiles.json.bad` and the app offers to start fresh.
