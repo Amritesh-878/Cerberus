@@ -26,15 +26,25 @@ const ENDED = "The chat ended. Resume chat is in the tab's menu.";
 const ENDED_LINE =
   "\r\n\x1b[2m[the chat ended; this tab is now a shell]\x1b[0m\r\n";
 
+function canvasesOf(term: Terminal): HTMLCanvasElement[] {
+  return [...(term.element?.querySelectorAll("canvas") ?? [])];
+}
+
 // WebKit keeps only a few WebGL contexts alive, so only the tab on screen holds one.
 function createRenderer(term: Terminal): {
   show: () => void;
   hide: () => void;
 } {
   let webgl: WebglAddon | undefined;
+  let contexts: WebGL2RenderingContext[] = [];
   const hide = () => {
     webgl?.dispose();
     webgl = undefined;
+    // The addon leaves its context to the garbage collector, which may not run before the next tab needs one.
+    for (const gl of contexts) {
+      gl.getExtension("WEBGL_lose_context")?.loseContext();
+    }
+    contexts = [];
   };
   const show = () => {
     if (webgl) return;
@@ -44,8 +54,13 @@ function createRenderer(term: Terminal): {
       addon.onContextLoss(() => {
         if (webgl === addon) hide();
       });
+      const before = new Set(canvasesOf(term));
       term.loadAddon(addon);
       webgl = addon;
+      // A canvas the addon drew in 2D has no WebGL context, so it is skipped.
+      contexts = canvasesOf(term)
+        .filter((canvas) => !before.has(canvas))
+        .flatMap((canvas) => canvas.getContext("webgl2") ?? []);
     } catch (error) {
       console.warn("WebGL unavailable, using the DOM renderer:", error);
     }
