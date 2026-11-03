@@ -11,6 +11,7 @@ mod programs;
 mod pty;
 mod saved;
 mod sessions;
+mod suggestions;
 
 use std::sync::Arc;
 
@@ -21,6 +22,7 @@ use crate::accounts::Accounts;
 use crate::handover::RunningTabs;
 use crate::pty::PtyManager;
 use crate::saved::Saved;
+use crate::suggestions::Suggestions;
 
 pub use crate::open::console;
 
@@ -45,6 +47,7 @@ pub fn run() {
             let paths = app.path();
             let config_dir = paths.app_config_dir()?;
             app.manage(Accounts::new(&config_dir, paths.home_dir()?));
+            app.manage(Suggestions::new(&paths.app_data_dir()?));
             let handle = app.handle().clone();
             let report = move |failure: Option<&str>| {
                 // Fails only once the window is gone, and then nobody is left to show it.
@@ -83,6 +86,7 @@ pub fn run() {
             commands::set_shell,
             commands::set_sidebar_width,
             commands::set_alerts,
+            commands::set_suggestions,
             commands::account_status,
             commands::tree_load,
             commands::tree_save,

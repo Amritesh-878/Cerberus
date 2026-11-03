@@ -324,7 +324,7 @@ mod tests {
     }
 
     #[test]
-    fn a_file_saved_before_the_alerts_setting_has_alerts_on() {
+    fn a_file_saved_before_the_alerts_and_suggestions_settings_has_both_on() {
         let dir = TestDir::new();
         let text = r#"{"version":3,"nextId":0,"accounts":[],"defaultAccount":null,
             "shell":null,"startFolder":null,"sidebarWidth":300}"#;
@@ -332,6 +332,7 @@ mod tests {
         let loaded = write_raw(&dir, text).load().unwrap();
 
         assert!(loaded.alerts);
+        assert!(loaded.suggestions);
         assert_eq!(loaded.sidebar_width, Some(300));
     }
 

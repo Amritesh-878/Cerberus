@@ -15,6 +15,7 @@ use crate::programs::{Finder, ProgramChoice, pick_shell};
 use crate::pty::{Exit, PtyError, PtyManager, SessionId, SpawnRequest};
 use crate::saved::{Loaded, Saved, SavedTree, TabId, TreeError};
 use crate::sessions::{Resume, TabState, Watched, chat_ended, is_claude, plan_resume, watch};
+use crate::suggestions::Suggestions;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -90,6 +91,14 @@ pub fn pty_spawn(
         claude_home = None;
     }
     let runs_claude = claude_home.is_some();
+    // An unreadable profiles file is reported elsewhere; the shell still opens, as it did before.
+    let suggest = accounts.load().is_ok_and(|p| p.suggestions);
+    if let Some(setup) =
+        app.state::<Suggestions>()
+            .for_tab(suggest, runs_claude, &request.program, &request.args)
+    {
+        (request.args, request.env) = (setup.args, setup.env);
+    }
     let ended_saved = Saved::clone(&saved);
     let started_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -280,6 +289,11 @@ pub fn set_sidebar_width(
 #[tauri::command(async)]
 pub fn set_alerts(accounts: State<'_, Accounts>, on: bool) -> Result<Profiles, AccountsError> {
     accounts.set_alerts(on)
+}
+
+#[tauri::command(async)]
+pub fn set_suggestions(accounts: State<'_, Accounts>, on: bool) -> Result<Profiles, AccountsError> {
+    accounts.set_suggestions(on)
 }
 
 #[tauri::command(async)]
