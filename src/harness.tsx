@@ -46,6 +46,7 @@ export const EMPTY: Profiles = {
   startFolder: null,
   sidebarWidth: null,
   alerts: true,
+  suggestions: true,
   revision: 0,
 };
 
@@ -59,6 +60,7 @@ export const SAVED: Profiles = {
   startFolder: null,
   sidebarWidth: null,
   alerts: true,
+  suggestions: true,
   revision: 0,
 };
 

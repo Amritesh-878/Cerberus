@@ -8,6 +8,7 @@ import {
   setDefaultAccount,
   setShell,
   setStartFolder,
+  setSuggestions,
 } from "./accounts";
 import { installCli, type Linked } from "./cli";
 import { PLATFORM } from "./keys";
@@ -65,6 +66,10 @@ export function AccountsScreen(props: {
           limit or ends
         </label>
       </div>
+      <SuggestionsSetting
+        profiles={props.profiles}
+        onProfiles={props.onProfiles}
+      />
       <Show when={PLATFORM === "mac"}>
         <h3>Command line</h3>
         <CliInstall />
@@ -166,6 +171,57 @@ function ShellSetting(props: {
       <Show when={error()}>
         <p class="error">{error()}</p>
       </Show>
+    </>
+  );
+}
+
+function SuggestionsSetting(props: {
+  profiles: Profiles;
+  onProfiles: (profiles: Profiles) => void;
+}) {
+  // The latest click, shown until every queued save is back, so an earlier reply cannot flip the box.
+  const [choice, setChoice] = createSignal<boolean>();
+  const [error, setError] = createSignal<string>();
+  let unsettled = 0;
+  const save = (on: boolean) => {
+    setChoice(on);
+    unsettled += 1;
+    setSuggestions(on)
+      .then(
+        (profiles) => {
+          setError(undefined);
+          props.onProfiles(profiles);
+        },
+        (e: unknown) => {
+          setError(String(e));
+        },
+      )
+      .finally(() => {
+        unsettled -= 1;
+        if (unsettled === 0) setChoice(undefined);
+      });
+  };
+
+  return (
+    <>
+      <h3>Shell tabs</h3>
+      <div class="alerts-setting suggestions-setting">
+        <label>
+          <input
+            type="checkbox"
+            checked={choice() ?? props.profiles.suggestions}
+            onChange={(event) => {
+              save(event.currentTarget.checked);
+            }}
+          />
+          Suggestions in shell tabs: a grey suggestion from your history as you
+          type, and the Right arrow accepts it. zsh and PowerShell 7 get it,
+          fish has its own, and it applies to shell tabs started after a change.
+        </label>
+        <Show when={error()}>
+          <p class="error">Suggestions setting not saved: {error()}</p>
+        </Show>
+      </div>
     </>
   );
 }

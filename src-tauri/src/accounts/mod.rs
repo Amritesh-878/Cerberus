@@ -72,6 +72,9 @@ pub struct Profiles {
     /// Desktop notifications when a chat in another tab needs you.
     #[serde(default = "on")]
     pub alerts: bool,
+    /// Shell tabs suggest from history as you type, through each shell's own feature.
+    #[serde(default = "on")]
+    pub suggestions: bool,
     // Raised on every save, so the webview can drop a reply that a newer one already replaced.
     #[serde(default)]
     pub revision: u64,
@@ -80,7 +83,7 @@ pub struct Profiles {
     next_id: AccountId,
 }
 
-// Written out because alerts start on, on a first run as in a file saved before the setting existed.
+// Written out because alerts and suggestions start on, on a first run as in a file saved before the setting existed.
 impl Default for Profiles {
     fn default() -> Self {
         Self {
@@ -90,6 +93,7 @@ impl Default for Profiles {
             start_folder: None,
             sidebar_width: None,
             alerts: true,
+            suggestions: true,
             revision: 0,
             next_id: 0,
         }
@@ -255,6 +259,13 @@ impl Accounts {
     pub fn set_alerts(&self, on: bool) -> Result<Profiles, AccountsError> {
         self.update(|p| {
             p.alerts = on;
+            Ok(())
+        })
+    }
+
+    pub fn set_suggestions(&self, on: bool) -> Result<Profiles, AccountsError> {
+        self.update(|p| {
+            p.suggestions = on;
             Ok(())
         })
     }
@@ -641,6 +652,20 @@ mod tests {
         let saved = fs::read_to_string(app.join("profiles.json")).unwrap();
         assert!(saved.contains(r#""alerts": false"#));
         assert!(accounts.set_alerts(true).unwrap().alerts);
+    }
+
+    #[test]
+    fn suggestions_start_on_and_the_choice_is_saved_in_the_profiles_file() {
+        let home = TestDir::new();
+        let app = home.path().join("app");
+        let accounts = Accounts::new(&app, home.path().to_path_buf());
+
+        assert!(accounts.load().unwrap().suggestions);
+        assert!(!accounts.set_suggestions(false).unwrap().suggestions);
+        assert!(!accounts.load().unwrap().suggestions);
+        let saved = fs::read_to_string(app.join("profiles.json")).unwrap();
+        assert!(saved.contains(r#""suggestions": false"#));
+        assert!(accounts.set_suggestions(true).unwrap().suggestions);
     }
 
     #[test]

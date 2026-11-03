@@ -20,6 +20,8 @@ export interface Profiles {
   sidebarWidth: number | null;
   /** Desktop notifications when a chat in another tab needs you. */
   alerts: boolean;
+  /** Shell tabs suggest from history as you type, through each shell's own feature. */
+  suggestions: boolean;
   revision: number;
 }
 
@@ -87,6 +89,16 @@ let alertsSaving: Promise<unknown> = Promise.resolve();
 export function setAlerts(on: boolean): Promise<Profiles> {
   const saved = alertsSaving.then(() => invoke<Profiles>("set_alerts", { on }));
   alertsSaving = saved.catch(() => undefined);
+  return saved;
+}
+
+let suggestionsSaving: Promise<unknown> = Promise.resolve();
+
+export function setSuggestions(on: boolean): Promise<Profiles> {
+  const saved = suggestionsSaving.then(() =>
+    invoke<Profiles>("set_suggestions", { on }),
+  );
+  suggestionsSaving = saved.catch(() => undefined);
   return saved;
 }
 

@@ -2,6 +2,7 @@ mod coalesce;
 mod flow;
 
 use std::collections::HashMap;
+use std::ffi::OsString;
 use std::fmt::Display;
 use std::io::{self, ErrorKind, Read, Write};
 use std::path::{Path, PathBuf};
@@ -64,6 +65,9 @@ pub struct SpawnRequest {
     /// Set by the core from the tab's account, never by the webview.
     #[serde(skip)]
     pub claude_config_dir: Option<PathBuf>,
+    /// Set by the core for shell suggestions, never by the webview.
+    #[serde(skip)]
+    pub env: Vec<(&'static str, OsString)>,
 }
 
 struct Session {
@@ -260,6 +264,9 @@ fn command_for(request: &SpawnRequest) -> Result<CommandBuilder, PtyError> {
         // An inherited value would move a default-account tab onto another account.
         None => command.env_remove("CLAUDE_CONFIG_DIR"),
     }
+    for (name, value) in &request.env {
+        command.env(name, value);
+    }
     Ok(command)
 }
 
@@ -384,6 +391,7 @@ mod tests {
             cols: 80,
             rows: 24,
             claude_config_dir: None,
+            env: Vec::new(),
         };
         let id = manager
             .spawn(
@@ -564,6 +572,7 @@ mod tests {
             cols: 80,
             rows: 24,
             claude_config_dir: None,
+            env: Vec::new(),
         };
 
         let result = manager.spawn(&request, |_| {}, |_| {});
@@ -581,6 +590,7 @@ mod tests {
             cols: 80,
             rows: 24,
             claude_config_dir: None,
+            env: Vec::new(),
         };
 
         let result = manager.spawn(&request, |_| {}, |_| {});
@@ -596,6 +606,7 @@ mod tests {
             cols: 80,
             rows: 24,
             claude_config_dir: claude_config_dir.map(PathBuf::from),
+            env: Vec::new(),
         })
         .unwrap()
     }
@@ -607,6 +618,25 @@ mod tests {
         assert_eq!(
             command.get_env("CLAUDE_CONFIG_DIR"),
             Some(std::ffi::OsStr::new(r"C:\Users\u\.claude-acc2"))
+        );
+    }
+
+    #[test]
+    fn variables_the_core_adds_reach_the_program() {
+        let command = command_for(&SpawnRequest {
+            program: SHELL.0.to_owned(),
+            args: Vec::new(),
+            cwd: None,
+            cols: 80,
+            rows: 24,
+            claude_config_dir: None,
+            env: vec![("ZDOTDIR", OsString::from("/data/shell/zsh"))],
+        })
+        .unwrap();
+
+        assert_eq!(
+            command.get_env("ZDOTDIR"),
+            Some(std::ffi::OsStr::new("/data/shell/zsh"))
         );
     }
 

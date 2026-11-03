@@ -15,6 +15,7 @@ const EMPTY: Profiles = {
   startFolder: null,
   sidebarWidth: null,
   alerts: true,
+  suggestions: true,
   revision: 0,
 };
 
