@@ -177,7 +177,7 @@ fi
         r#"if [[ $ZDOTDIR != "$_cerberus_wrapper" && -f $ZDOTDIR/{name} ]]; then
   builtin source "$ZDOTDIR/{name}"
 fi
-CERBERUS_USER_ZDOTDIR=$ZDOTDIR
+CERBERUS_USER_ZDOTDIR=${{ZDOTDIR:-$HOME}}
 "#
     ));
     match name {
@@ -513,6 +513,21 @@ mod tests {
         let state = zsh_state(&home, &root.path().join("data"), None);
 
         assert!(state.contains(" rc=1 login=1 start=1 bind=0 "), "{state}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_real_zsh_whose_zshrc_unsets_zdotdir_still_runs_your_zlogin() {
+        let root = TestDir::new();
+        let home = root.path().join("home");
+        user_files(&home, "unset ZDOTDIR\n");
+
+        let state = zsh_state(&home, &root.path().join("data"), None);
+
+        assert!(
+            state.starts_with("env=1 profile=1 rc=1 login=1 start=1 bind=1 zdotdir=unset "),
+            "{state}"
+        );
     }
 
     #[cfg(unix)]
