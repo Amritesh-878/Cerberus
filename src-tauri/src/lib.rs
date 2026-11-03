@@ -87,6 +87,7 @@ pub fn run() {
             commands::set_sidebar_width,
             commands::set_alerts,
             commands::set_suggestions,
+            commands::set_setup_step,
             commands::account_status,
             commands::tree_load,
             commands::tree_save,

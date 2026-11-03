@@ -1,8 +1,16 @@
-import { createSignal, For, Match, Show, Switch, untrack } from "solid-js";
+import {
+  createSignal,
+  For,
+  Match,
+  onMount,
+  Show,
+  Switch,
+  untrack,
+} from "solid-js";
 
 import { DefaultAccountPicker } from "./AccountsScreen";
 import { AccountsStep } from "./AccountsStep";
-import type { Profiles } from "./accounts";
+import { type Profiles, setSetupStep } from "./accounts";
 import { CheckIcon } from "./icons";
 import type { ProgramChoice } from "./pty";
 import type { Statuses } from "./statuses";
@@ -37,6 +45,30 @@ export function Walkthrough(props: Props) {
     untrack(() => props.start ?? "install"),
   );
   const done = (s: Step) => stepDone(s, props.profiles, props.programs);
+  const [saveError, setSaveError] = createSignal<string>();
+  const saved = (profiles: Profiles) => {
+    setSaveError(undefined);
+    props.onProfiles(profiles);
+  };
+  const failed = (error: unknown) => {
+    setSaveError(String(error));
+  };
+  // Each step is saved as it is reached, so a restart reopens setup there.
+  const go = (next: Step) => {
+    setStep(next);
+    setSetupStep(next).then(saved, failed);
+  };
+  // Reopened from the start page, setup is saved as running again until Finish or Skip.
+  onMount(() => {
+    if (props.profiles.setup !== step()) go(step());
+  });
+  // Setup ends only once the core has it, or a restart would bring it back.
+  const leave = () => {
+    setSetupStep(null).then((profiles) => {
+      saved(profiles);
+      props.onFinish();
+    }, failed);
+  };
 
   return (
     <main class="walkthrough setup">
@@ -46,7 +78,7 @@ export function Walkthrough(props: Props) {
           type="button"
           class="link"
           onClick={() => {
-            props.onFinish();
+            leave();
           }}
         >
           Skip setup
@@ -59,7 +91,9 @@ export function Walkthrough(props: Props) {
               <button
                 type="button"
                 aria-current={s === step() ? "step" : undefined}
-                onClick={() => setStep(s)}
+                onClick={() => {
+                  go(s);
+                }}
               >
                 <span class="step-num">
                   <Show when={done(s)} fallback={i() + 1}>
@@ -113,10 +147,18 @@ export function Walkthrough(props: Props) {
           </Match>
         </Switch>
       </section>
+      <Show when={saveError()}>
+        {(error) => <p class="error">Setup progress not saved: {error()}</p>}
+      </Show>
       <nav class="step-nav">
         <Show when={previousStep(step())}>
           {(back) => (
-            <button type="button" onClick={() => setStep(back())}>
+            <button
+              type="button"
+              onClick={() => {
+                go(back());
+              }}
+            >
               Back
             </button>
           )}
@@ -131,7 +173,7 @@ export function Walkthrough(props: Props) {
               title={finishBlocker(props.profiles)}
               disabled={finishBlocker(props.profiles) !== undefined}
               onClick={() => {
-                props.onFinish();
+                leave();
               }}
             >
               Finish
@@ -139,7 +181,13 @@ export function Walkthrough(props: Props) {
           }
         >
           {(next) => (
-            <button type="button" class="go" onClick={() => setStep(next())}>
+            <button
+              type="button"
+              class="go"
+              onClick={() => {
+                go(next());
+              }}
+            >
               Next
             </button>
           )}

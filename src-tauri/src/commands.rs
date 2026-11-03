@@ -8,6 +8,7 @@ use tauri::{AppHandle, Manager, State};
 
 use crate::accounts::{
     AccountId, Accounts, AccountsError, AuthState, AuthStatus, Candidate, Profiles, Removal,
+    SetupStep,
 };
 use crate::cli_link::{self, LinkError, Linked};
 use crate::handover::{ContinueError, RunningTabs, continue_chat};
@@ -286,6 +287,14 @@ pub fn set_sidebar_width(
     width: u32,
 ) -> Result<Profiles, AccountsError> {
     accounts.set_sidebar_width(width)
+}
+
+#[tauri::command(async)]
+pub fn set_setup_step(
+    accounts: State<'_, Accounts>,
+    step: Option<SetupStep>,
+) -> Result<Profiles, AccountsError> {
+    accounts.set_setup(step)
 }
 
 #[tauri::command(async)]

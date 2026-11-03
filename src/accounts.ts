@@ -1,6 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 
+import type { Step } from "./steps";
+
 export type AccountId = number;
 
 export interface Account {
@@ -22,6 +24,8 @@ export interface Profiles {
   alerts: boolean;
   /** Shell tabs suggest from history as you type, through each shell's own feature. */
   suggestions: boolean;
+  /** The walkthrough step to reopen at; `null` once setup is finished or skipped. */
+  setup: Step | null;
   /** Removed accounts, still named on the tabs left on them. */
   retired: Account[];
   revision: number;
@@ -123,6 +127,11 @@ export function setSuggestions(on: boolean): Promise<Profiles> {
   );
   suggestionsSaving = saved.catch(() => undefined);
   return saved;
+}
+
+/** `null` ends setup, by Finish or Skip. */
+export function setSetupStep(step: Step | null): Promise<Profiles> {
+  return invoke<Profiles>("set_setup_step", { step });
 }
 
 export function setShell(shell: string): Promise<Profiles> {

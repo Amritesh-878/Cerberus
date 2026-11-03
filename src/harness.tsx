@@ -48,6 +48,7 @@ export const EMPTY: Profiles = {
   alerts: true,
   suggestions: true,
   retired: [],
+  setup: "install",
   revision: 0,
 };
 
@@ -63,6 +64,7 @@ export const SAVED: Profiles = {
   alerts: true,
   suggestions: true,
   retired: [],
+  setup: null,
   revision: 0,
 };
 
@@ -88,6 +90,15 @@ export async function renderApp(
           return { state: "loggedIn", summary: "user@example.com · Pro" };
         case "plugin:window|is_focused":
           return true;
+        case "set_setup_step": {
+          const now = profiles();
+          return {
+            ...now,
+            // The app sends only the steps it knows, so the mock passes the value back as is.
+            setup: field(args, "step") as Profiles["setup"],
+            revision: now.revision + 1,
+          };
+        }
         case "tree_load":
           return {
             tree: { projects: [], tabs: [], nextId: 1 },

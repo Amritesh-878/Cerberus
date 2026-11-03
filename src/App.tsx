@@ -96,15 +96,25 @@ export function App() {
   const [setupFrom, setSetupFrom] = createSignal<Step>("install");
   // A setup tab opened from a page shows over it, so the page keeps its place underneath.
   const [overPage, setOverPage] = createSignal(false);
+  // Setup is left only by its own Finish or Skip, so no click, key or request elsewhere ends it by mistake.
+  const inSetup = () => page() === "walkthrough";
   const showPage = (next: Page | undefined) => {
+    if (untrack(inSetup) && next !== "walkthrough") return;
     setPage(next);
+    setOverPage(false);
+  };
+  const endSetup = () => {
+    setPage(undefined);
     setOverPage(false);
   };
   // Signals, not a resource: an errored resource keeps throwing after a fresh value is set.
   const [profiles, setProfiles] = createSignal<Profiles>();
   const [loadError, setLoadError] = createSignal<string>();
   const loaded = (fresh: Profiles) => {
-    if (fresh.accounts.length === 0) showPage("walkthrough");
+    if (fresh.setup !== null) {
+      setSetupFrom(fresh.setup);
+      showPage("walkthrough");
+    }
     setLoadError(undefined);
     setProfiles(fresh);
   };
@@ -304,6 +314,14 @@ export function App() {
     markOf(board(), id)?.kind !== "done";
 
   const select = (id: TabId) => {
+    if (untrack(inSetup)) {
+      // Only setup's own tabs, such as the installer, open while it runs; they show over it.
+      if (tabById(id)?.projectId !== null) return;
+      setActive(id);
+      setOverPage(true);
+      setDrawer(false);
+      return;
+    }
     setActive(id);
     showPage(undefined);
     setDrawer(false);
@@ -468,7 +486,8 @@ export function App() {
   followOpenRequests({
     tree,
     shown,
-    restored,
+    // A request waits in the core until setup ends, so it cannot open a tab past it.
+    restored: () => restored() && !inSetup(),
     // A picker left open would cover the tab the command asked for.
     select: (id) => {
       setOpening(undefined);
@@ -484,6 +503,7 @@ export function App() {
       if (!shortcut || profiles() === undefined) return;
       event.preventDefault();
       event.stopPropagation();
+      if (inSetup() && shortcut !== "closeTab") return;
       if (shortcut === "nextTab" || shortcut === "previousTab") {
         const id = stepTab(tree(), shown(), shortcut === "nextTab" ? 1 : -1);
         if (id !== undefined) select(id);
@@ -539,6 +559,7 @@ export function App() {
               onDone={saveWidth}
             />
             <Sidebar
+              locked={inSetup()}
               tree={tree()}
               profiles={loaded()}
               statuses={statuses}
@@ -797,9 +818,7 @@ export function App() {
                           onProfiles={changed}
                           onOpen={openSetupTab}
                           onRecheckPrograms={() => void recheckPrograms()}
-                          onFinish={() => {
-                            showPage(undefined);
-                          }}
+                          onFinish={endSetup}
                         />
                       </Match>
                       <Match when={page() === "accounts"}>

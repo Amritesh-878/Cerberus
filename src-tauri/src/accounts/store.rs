@@ -163,6 +163,7 @@ mod tests {
     use std::path::Path;
 
     use super::*;
+    use crate::accounts::SetupStep;
     use crate::accounts::testdir::{TestDir, native};
 
     fn store_in(dir: &TestDir) -> Store {
@@ -321,6 +322,44 @@ mod tests {
         let loaded = write_raw(&dir, text).load().unwrap();
 
         assert_eq!(loaded.shell, None);
+    }
+
+    #[test]
+    fn a_file_saved_before_setup_was_tracked_has_finished_setup() {
+        let dir = TestDir::new();
+        let text = r#"{"version":3,"nextId":0,"accounts":[],"defaultAccount":null,
+            "shell":null,"startFolder":null}"#;
+
+        assert_eq!(write_raw(&dir, text).load().unwrap().setup, None);
+    }
+
+    #[test]
+    fn a_first_run_starts_setup_and_the_step_reached_survives_a_restart() {
+        let dir = TestDir::new();
+        let store = Store::new(dir.path().join("profiles.json"));
+        assert_eq!(store.load().unwrap().setup, Some(SetupStep::Install));
+
+        store
+            .update(|p| {
+                p.setup = Some(SetupStep::Accounts);
+                Ok(())
+            })
+            .unwrap();
+
+        let restarted = Store::new(dir.path().join("profiles.json"));
+        assert_eq!(restarted.load().unwrap().setup, Some(SetupStep::Accounts));
+    }
+
+    #[test]
+    fn an_unknown_setup_step_is_refused() {
+        let dir = TestDir::new();
+        let text = r#"{"version":3,"nextId":0,"accounts":[],"defaultAccount":null,
+            "shell":null,"startFolder":null,"setup":"somewhere"}"#;
+
+        assert!(matches!(
+            write_raw(&dir, text).load(),
+            Err(AccountsError::Corrupt(_))
+        ));
     }
 
     #[test]

@@ -64,6 +64,15 @@ pub struct Account {
     pub config_dir: PathBuf,
 }
 
+/// A walkthrough step, saved so a restart part way through setup reopens it there.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SetupStep {
+    Install,
+    Accounts,
+    Defaults,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Profiles {
@@ -81,6 +90,9 @@ pub struct Profiles {
     /// Shell tabs suggest from history as you type, through each shell's own feature.
     #[serde(default = "on")]
     pub suggestions: bool,
+    /// Where setup is, until it is finished or skipped; a file from before the setting has finished it.
+    #[serde(default)]
+    pub setup: Option<SetupStep>,
     /// Removed accounts, kept so a tab left on one can still carry its chat to another account.
     #[serde(default)]
     pub retired: Vec<Account>,
@@ -103,6 +115,7 @@ impl Default for Profiles {
             sidebar_width: None,
             alerts: true,
             suggestions: true,
+            setup: Some(SetupStep::Install),
             retired: Vec::new(),
             revision: 0,
             next_id: 0,
@@ -274,6 +287,14 @@ impl Accounts {
         let width = width.clamp(*SIDEBAR_WIDTHS.start(), *SIDEBAR_WIDTHS.end());
         self.update(|p| {
             p.sidebar_width = Some(width);
+            Ok(())
+        })
+    }
+
+    /// `None` ends setup, by finishing or skipping it.
+    pub fn set_setup(&self, step: Option<SetupStep>) -> Result<Profiles, AccountsError> {
+        self.update(|p| {
+            p.setup = step;
             Ok(())
         })
     }

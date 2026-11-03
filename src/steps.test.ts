@@ -19,6 +19,7 @@ const PROFILES: Profiles = {
   alerts: true,
   suggestions: true,
   retired: [],
+  setup: null,
   revision: 0,
 };
 

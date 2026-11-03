@@ -68,6 +68,8 @@ export function Sidebar(props: {
   onRemoveProject: (id: ProjectId) => void;
   onNewProject: () => void;
   onAccounts: () => void;
+  /** Setup is running, so only its own tabs show and nothing here can leave it. */
+  locked: boolean;
 }) {
   const [search, setSearch] = createSignal("");
   const [renaming, setRenaming] = createSignal<TabId>();
@@ -109,20 +111,31 @@ export function Sidebar(props: {
 
   return (
     <aside class="sidebar">
-      <div class="sidebar-top">
-        <label class="search">
-          <SearchIcon />
-          <input
-            type="search"
-            placeholder="Search tabs"
-            aria-label="Search tabs"
-            value={search()}
-            onInput={(event) => setSearch(event.currentTarget.value)}
-          />
-        </label>
-      </div>
+      <Show when={!props.locked}>
+        <div class="sidebar-top">
+          <label class="search">
+            <SearchIcon />
+            <input
+              type="search"
+              placeholder="Search tabs"
+              aria-label="Search tabs"
+              value={search()}
+              onInput={(event) => setSearch(event.currentTarget.value)}
+            />
+          </label>
+        </div>
+      </Show>
       <nav class="tree" aria-label="Tabs">
-        <Index each={listed()}>
+        <Show when={props.locked}>
+          <p class="hint tree-empty">
+            Your projects and tabs show here once setup is done.
+          </p>
+        </Show>
+        <Index
+          each={
+            props.locked ? listed().filter((g) => g.project === null) : listed()
+          }
+        >
           {(group) => (
             <section>
               <ProjectHeader
@@ -230,7 +243,7 @@ export function Sidebar(props: {
           />
         )}
       </Show>
-      <footer class="sidebar-foot">
+      <footer class="sidebar-foot" hidden={props.locked}>
         <button
           type="button"
           class="foot-button"

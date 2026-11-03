@@ -462,6 +462,10 @@ button {
   border-top: 1px solid var(--line);
 }
 
+.sidebar-foot[hidden] {
+  display: none;
+}
+
 .foot-button {
   display: flex;
   flex: 1;
