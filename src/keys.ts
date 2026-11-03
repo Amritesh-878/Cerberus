@@ -135,6 +135,18 @@ export function terminalAction(
   return MAC_TERMINAL_KEYS.find(([keys]) => matches(chord, keys))?.[1];
 }
 
+/** Keys that would reload the page, which ends every tab's program. */
+export function isReloadKey(
+  chord: KeyChord,
+  platform: Platform = PLATFORM,
+): boolean {
+  if (chord.key === "F5") return true;
+  const key = chord.key.toLowerCase();
+  const command = platform === "mac" ? chord.metaKey : chord.ctrlKey;
+  const other = platform === "mac" ? chord.ctrlKey : chord.metaKey;
+  return key === "r" && command && !other && !chord.altKey;
+}
+
 function keysOf(shortcut: Shortcut, platform: Platform): string {
   return chordsFor(platform).find(([s]) => s === shortcut)?.[1] ?? "";
 }

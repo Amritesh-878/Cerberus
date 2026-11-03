@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  isReloadKey,
   type KeyChord,
   keyHelp,
   type PastedData,
@@ -293,4 +294,38 @@ test.each([
   ["Win+Left", chord("ArrowLeft", { metaKey: true })],
 ])("Windows leaves %s to xterm", (_name, key) => {
   expect(terminalAction(key, "other")).toBeUndefined();
+});
+
+describe("isReloadKey", () => {
+  test.each([
+    ["F5", chord("F5")],
+    ["Ctrl+F5", chord("F5", { ctrlKey: true })],
+    ["Shift+F5", chord("F5", { shiftKey: true })],
+    ["Ctrl+R", chord("r", { ctrlKey: true })],
+    ["Ctrl+Shift+R", chord("R", { ctrlKey: true, shiftKey: true })],
+  ])("%s reloads on Windows", (_name, key) => {
+    expect(isReloadKey(key, "other")).toBe(true);
+  });
+
+  test.each([
+    ["Cmd+R", chord("r", { metaKey: true })],
+    ["Cmd+Shift+R", chord("R", { metaKey: true, shiftKey: true })],
+    ["F5", chord("F5")],
+  ])("%s reloads on macOS", (_name, key) => {
+    expect(isReloadKey(key, "mac")).toBe(true);
+  });
+
+  test.each<[string, KeyChord, Platform]>([
+    ["a plain r", chord("r"), "other"],
+    ["Alt+R", chord("r", { altKey: true }), "other"],
+    ["Ctrl+T", chord("t", { ctrlKey: true }), "other"],
+    [
+      "Ctrl+R, the shell's reverse search",
+      chord("r", { ctrlKey: true }),
+      "mac",
+    ],
+    ["Cmd+Option+R", chord("r", { metaKey: true, altKey: true }), "mac"],
+  ])("%s is not a reload", (_name, key, platform) => {
+    expect(isReloadKey(key, platform)).toBe(false);
+  });
 });
