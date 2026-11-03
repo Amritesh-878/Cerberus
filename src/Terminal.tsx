@@ -5,7 +5,14 @@ import "@xterm/xterm/css/xterm.css";
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 
 import type { LiveState } from "./board";
-import { PLATFORM, pasteInput, terminalHandlesKey } from "./keys";
+import { terminalFont } from "./font";
+import {
+  PLATFORM,
+  pasteInput,
+  type TerminalAction,
+  terminalAction,
+  terminalHandlesKey,
+} from "./keys";
 import { PtySession, type SpawnSpec } from "./pty";
 import { throttle } from "./throttle";
 
@@ -30,6 +37,12 @@ function useWebgl(term: Terminal): void {
   } catch (error) {
     console.warn("WebGL unavailable, using the DOM renderer:", error);
   }
+}
+
+function run(term: Terminal, action: TerminalAction): void {
+  if (action.kind === "send") term.input(action.bytes);
+  else if (action.kind === "clear") term.clear();
+  else term.selectAll();
 }
 
 function copySelection(term: Terminal): void {
@@ -59,7 +72,7 @@ export function TerminalView(props: {
     const element = host;
     let disposed = false;
     const term = new Terminal({
-      fontFamily: '"Cascadia Mono", Consolas, monospace',
+      fontFamily: terminalFont(PLATFORM),
       fontSize: 14,
       cursorBlink: true,
       scrollback: 10_000,
@@ -72,7 +85,14 @@ export function TerminalView(props: {
     term.open(element);
     useWebgl(term);
     fit.fit();
-    term.attachCustomKeyEventHandler((event) => terminalHandlesKey(event));
+    term.attachCustomKeyEventHandler((event) => {
+      const action =
+        event.type === "keydown" ? terminalAction(event) : undefined;
+      if (!action) return terminalHandlesKey(event);
+      event.preventDefault();
+      run(term, action);
+      return false;
+    });
 
     // Read once: a pane keeps its tab and program spec for its whole life.
     const spec = props.spec;
