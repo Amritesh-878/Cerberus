@@ -6,8 +6,8 @@ use serde::Serialize;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProgramChoice {
-    pub id: &'static str,
-    pub label: &'static str,
+    pub id: String,
+    pub label: String,
     /// Absolute path to run, or `None` when the program is not installed.
     pub program: Option<String>,
     pub args: Vec<String>,
@@ -42,7 +42,10 @@ pub fn pick_shell(choices: Vec<ProgramChoice>, saved: Option<&str>) -> Option<Pr
         .into_iter()
         .filter(|c| c.is_shell && c.program.is_some())
         .collect();
-    let at = shells.iter().position(|c| Some(c.id) == saved).unwrap_or(0);
+    let at = shells
+        .iter()
+        .position(|c| saved == Some(c.id.as_str()))
+        .unwrap_or(0);
     (at < shells.len()).then(|| shells.swap_remove(at))
 }
 
@@ -53,6 +56,8 @@ pub struct Finder {
     program_files: Option<PathBuf>,
     #[cfg(unix)]
     login_shell: Option<PathBuf>,
+    #[cfg(unix)]
+    etc_shells: String,
     is_file: Box<dyn Fn(&Path) -> bool + Send + Sync>,
 }
 
@@ -78,6 +83,9 @@ impl Finder {
             program_files: env::var_os("ProgramFiles").map(PathBuf::from),
             #[cfg(unix)]
             login_shell: env::var_os("SHELL").map(PathBuf::from),
+            // A system without the file simply offers fewer shells.
+            #[cfg(unix)]
+            etc_shells: std::fs::read_to_string("/etc/shells").unwrap_or_default(),
             #[cfg(windows)]
             is_file: Box::new(Path::is_file),
             #[cfg(unix)]
@@ -121,8 +129,8 @@ impl Finder {
 
     pub fn choices(&self) -> Vec<ProgramChoice> {
         let claude = ProgramChoice {
-            id: "claude",
-            label: "Claude Code",
+            id: "claude".to_owned(),
+            label: "Claude Code".to_owned(),
             program: shown(self.find("claude")),
             args: Vec::new(),
             image_paste_key: Some(CLAUDE_IMAGE_PASTE),
@@ -146,48 +154,67 @@ impl Finder {
         ]
     }
 
-    /// The login shell first, so a new install opens what Terminal would.
     #[cfg(unix)]
     fn shells(&self) -> Vec<ProgramChoice> {
-        let installed = |path: &str| Some(PathBuf::from(path)).filter(|p| (self.is_file)(p));
-        let login = self
-            .login_shell
-            .as_ref()
-            .filter(|p| p.is_absolute() && (self.is_file)(p));
-        let mut shells = vec![
-            shell("zsh", "zsh", installed("/bin/zsh"), &["-l"]),
-            shell("bash", "bash", installed("/bin/bash"), &["-l"]),
-        ];
-        let is_login =
-            |c: &ProgramChoice| login.is_some_and(|l| c.program.as_deref() == l.to_str());
-        match shells.iter().position(is_login) {
-            Some(at) => shells[..=at].rotate_right(1),
-            None => {
-                if let Some(other) = login {
-                    shells.insert(
-                        0,
-                        shell("login-shell", "Login shell", Some(other.clone()), &["-l"]),
-                    );
-                }
-            }
-        }
-        shells
+        let login = self.login_shell.as_deref().and_then(Path::to_str);
+        unix_shells(&self.etc_shells, login, |path| {
+            (self.is_file)(Path::new(path))
+        })
     }
+}
+
+// Homebrew's fish is often installed without being added to `/etc/shells`.
+#[cfg(any(unix, test))]
+const KNOWN_SHELLS: [&str; 4] = [
+    "/bin/zsh",
+    "/bin/bash",
+    "/opt/homebrew/bin/fish",
+    "/usr/local/bin/fish",
+];
+
+/// Every installed shell in `/etc/shells` and Homebrew, the login shell first so a new install opens what Terminal would.
+#[cfg(any(unix, test))]
+fn unix_shells(
+    etc_shells: &str,
+    login: Option<&str>,
+    installed: impl Fn(&str) -> bool,
+) -> Vec<ProgramChoice> {
+    let login = login.filter(|l| l.starts_with('/') && installed(l));
+    let listed = etc_shells
+        .lines()
+        .map(|line| line.split('#').next().unwrap_or_default().trim())
+        .filter(|line| line.starts_with('/'));
+    let mut paths: Vec<&str> = Vec::new();
+    for path in listed.chain(KNOWN_SHELLS).chain(login) {
+        if !paths.contains(&path) && installed(path) {
+            paths.push(path);
+        }
+    }
+    let mut shells: Vec<ProgramChoice> = Vec::new();
+    for path in paths {
+        let name = path.rsplit('/').next().unwrap_or_default();
+        // Ids are saved with each tab, so the first of a name keeps it wherever it is installed.
+        let id = if name.is_empty() || shells.iter().any(|s| s.id == name) {
+            path
+        } else {
+            name
+        };
+        shells.push(shell(id, id, Some(PathBuf::from(path)), &["-l"]));
+    }
+    if let Some(at) = shells.iter().position(|s| s.program.as_deref() == login) {
+        shells[..=at].rotate_right(1);
+    }
+    shells
 }
 
 fn shown(path: Option<PathBuf>) -> Option<String> {
     path.map(|p| p.to_string_lossy().into_owned())
 }
 
-fn shell(
-    id: &'static str,
-    label: &'static str,
-    path: Option<PathBuf>,
-    args: &[&str],
-) -> ProgramChoice {
+fn shell(id: &str, label: &str, path: Option<PathBuf>, args: &[&str]) -> ProgramChoice {
     ProgramChoice {
-        id,
-        label,
+        id: id.to_owned(),
+        label: label.to_owned(),
         program: shown(path),
         args: args.iter().map(|&a| a.to_owned()).collect(),
         image_paste_key: None,
@@ -299,6 +326,14 @@ mod tests {
         );
     }
 
+    fn id(pick: Option<ProgramChoice>) -> Option<String> {
+        pick.map(|c| c.id)
+    }
+
+    fn ids(choices: &[ProgramChoice]) -> Vec<&str> {
+        choices.iter().map(|c| c.id.as_str()).collect()
+    }
+
     #[cfg(windows)]
     #[test]
     fn the_saved_shell_is_picked_when_installed_else_the_first_one() {
@@ -310,17 +345,19 @@ mod tests {
                 r"D:\Git\bin\bash.exe",
             ],
         );
-        let id = |pick: Option<ProgramChoice>| pick.map(|c| c.id);
 
         assert_eq!(
-            id(pick_shell(f.choices(), Some("git-bash"))),
+            id(pick_shell(f.choices(), Some("git-bash"))).as_deref(),
             Some("git-bash")
         );
         assert_eq!(
-            id(pick_shell(f.choices(), Some("gone"))),
+            id(pick_shell(f.choices(), Some("gone"))).as_deref(),
             Some("powershell")
         );
-        assert_eq!(id(pick_shell(f.choices(), None)), Some("powershell"));
+        assert_eq!(
+            id(pick_shell(f.choices(), None)).as_deref(),
+            Some("powershell")
+        );
         assert_eq!(id(pick_shell(finder(&[], &[]).choices(), None)), None);
     }
 
@@ -330,8 +367,7 @@ mod tests {
         let f = finder(&[r"C:\w"], &[r"C:\w\powershell.exe"]);
         let choices = f.choices();
 
-        let ids: Vec<_> = choices.iter().map(|c| c.id).collect();
-        assert_eq!(ids, ["claude", "powershell", "git-bash"]);
+        assert_eq!(ids(&choices), ["claude", "powershell", "git-bash"]);
         assert_eq!(choices[0].program, None);
         assert_eq!(choices[1].program.as_deref(), Some(r"C:\w\powershell.exe"));
         assert_eq!(choices[2].program, None);
@@ -346,6 +382,135 @@ mod tests {
         assert_eq!(shells, [false, true, true]);
     }
 
+    const MAC_ETC_SHELLS: &str = "# List of acceptable shells for chpass(1).
+# Ftpd will not allow users to connect who are not using
+# one of these shells.
+
+/bin/bash
+/bin/csh
+/bin/dash
+/bin/ksh
+/bin/sh
+/bin/tcsh
+/bin/zsh
+";
+
+    fn shells_with(etc_shells: &str, files: &[&str], login: Option<&str>) -> Vec<ProgramChoice> {
+        unix_shells(etc_shells, login, |path| files.contains(&path))
+    }
+
+    #[test]
+    fn every_installed_shell_in_etc_shells_is_offered_with_l() {
+        let files = ["/bin/bash", "/bin/sh", "/bin/tcsh", "/bin/zsh"];
+
+        let shells = shells_with(MAC_ETC_SHELLS, &files, None);
+
+        assert_eq!(ids(&shells), ["bash", "sh", "tcsh", "zsh"]);
+        assert!(shells.iter().all(|s| s.is_shell && s.args == ["-l"]));
+        assert_eq!(shells[2].program.as_deref(), Some("/bin/tcsh"));
+        assert_eq!(shells[2].label, "tcsh");
+    }
+
+    #[test]
+    fn the_login_shell_comes_first_and_is_not_listed_twice() {
+        let files = ["/bin/bash", "/bin/zsh"];
+
+        assert_eq!(
+            ids(&shells_with(MAC_ETC_SHELLS, &files, Some("/bin/zsh"))),
+            ["zsh", "bash"]
+        );
+        assert_eq!(
+            ids(&shells_with(MAC_ETC_SHELLS, &files, Some("/bin/bash"))),
+            ["bash", "zsh"]
+        );
+    }
+
+    #[test]
+    fn homebrew_fish_is_offered_when_present_even_outside_etc_shells() {
+        let arm = ["/bin/zsh", "/opt/homebrew/bin/fish"];
+        let intel = ["/bin/zsh", "/usr/local/bin/fish"];
+
+        let shells = shells_with(MAC_ETC_SHELLS, &arm, Some("/opt/homebrew/bin/fish"));
+        assert_eq!(ids(&shells), ["fish", "zsh"]);
+        assert_eq!(shells[0].program.as_deref(), Some("/opt/homebrew/bin/fish"));
+        assert_eq!(shells[0].args, ["-l"]);
+        assert_eq!(
+            ids(&shells_with(MAC_ETC_SHELLS, &intel, None)),
+            ["zsh", "fish"]
+        );
+    }
+
+    #[test]
+    fn a_shell_listed_in_etc_shells_and_known_to_cerberus_appears_once() {
+        let etc = "/bin/zsh\n/opt/homebrew/bin/fish\n/bin/zsh\n";
+        let files = ["/bin/zsh", "/opt/homebrew/bin/fish"];
+
+        let shells = shells_with(etc, &files, Some("/opt/homebrew/bin/fish"));
+
+        assert_eq!(ids(&shells), ["fish", "zsh"]);
+    }
+
+    #[test]
+    fn a_second_shell_of_the_same_name_is_told_apart_by_its_path() {
+        let etc = "/bin/bash\n/opt/homebrew/bin/bash\n";
+        let files = ["/bin/bash", "/opt/homebrew/bin/bash"];
+
+        let shells = shells_with(etc, &files, Some("/opt/homebrew/bin/bash"));
+
+        assert_eq!(ids(&shells), ["/opt/homebrew/bin/bash", "bash"]);
+        assert_eq!(shells[0].label, "/opt/homebrew/bin/bash");
+        assert_eq!(shells[1].program.as_deref(), Some("/bin/bash"));
+    }
+
+    #[test]
+    fn comments_blank_lines_and_relative_names_in_etc_shells_are_skipped() {
+        let etc = "  # a comment\n\nfish\n /bin/ksh # trailing note\n";
+        let files = ["fish", "/bin/ksh"];
+
+        assert_eq!(ids(&shells_with(etc, &files, None)), ["ksh"]);
+    }
+
+    #[test]
+    fn a_missing_or_relative_login_shell_is_left_out() {
+        let files = ["/bin/zsh"];
+
+        assert_eq!(
+            ids(&shells_with("", &files, Some("/usr/local/bin/elvish"))),
+            ["zsh"]
+        );
+        assert_eq!(ids(&shells_with("", &files, Some("zsh"))), ["zsh"]);
+        assert!(shells_with("", &[], None).is_empty());
+    }
+
+    #[test]
+    fn a_login_shell_found_nowhere_else_is_still_offered_first() {
+        let files = ["/bin/zsh", "/opt/local/bin/nu"];
+
+        let shells = shells_with("", &files, Some("/opt/local/bin/nu"));
+
+        assert_eq!(ids(&shells), ["nu", "zsh"]);
+    }
+
+    #[test]
+    fn the_saved_shell_is_picked_when_installed_else_the_login_shell() {
+        let shells = || {
+            shells_with(
+                MAC_ETC_SHELLS,
+                &["/bin/zsh", "/bin/bash"],
+                Some("/bin/bash"),
+            )
+        };
+
+        assert_eq!(
+            id(pick_shell(shells(), Some("zsh"))).as_deref(),
+            Some("zsh")
+        );
+        assert_eq!(
+            id(pick_shell(shells(), Some("powershell"))).as_deref(),
+            Some("bash")
+        );
+    }
+
     #[cfg(unix)]
     fn unix_finder(path: &[&str], files: &[&str], login: Option<&str>) -> Finder {
         let files: HashSet<PathBuf> = files.iter().map(PathBuf::from).collect();
@@ -353,6 +518,7 @@ mod tests {
             dirs: path.iter().map(PathBuf::from).collect(),
             exts: vec![String::new()],
             login_shell: login.map(PathBuf::from),
+            etc_shells: MAC_ETC_SHELLS.to_owned(),
             is_file: Box::new(move |p| files.contains(p)),
         }
     }
@@ -379,34 +545,15 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn the_login_shell_comes_first_and_is_not_listed_twice() {
-        let both = ["/bin/zsh", "/bin/bash"];
-        let ids = |f: &Finder| f.choices().into_iter().map(|c| c.id).collect::<Vec<_>>();
-
-        assert_eq!(
-            ids(&unix_finder(&[], &both, Some("/bin/zsh"))),
-            ["claude", "zsh", "bash"]
-        );
-        assert_eq!(
-            ids(&unix_finder(&[], &both, Some("/bin/bash"))),
-            ["claude", "bash", "zsh"]
-        );
-        assert_eq!(
-            ids(&unix_finder(&[], &both, None)),
-            ["claude", "zsh", "bash"]
-        );
-        let fish = unix_finder(
+    fn choices_list_claude_then_the_shells_from_etc_shells() {
+        let f = unix_finder(
             &[],
             &["/bin/zsh", "/bin/bash", "/opt/homebrew/bin/fish"],
             Some("/opt/homebrew/bin/fish"),
         );
-        let choices = fish.choices();
-        assert_eq!(choices[1].id, "login-shell");
-        assert_eq!(
-            choices[1].program.as_deref(),
-            Some("/opt/homebrew/bin/fish")
-        );
-        assert_eq!(choices[1].args, ["-l"]);
+        let choices = f.choices();
+
+        assert_eq!(ids(&choices), ["claude", "fish", "bash", "zsh"]);
         assert_eq!(choices[0].image_paste_key, Some("\x16"));
         assert_eq!(choices[1].image_paste_key, None);
         assert!(
@@ -415,38 +562,7 @@ mod tests {
                 .is_some_and(|c| c.contains("install.sh"))
         );
         assert_eq!(choices[0].install_shell, None);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn a_missing_or_relative_login_shell_is_left_out() {
-        let ids = |login| {
-            unix_finder(&[], &["/bin/zsh"], Some(login))
-                .choices()
-                .into_iter()
-                .map(|c| c.id)
-                .collect::<Vec<_>>()
-        };
-
-        assert_eq!(ids("/usr/local/bin/fish"), ["claude", "zsh", "bash"]);
-        assert_eq!(ids("fish"), ["claude", "zsh", "bash"]);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn the_saved_shell_is_picked_when_installed_else_the_login_shell() {
-        let f = || unix_finder(&[], &["/bin/zsh", "/bin/bash"], Some("/bin/bash"));
-        let id = |pick: Option<ProgramChoice>| pick.map(|c| c.id);
-
-        assert_eq!(id(pick_shell(f().choices(), Some("zsh"))), Some("zsh"));
-        assert_eq!(
-            id(pick_shell(f().choices(), Some("powershell"))),
-            Some("bash")
-        );
-        assert_eq!(
-            id(pick_shell(unix_finder(&[], &[], None).choices(), None)),
-            None
-        );
+        assert_eq!(id(pick_shell(choices, None)).as_deref(), Some("fish"));
     }
 
     #[cfg(unix)]
