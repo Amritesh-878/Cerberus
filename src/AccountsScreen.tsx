@@ -228,12 +228,16 @@ function StartFolderSetting(props: {
 export function CliInstall() {
   const [linked, setLinked] = createSignal<Linked>();
   const [error, setError] = createSignal<string>();
+  // Two links made at once would race to replace each other.
+  const [busy, setBusy] = createSignal(false);
 
   return (
     <div class="cli-install">
       <button
         type="button"
+        disabled={busy()}
         onClick={() => {
+          setBusy(true);
           installCli()
             .then((result) => {
               setError(undefined);
@@ -242,6 +246,9 @@ export function CliInstall() {
             .catch((e: unknown) => {
               setLinked(undefined);
               setError(String(e));
+            })
+            .finally(() => {
+              setBusy(false);
             });
         }}
       >

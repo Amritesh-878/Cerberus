@@ -61,6 +61,29 @@ test("no line shows when the folder is already on PATH", async () => {
   expect(root.querySelector("pre")).toBeNull();
 });
 
+test("the button waits for one install to finish before it takes another", async () => {
+  let finish: (linked: unknown) => void = () => undefined;
+  let calls = 0;
+  mockIPC(() => {
+    calls += 1;
+    return new Promise((resolve) => {
+      finish = resolve;
+    });
+  });
+  const root = mount();
+  const button = root.querySelector("button");
+
+  install(root);
+  install(root);
+  await settled();
+
+  expect(calls).toBe(1);
+  expect(button?.disabled).toBe(true);
+  finish({ message: "Linked.", pathLine: null });
+  await settled();
+  expect(button?.disabled).toBe(false);
+});
+
 test("a refusal is shown as an error", async () => {
   mockIPC(() => {
     throw new Error("move it to Applications first");
