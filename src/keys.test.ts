@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  isReloadKey,
   type KeyChord,
   keyHelp,
   type PastedData,
@@ -8,6 +9,7 @@ import {
   pasteInput,
   platformOf,
   shortcutFor,
+  terminalAction,
   terminalHandlesKey,
 } from "./keys";
 
@@ -208,3 +210,122 @@ test.each<[Platform, string]>([
     expect(help.find((h) => h.does === "New tab")?.keys).toBe(newTab);
   },
 );
+
+describe("terminalAction on macOS", () => {
+  test.each([
+    ["Cmd+Left, start of line", chord("ArrowLeft", { metaKey: true }), "\x01"],
+    ["Cmd+Right, end of line", chord("ArrowRight", { metaKey: true }), "\x05"],
+    [
+      "Cmd+Backspace, delete to start of line",
+      chord("Backspace", { metaKey: true }),
+      "\x15",
+    ],
+    ["Option+Left, a word back", chord("ArrowLeft", { altKey: true }), "\x1bb"],
+    [
+      "Option+Right, a word forward",
+      chord("ArrowRight", { altKey: true }),
+      "\x1bf",
+    ],
+    [
+      "Option+Backspace, delete a word",
+      chord("Backspace", { altKey: true }),
+      "\x1b\x7f",
+    ],
+  ])("%s sends its bytes", (_name, key, bytes) => {
+    expect(terminalAction(key, "mac")).toEqual({ kind: "send", bytes });
+  });
+
+  test("Cmd+K clears the screen and scrollback, Cmd+A selects all", () => {
+    expect(terminalAction(chord("k", { metaKey: true }), "mac")).toEqual({
+      kind: "clear",
+    });
+    expect(terminalAction(chord("a", { metaKey: true }), "mac")).toEqual({
+      kind: "selectAll",
+    });
+  });
+
+  test.each([
+    ["Cmd+T, new tab", chord("t", { metaKey: true })],
+    ["Cmd+W, close tab", chord("w", { metaKey: true })],
+    [
+      "Cmd+Shift+], next tab",
+      chord("}", { code: "BracketRight", metaKey: true, shiftKey: true }),
+    ],
+    [
+      "Cmd+Shift+[, previous tab",
+      chord("{", { code: "BracketLeft", metaKey: true, shiftKey: true }),
+    ],
+    [
+      "Cmd+Shift+A, next waiting",
+      chord("a", { metaKey: true, shiftKey: true }),
+    ],
+    ["Cmd+C, the menu's copy", chord("c", { metaKey: true })],
+    ["Cmd+V, the menu's paste", chord("v", { metaKey: true })],
+    ["Ctrl+C", chord("c", { ctrlKey: true })],
+    ["Ctrl+T, Claude Code's task list", chord("t", { ctrlKey: true })],
+    ["Shift+Tab, Claude Code's mode switch", chord("Tab", { shiftKey: true })],
+    ["Ctrl+A, start of line", chord("a", { ctrlKey: true })],
+    ["Option+B, already a word back", chord("b", { altKey: true })],
+    ["a plain Left", chord("ArrowLeft")],
+    ["Cmd+Shift+Left", chord("ArrowLeft", { metaKey: true, shiftKey: true })],
+    ["Cmd+Option+Left", chord("ArrowLeft", { metaKey: true, altKey: true })],
+  ])("leaves %s as it was", (_name, key) => {
+    expect(terminalAction(key, "mac")).toBeUndefined();
+  });
+
+  test("Cmd keys the terminal does not remap still never reach xterm", () => {
+    expect(terminalHandlesKey(chord("k", { metaKey: true }), "mac")).toBe(
+      false,
+    );
+    expect(shortcutFor(chord("ArrowLeft", { metaKey: true }), "mac")).toBe(
+      undefined,
+    );
+    expect(shortcutFor(chord("k", { metaKey: true }), "mac")).toBeUndefined();
+  });
+});
+
+test.each([
+  ["Ctrl+Left", chord("ArrowLeft", { ctrlKey: true })],
+  ["Alt+Left", chord("ArrowLeft", { altKey: true })],
+  ["Alt+Backspace", chord("Backspace", { altKey: true })],
+  ["Ctrl+Backspace", chord("Backspace", { ctrlKey: true })],
+  ["Ctrl+K", chord("k", { ctrlKey: true })],
+  ["Ctrl+A", chord("a", { ctrlKey: true })],
+  ["Win+Left", chord("ArrowLeft", { metaKey: true })],
+])("Windows leaves %s to xterm", (_name, key) => {
+  expect(terminalAction(key, "other")).toBeUndefined();
+});
+
+describe("isReloadKey", () => {
+  test.each([
+    ["F5", chord("F5")],
+    ["Ctrl+F5", chord("F5", { ctrlKey: true })],
+    ["Shift+F5", chord("F5", { shiftKey: true })],
+    ["Ctrl+R", chord("r", { ctrlKey: true })],
+    ["Ctrl+Shift+R", chord("R", { ctrlKey: true, shiftKey: true })],
+  ])("%s reloads on Windows", (_name, key) => {
+    expect(isReloadKey(key, "other")).toBe(true);
+  });
+
+  test.each([
+    ["Cmd+R", chord("r", { metaKey: true })],
+    ["Cmd+Shift+R", chord("R", { metaKey: true, shiftKey: true })],
+    ["F5", chord("F5")],
+  ])("%s reloads on macOS", (_name, key) => {
+    expect(isReloadKey(key, "mac")).toBe(true);
+  });
+
+  test.each<[string, KeyChord, Platform]>([
+    ["a plain r", chord("r"), "other"],
+    ["Alt+R", chord("r", { altKey: true }), "other"],
+    ["Ctrl+T", chord("t", { ctrlKey: true }), "other"],
+    [
+      "Ctrl+R, the shell's reverse search",
+      chord("r", { ctrlKey: true }),
+      "mac",
+    ],
+    ["Cmd+Option+R", chord("r", { metaKey: true, altKey: true }), "mac"],
+  ])("%s is not a reload", (_name, key, platform) => {
+    expect(isReloadKey(key, platform)).toBe(false);
+  });
+});

@@ -9,6 +9,8 @@ import {
   setShell,
   setStartFolder,
 } from "./accounts";
+import { installCli, type Linked } from "./cli";
+import { PLATFORM } from "./keys";
 import type { ProgramChoice } from "./pty";
 import type { Statuses } from "./statuses";
 import { shellChoice, type Tab } from "./tab";
@@ -63,6 +65,10 @@ export function AccountsScreen(props: {
           limit or ends
         </label>
       </div>
+      <Show when={PLATFORM === "mac"}>
+        <h3>Command line</h3>
+        <CliInstall />
+      </Show>
       <nav class="step-nav">
         <button
           type="button"
@@ -210,6 +216,57 @@ function StartFolderSetting(props: {
         >
           Clear
         </button>
+      </Show>
+      <Show when={error()}>
+        <p class="error">{error()}</p>
+      </Show>
+    </div>
+  );
+}
+
+/** Links the `cerberus` command, since a macOS app can't put itself on `PATH` the way the Windows installer does. */
+export function CliInstall() {
+  const [linked, setLinked] = createSignal<Linked>();
+  const [error, setError] = createSignal<string>();
+  // Two links made at once would race to replace each other.
+  const [busy, setBusy] = createSignal(false);
+
+  return (
+    <div class="cli-install">
+      <button
+        type="button"
+        disabled={busy()}
+        onClick={() => {
+          setBusy(true);
+          installCli()
+            .then((result) => {
+              setError(undefined);
+              setLinked(result);
+            })
+            .catch((e: unknown) => {
+              setLinked(undefined);
+              setError(String(e));
+            })
+            .finally(() => {
+              setBusy(false);
+            });
+        }}
+      >
+        Install <code>cerberus</code> command
+      </button>
+      <Show when={linked()}>
+        {(result) => (
+          <>
+            <p>{result().message}</p>
+            <Show when={result().pathLine}>
+              {(line) => (
+                <pre>
+                  <code>{line()}</code>
+                </pre>
+              )}
+            </Show>
+          </>
+        )}
       </Show>
       <Show when={error()}>
         <p class="error">{error()}</p>

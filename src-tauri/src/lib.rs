@@ -1,4 +1,5 @@
 mod accounts;
+mod cli_link;
 mod commands;
 mod handover;
 mod job;
@@ -86,6 +87,7 @@ pub fn run() {
             commands::tree_load,
             commands::tree_save,
             commands::continue_on_account,
+            commands::install_cli,
             open::launch::open_take,
         ])
         .build(context)

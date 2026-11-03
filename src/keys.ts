@@ -66,7 +66,7 @@ const OTHER_CHORDS: Chords = [
   ["closeTab", "Ctrl+Shift+W"],
 ];
 
-// Cmd never reaches the terminal on macOS, so Terminal.app's keys take nothing from Claude Code.
+// xterm never encodes Cmd keys on macOS, so Terminal.app's keys take nothing from Claude Code.
 const MAC_CHORDS: Chords = [
   ["nextTab", "Cmd+Shift+]"],
   ["previousTab", "Cmd+Shift+["],
@@ -95,7 +95,7 @@ function matches(chord: KeyChord, keys: string): boolean {
   const key = mods.pop()?.toLowerCase();
   const pressed = chord.key.toLowerCase();
   return (
-    !chord.altKey &&
+    chord.altKey === mods.includes("Option") &&
     chord.metaKey === mods.includes("Cmd") &&
     chord.ctrlKey === mods.includes("Ctrl") &&
     chord.shiftKey === mods.includes("Shift") &&
@@ -108,6 +108,43 @@ export function shortcutFor(
   platform: Platform = PLATFORM,
 ): Shortcut | undefined {
   return chordsFor(platform).find(([, keys]) => matches(chord, keys))?.[0];
+}
+
+/** What a key pressed in the terminal does in place of xterm's own encoding. */
+export type TerminalAction =
+  { kind: "send"; bytes: string } | { kind: "clear" } | { kind: "selectAll" };
+
+// Terminal.app's natural text editing, with the bytes Ghostty sends by default on macOS.
+const MAC_TERMINAL_KEYS: readonly (readonly [string, TerminalAction])[] = [
+  ["Cmd+ArrowLeft", { kind: "send", bytes: "\x01" }],
+  ["Cmd+ArrowRight", { kind: "send", bytes: "\x05" }],
+  ["Cmd+Backspace", { kind: "send", bytes: "\x15" }],
+  ["Option+ArrowLeft", { kind: "send", bytes: "\x1bb" }],
+  ["Option+ArrowRight", { kind: "send", bytes: "\x1bf" }],
+  ["Option+Backspace", { kind: "send", bytes: "\x1b\x7f" }],
+  ["Cmd+K", { kind: "clear" }],
+  ["Cmd+A", { kind: "selectAll" }],
+];
+
+/** Only macOS remaps keys; Windows keys reach xterm unchanged. */
+export function terminalAction(
+  chord: KeyChord,
+  platform: Platform = PLATFORM,
+): TerminalAction | undefined {
+  if (platform !== "mac") return undefined;
+  return MAC_TERMINAL_KEYS.find(([keys]) => matches(chord, keys))?.[1];
+}
+
+/** Keys that would reload the page, which ends every tab's program. */
+export function isReloadKey(
+  chord: KeyChord,
+  platform: Platform = PLATFORM,
+): boolean {
+  if (chord.key === "F5") return true;
+  const key = chord.key.toLowerCase();
+  const command = platform === "mac" ? chord.metaKey : chord.ctrlKey;
+  const other = platform === "mac" ? chord.ctrlKey : chord.metaKey;
+  return key === "r" && command && !other && !chord.altKey;
 }
 
 function keysOf(shortcut: Shortcut, platform: Platform): string {
