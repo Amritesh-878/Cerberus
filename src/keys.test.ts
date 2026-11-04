@@ -39,6 +39,7 @@ describe("terminalHandlesKey", () => {
     ["Ctrl+Alt+V", chord("v", { ctrlKey: true, altKey: true })],
     ["Ctrl+C", chord("c", { ctrlKey: true })],
     ["Ctrl+A, start of line", chord("a", { ctrlKey: true })],
+    ["Ctrl+B, Claude Code's background task", chord("b", { ctrlKey: true })],
     [
       "Ctrl+Shift+C, Claude Code's copy",
       chord("C", { ctrlKey: true, shiftKey: true }),
@@ -124,6 +125,7 @@ describe("shortcutFor", () => {
       chord("A", { ctrlKey: true, shiftKey: true }),
       "nextWaiting",
     ],
+    ["Ctrl+Shift+B", chord("B", { ctrlKey: true, shiftKey: true }), "panel"],
   ])("maps %s", (_name, key, shortcut) => {
     expect(shortcutFor(key, "other")).toBe(shortcut);
   });
@@ -134,6 +136,7 @@ describe("shortcutFor", () => {
     ["Shift+Tab, Claude Code's mode switch", chord("Tab", { shiftKey: true })],
     ["Ctrl+C", chord("c", { ctrlKey: true })],
     ["Ctrl+A, start of line", chord("a", { ctrlKey: true })],
+    ["Ctrl+B, Claude Code's background task", chord("b", { ctrlKey: true })],
     [
       "Ctrl+Shift+C, Claude Code's copy",
       chord("C", { ctrlKey: true, shiftKey: true }),
@@ -150,6 +153,7 @@ describe("shortcutFor on macOS", () => {
   test.each([
     ["Cmd+T", chord("t", { metaKey: true }), "newTab"],
     ["Cmd+W", chord("w", { metaKey: true }), "closeTab"],
+    ["Cmd+Shift+B", chord("b", { metaKey: true, shiftKey: true }), "panel"],
     [
       "Cmd+Shift+A",
       chord("a", { metaKey: true, shiftKey: true }),
@@ -266,6 +270,7 @@ describe("terminalAction on macOS", () => {
     ["Ctrl+T, Claude Code's task list", chord("t", { ctrlKey: true })],
     ["Shift+Tab, Claude Code's mode switch", chord("Tab", { shiftKey: true })],
     ["Ctrl+A, start of line", chord("a", { ctrlKey: true })],
+    ["Ctrl+B, Claude Code's background task", chord("b", { ctrlKey: true })],
     ["Option+B, already a word back", chord("b", { altKey: true })],
     ["a plain Left", chord("ArrowLeft")],
     ["Cmd+Shift+Left", chord("ArrowLeft", { metaKey: true, shiftKey: true })],

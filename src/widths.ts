@@ -15,3 +15,21 @@ export function clampSidebar(width: number, windowWidth: number): number {
     Math.max(SIDEBAR_MIN, Math.round(width)),
   );
 }
+
+export const PANEL_DEFAULT = 300;
+export const PANEL_MIN = 240;
+const PANEL_MAX = 640;
+
+/** At most two fifths of the window, so the sidebar and the terminal keep room beside it. */
+export function panelMax(windowWidth: number): number {
+  return Math.round(
+    Math.max(PANEL_MIN, Math.min(PANEL_MAX, (windowWidth * 2) / 5)),
+  );
+}
+
+export function clampPanel(width: number, windowWidth: number): number {
+  return Math.min(
+    panelMax(windowWidth),
+    Math.max(PANEL_MIN, Math.round(width)),
+  );
+}

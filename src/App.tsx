@@ -42,12 +42,15 @@ import {
   startedTabs,
 } from "./board";
 import { Home } from "./Home";
-import { AccountDot, MenuIcon } from "./icons";
+import { AccountDot, MenuIcon, PanelIcon } from "./icons";
 import { shortcutFor } from "./keys";
 import { type Launch, NewTab } from "./NewTab";
 import { createNotifier } from "./notify";
 import { type Anchor, onScreen, type Side } from "./place";
 import { followOpenRequests } from "./open";
+import { Panel } from "./Panel";
+import { CREATE_PR } from "./panelData";
+import { createPanelState } from "./panelPrefs";
 import { listPrograms } from "./pty";
 import {
   fromSaved,
@@ -60,7 +63,7 @@ import {
 import { Sidebar } from "./Sidebar";
 import { createStatuses } from "./statuses";
 import { setupGaps, type Step, stepFor } from "./steps";
-import { type Tab, tabFor } from "./tab";
+import { shellChoice, type Tab, tabFor } from "./tab";
 import { ShortcutsSheet } from "./ShortcutsSheet";
 import { SidebarEdge } from "./SidebarEdge";
 import { menuAccount, type MenuPlace, TabMenu } from "./TabMenu";
@@ -129,6 +132,7 @@ export function App() {
   };
   loadProfiles().then(loaded, fail);
   const alertsSetting = createAlertsSetting(profiles, changed);
+  const panel = createPanelState(profiles, changed);
   const [programs, { refetch: recheckPrograms }] = createResource(listPrograms);
   // Solid types a resource error as `any`.
   const programsError = (): unknown => programs.error;
@@ -520,6 +524,10 @@ export function App() {
         setSheet((open) => !open);
         return;
       }
+      if (shortcut === "panel") {
+        if (!inSetup()) panel.toggle();
+        return;
+      }
       if (inSetup() && shortcut !== "closeTab") return;
       if (shortcut === "nextTab" || shortcut === "previousTab") {
         const id = stepTab(tree(), shown(), shortcut === "nextTab" ? 1 : -1);
@@ -546,6 +554,25 @@ export function App() {
       });
     });
   });
+
+  // Typed into a new shell beside the tab, never run: the user reads it and presses Enter.
+  const createPr = (folder: string) => {
+    const from = shownTab();
+    const current = profiles();
+    const shell = current && shellChoice(current, programList() ?? []);
+    if (from?.projectId == null || !current || !shell) return;
+    const account =
+      current.accounts.find((a) => a.id === from.launch.account?.id) ?? null;
+    const tab = tabFor(shell, { account, cwd: folder, input: CREATE_PR });
+    if (!tab) return;
+    const place = {
+      projectId: from.projectId,
+      parentId: from.parentId ?? from.id,
+    };
+    const [next, id] = addTab(tree(), place, tab);
+    setTree(renameTab(next, id, "Create PR"));
+    select(id);
+  };
 
   const startFresh = () => {
     resetProfiles().then(loaded, fail);
@@ -664,6 +691,13 @@ export function App() {
                     </span>
                   )}
                 </Show>
+                <Show when={panel.error()}>
+                  {(error) => (
+                    <span class="save-error" role="status" title={error()}>
+                      Panel not saved
+                    </span>
+                  )}
+                </Show>
                 <Show when={alertsSetting.error()}>
                   {(error) => (
                     <span class="save-error" role="status" title={error()}>
@@ -697,6 +731,20 @@ export function App() {
                         ?.name ?? account().name}
                     </button>
                   )}
+                </Show>
+                <Show when={!inSetup()}>
+                  <button
+                    type="button"
+                    class="icon-button"
+                    aria-label="Right panel"
+                    aria-pressed={panel.open()}
+                    title="Show or hide the right panel"
+                    onClick={() => {
+                      panel.toggle();
+                    }}
+                  >
+                    <PanelIcon />
+                  </button>
                 </Show>
               </header>
               <Show when={shownTab()?.launch.signIn && shownTab()}>
@@ -900,6 +948,15 @@ export function App() {
                 </Show>
               </div>
             </section>
+            <Show when={panel.open() && !inSetup()}>
+              <Panel
+                tab={shownTab()}
+                profiles={loaded()}
+                statuses={statuses}
+                state={panel}
+                onCreatePr={createPr}
+              />
+            </Show>
             <Show when={sheet()}>
               <ShortcutsSheet onClose={() => setSheet(false)} />
             </Show>

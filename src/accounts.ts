@@ -14,6 +14,16 @@ export interface Account {
   color?: string;
 }
 
+/** The right panel's cards that fold to their title. */
+export type PanelCard = "environment" | "changes" | "connectors" | "skills";
+
+export interface PanelPrefs {
+  open: boolean;
+  /** In pixels; `null` keeps the default. */
+  width: number | null;
+  collapsed: PanelCard[];
+}
+
 export interface Profiles {
   accounts: Account[];
   defaultAccount: AccountId | null;
@@ -23,6 +33,7 @@ export interface Profiles {
   startFolder: string | null;
   /** In pixels; `null` keeps the default. */
   sidebarWidth: number | null;
+  panel: PanelPrefs;
   /** Desktop notifications when a chat in another tab needs you. */
   alerts: boolean;
   /** Shell tabs suggest from history as you type, through each shell's own feature. */
@@ -50,6 +61,9 @@ export interface Candidate {
 export interface AuthStatus {
   state: "loggedIn" | "loggedOut" | "unknown";
   summary: string;
+  /** Set when signed in and reported; a check that failed in the webview has neither. */
+  email?: string | null;
+  plan?: string | null;
 }
 
 export function loadProfiles(): Promise<Profiles> {
@@ -111,6 +125,10 @@ export function setStartFolder(folder: string | null): Promise<Profiles> {
 
 export function setSidebarWidth(width: number): Promise<Profiles> {
   return invoke<Profiles>("set_sidebar_width", { width });
+}
+
+export function setPanel(panel: PanelPrefs): Promise<Profiles> {
+  return invoke<Profiles>("set_panel", { panel });
 }
 
 // One save at a time for the whole app, so the last click stays even across reopening a screen.
