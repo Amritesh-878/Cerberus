@@ -1930,3 +1930,152 @@ button.card-row:focus-visible,
     display: none;
   }
 }
+
+/* Messages between accounts: the approval card floats, so both chats stay readable behind it. */
+.approval {
+  position: fixed;
+  top: 52px;
+  right: 16px;
+  z-index: 25;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(460px, calc(100vw - 32px));
+  max-height: calc(100vh - 68px);
+  padding: 14px 16px 16px;
+  background: #202020;
+  border: 1px solid #3a3a3a;
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgb(0 0 0 / 50%);
+}
+
+.approval p {
+  margin: 0;
+}
+
+.approval-head {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.approval-head h2 {
+  flex: 1;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.approval-count {
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.approval-tab {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.approval-role {
+  width: 36px;
+  color: var(--dim);
+}
+
+.approval-account {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.approval-place {
+  overflow: hidden;
+  color: var(--dim);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.approval-text {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 120px;
+  max-height: 50vh;
+  padding: 8px 10px;
+  font:
+    12px/1.45 ui-monospace,
+    "Cascadia Mono",
+    Consolas,
+    monospace;
+  color: var(--text);
+  resize: vertical;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.approval-text:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.approval-edited {
+  font-size: 12px;
+  color: var(--accent);
+}
+
+.approval-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.messages-note {
+  font-size: 12px;
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+.split-bar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 4px 12px;
+  font-size: 12px;
+  color: var(--dim);
+  border-bottom: 1px solid var(--line);
+}
+
+.split-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tab-view.split-left {
+  right: 50%;
+}
+
+.tab-view.split-right {
+  left: 50%;
+  border-left: 1px solid var(--line);
+}
+
+@media (width <= 720px) {
+  .approval {
+    top: auto;
+    bottom: 16px;
+  }
+
+  .tab-view.split-left {
+    right: 0;
+    bottom: 50%;
+  }
+
+  .tab-view.split-right {
+    top: 50%;
+    left: 0;
+    border-top: 1px solid var(--line);
+    border-left: none;
+  }
+}

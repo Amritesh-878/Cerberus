@@ -29,6 +29,7 @@ import {
   statusText,
 } from "./accounts";
 import { AccountsScreen } from "./AccountsScreen";
+import { Approvals, type TabName } from "./Approvals";
 import { createAlertsSetting } from "./alerting";
 import { continueOnAccount, continueTargets } from "./carry";
 import {
@@ -45,6 +46,7 @@ import { Home } from "./Home";
 import { AccountDot, MenuIcon, PanelIcon } from "./icons";
 import { shortcutFor } from "./keys";
 import { type Launch, NewTab } from "./NewTab";
+import { createMessaging, decide, NOTE_TEXT } from "./messaging";
 import { createNotifier } from "./notify";
 import { type Anchor, onScreen, type Side } from "./place";
 import { followOpenRequests } from "./open";
@@ -61,6 +63,7 @@ import {
   toSaved,
 } from "./saved";
 import { Sidebar } from "./Sidebar";
+import { createSplit } from "./split";
 import { createStatuses } from "./statuses";
 import { setupGaps, type Step, stepFor } from "./steps";
 import { shellChoice, type Tab, tabFor } from "./tab";
@@ -277,6 +280,25 @@ export function App() {
   const shownTab = () => {
     const id = shown();
     return id === undefined ? undefined : tabById(id);
+  };
+  const messaging = createMessaging();
+  const split = createSplit(shown);
+  const tabName = (id: TabId): TabName => {
+    const tab = tabById(id);
+    const account = tab?.launch.account;
+    const all = profiles();
+    const project = tree().projects.find((p) => p.id === tab?.projectId);
+    return {
+      accountId: account?.id,
+      account:
+        all?.accounts.find((a) => a.id === account?.id)?.name ??
+        account?.name ??
+        "Default account",
+      color: account && all ? savedColor(all, account.id) : undefined,
+      place: tab
+        ? `${project?.name ?? "Setup"} / ${tab.title}`
+        : `tab ${String(id)}`,
+    };
   };
   const started = createMemo<ReadonlySet<TabId>>(
     (before) => startedTabs(before, shown(), tabIds()),
@@ -705,6 +727,17 @@ export function App() {
                     </span>
                   )}
                 </Show>
+                <Show when={messaging.note(shown())}>
+                  {(note) => (
+                    <span
+                      class="messages-note"
+                      role="status"
+                      title={NOTE_TEXT[note()].title}
+                    >
+                      {NOTE_TEXT[note()].label}
+                    </span>
+                  )}
+                </Show>
                 <Show when={shownTab()?.launch.account}>
                   {(account) => (
                     <button
@@ -787,6 +820,25 @@ export function App() {
                   </div>
                 )}
               </Show>
+              <Show when={split.showing()}>
+                {(pair) => (
+                  <div class="split-bar">
+                    <span class="split-title">
+                      {tabName(pair()[0]).place} and {tabName(pair()[1]).place}
+                    </span>
+                    <span class="spacer" />
+                    <button
+                      type="button"
+                      class="secondary"
+                      onClick={() => {
+                        split.close();
+                      }}
+                    >
+                      Close split
+                    </button>
+                  </div>
+                )}
+              </Show>
               <div class="stage">
                 <For each={startedIds()}>
                   {(id) => (
@@ -794,7 +846,14 @@ export function App() {
                       {(tab) => (
                         <div
                           class="tab-view"
-                          classList={{ shown: shown() === id }}
+                          classList={{
+                            shown: shown() === id || split.has(id),
+                            "split-left": split.side(id) === "left",
+                            "split-right": split.side(id) === "right",
+                          }}
+                          onPointerDown={() => {
+                            if (split.has(id) && shown() !== id) select(id);
+                          }}
                         >
                           <Show
                             when={onRemoved(id) ? 0 : runOf(id)}
@@ -869,7 +928,8 @@ export function App() {
                               spec={tab().launch.spec}
                               imagePasteKey={tab().launch.imagePasteKey}
                               input={tab().launch.input}
-                              active={shown() === id}
+                              active={shown() === id || split.has(id)}
+                              focused={shown() === id}
                               onState={(state) => {
                                 notify(id, state);
                                 setBoard((b) =>
@@ -960,6 +1020,16 @@ export function App() {
             <Show when={sheet()}>
               <ShortcutsSheet onClose={() => setSheet(false)} />
             </Show>
+            <Approvals
+              pending={messaging.pending()}
+              name={tabName}
+              decide={decide}
+              onApproved={(from, to) => {
+                split.open(from, to);
+                // The target, since a typed-in message waits there for Enter.
+                select(to);
+              }}
+            />
             <Show
               when={(() => {
                 const open = pillMenu();

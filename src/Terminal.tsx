@@ -88,6 +88,8 @@ export function TerminalView(props: {
   imagePasteKey: string | null;
   input: string | null;
   active: boolean;
+  /** Takes the keyboard when active; false for the other half of a split. */
+  focused?: boolean;
   onState: (state: LiveState) => void;
   onExit: () => void;
   /** The chat ended by itself, so this pane now runs the shell. */
@@ -224,7 +226,7 @@ export function TerminalView(props: {
         return;
       }
       renderer.show();
-      term.focus();
+      if (props.focused ?? true) term.focus();
     });
 
     onCleanup(() => {
