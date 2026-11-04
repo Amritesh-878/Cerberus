@@ -7,7 +7,8 @@ use tauri::ipc::{Channel, InvokeResponseBody, IpcResponse};
 use tauri::{AppHandle, Manager, State};
 
 use crate::accounts::{
-    AccountId, Accounts, AccountsError, AuthState, AuthStatus, Candidate, Profiles,
+    AccountId, Accounts, AccountsError, AuthState, AuthStatus, Candidate, Profiles, Removal,
+    SetupStep,
 };
 use crate::cli_link::{self, LinkError, Linked};
 use crate::handover::{ContinueError, RunningTabs, continue_chat};
@@ -257,9 +258,20 @@ pub fn rename_account(
 #[tauri::command(async)]
 pub fn remove_account(
     accounts: State<'_, Accounts>,
+    saved: State<'_, Saved>,
     id: AccountId,
+    confirmed: bool,
+) -> Result<Removal, AccountsError> {
+    accounts.remove(id, confirmed, |account| saved.tabs_on(account))
+}
+
+#[tauri::command(async)]
+pub fn set_account_color(
+    accounts: State<'_, Accounts>,
+    id: AccountId,
+    color: String,
 ) -> Result<Profiles, AccountsError> {
-    accounts.update(|p| p.remove(id))
+    accounts.update(|p| p.set_color(id, &color))
 }
 
 #[tauri::command(async)]
@@ -284,6 +296,14 @@ pub fn set_sidebar_width(
     width: u32,
 ) -> Result<Profiles, AccountsError> {
     accounts.set_sidebar_width(width)
+}
+
+#[tauri::command(async)]
+pub fn set_setup_step(
+    accounts: State<'_, Accounts>,
+    step: Option<SetupStep>,
+) -> Result<Profiles, AccountsError> {
+    accounts.set_setup(step)
 }
 
 #[tauri::command(async)]

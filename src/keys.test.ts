@@ -9,6 +9,7 @@ import {
   pasteInput,
   platformOf,
   shortcutFor,
+  shortcutSheet,
   terminalAction,
   terminalHandlesKey,
 } from "./keys";
@@ -205,7 +206,7 @@ test.each<[Platform, string]>([
       });
       expect(shortcutFor(pressed, platform), keys).toBeDefined();
     }
-    expect(chords).toHaveLength(5);
+    expect(chords).toHaveLength(6);
     expect(listed).toContain("F2");
     expect(help.find((h) => h.does === "New tab")?.keys).toBe(newTab);
   },
@@ -327,5 +328,56 @@ describe("isReloadKey", () => {
     ["Cmd+Option+R", chord("r", { metaKey: true, altKey: true }), "mac"],
   ])("%s is not a reload", (_name, key, platform) => {
     expect(isReloadKey(key, platform)).toBe(false);
+  });
+});
+
+describe("the shortcuts sheet", () => {
+  test("opens on Ctrl+Shift+/ on Windows and Cmd+/ on macOS, by physical key", () => {
+    const shifted = chord("?", { ctrlKey: true, shiftKey: true });
+    expect(shortcutFor({ ...shifted, code: "Slash" }, "other")).toBe(
+      "shortcuts",
+    );
+    expect(shortcutFor(chord("/", { metaKey: true }), "mac")).toBe("shortcuts");
+  });
+
+  test("leaves Ctrl+/ to the terminal", () => {
+    expect(
+      shortcutFor({ ...chord("/", { ctrlKey: true }), code: "Slash" }, "other"),
+    ).toBeUndefined();
+  });
+
+  test.each<Platform>(["other", "mac"])(
+    "on %s it lists every chord Cerberus answers to",
+    (platform) => {
+      const listed = shortcutSheet(platform)
+        .flatMap((s) => s.rows)
+        .flatMap((r) => r.keys)
+        .filter((keys) => keys.includes("+"));
+
+      for (const keys of listed) {
+        const mods = keys.split("+");
+        const key = mods.pop() ?? "";
+        const pressed = chord(key, {
+          ctrlKey: mods.includes("Ctrl"),
+          shiftKey: mods.includes("Shift"),
+          altKey: mods.includes("Option"),
+          metaKey: mods.includes("Cmd"),
+        });
+        const known =
+          shortcutFor(pressed, platform) ?? terminalAction(pressed, platform);
+        expect(known, keys).toBeDefined();
+      }
+    },
+  );
+
+  test("on macOS it also lists the terminal's editing keys, and both alternates for switching tabs", () => {
+    const [tabs, terminal] = shortcutSheet("mac");
+
+    expect(tabs?.rows.find((r) => r.does === "Next tab")?.keys).toEqual([
+      "Cmd+Shift+]",
+      "Ctrl+Tab",
+    ]);
+    expect(terminal?.rows.map((r) => r.does)).toContain("Clear the screen");
+    expect(shortcutSheet("other")).toHaveLength(1);
   });
 });

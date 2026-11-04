@@ -3,6 +3,7 @@ import { afterEach, expect, test } from "vitest";
 import type { Account, Profiles } from "./accounts";
 import {
   activeTitle,
+  button,
   CHOICES,
   cleanup,
   click,
@@ -101,13 +102,31 @@ test("the install step says why it shows no command when programs cannot be list
   expect(root.textContent).toContain("Check again");
 });
 
-test("the walkthrough's last step asks only which account new tabs use", async () => {
+test("the walkthrough's last step waits for an account before it can finish", async () => {
   const root = await renderApp(() => EMPTY);
 
   click(root, "Next");
   click(root, "Next");
   await settled();
 
+  expect(root.querySelector(".defaults")?.textContent).toContain(
+    "No accounts yet.",
+  );
+  expect(button(root, "Finish").disabled).toBe(true);
+});
+
+test("the walkthrough's last step asks only which account new tabs use", async () => {
+  const fake = accountsCore(EMPTY);
+  const root = await renderApp(fake.profiles, fake.core);
+  click(root, "Next");
+  await settle();
+  click(root, "Import");
+  await settle();
+
+  click(root, "Next");
+  await settled();
+
+  expect(button(root, "Finish").disabled).toBe(false);
   const section = root.querySelector(".defaults");
   expect(section?.textContent).toContain("Which account should new tabs use?");
   expect(section?.querySelectorAll("select, input")).toHaveLength(1);
@@ -421,8 +440,11 @@ test("the new tab box offers Claude Code and one Shell button, with no paths", a
   await newProject(root);
 
   const box = newTabBox(root);
-  expect(box.querySelector(".primary")?.textContent.trim()).toBe("Claude Code");
-  expect(box.querySelector(".secondary")?.textContent.trim()).toBe("Shell");
+  expect(
+    [...box.querySelectorAll(".menu-item")].map((b) =>
+      b.querySelector(".menu-text")?.textContent.trim(),
+    ),
+  ).toEqual(["Claude Code", "Shell"]);
   expect(box.textContent).not.toContain(".exe");
 });
 
@@ -446,9 +468,7 @@ test("Claude Code cannot be opened when it is not installed", async () => {
   });
   await newProject(root);
 
-  expect(
-    newTabBox(root).querySelector<HTMLButtonElement>(".primary")?.disabled,
-  ).toBe(true);
+  expect(button(newTabBox(root), "Claude Code").disabled).toBe(true);
   expect(newTabBox(root).textContent).toContain("Claude Code isn't installed.");
 });
 

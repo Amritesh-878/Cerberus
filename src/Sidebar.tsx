@@ -12,14 +12,16 @@ import {
 
 import {
   type Account,
-  accountColor,
   type AccountId,
+  accountState,
   type Profiles,
+  savedColor,
   statusText,
 } from "./accounts";
 import { type Mark, resetText } from "./board";
 import { continueTargets, limitShortcut } from "./carry";
 import {
+  AccountDot,
   ChevronIcon,
   ClockIcon,
   CloseIcon,
@@ -31,7 +33,7 @@ import {
 } from "./icons";
 import { RENAME_KEY } from "./keys";
 import type { Statuses } from "./statuses";
-import { type MenuPlace, TabMenu } from "./TabMenu";
+import { menuAccount, type MenuPlace, TabMenu } from "./TabMenu";
 import type { TabAccount } from "./tab";
 import {
   groups,
@@ -55,6 +57,8 @@ export function Sidebar(props: {
   movingTo: (id: TabId) => string | undefined;
   /** The tab's chat ended, so it runs the shell until Resume chat. */
   ended: (id: TabId) => boolean;
+  /** The tab's account was removed, so it runs nothing until its chat moves. */
+  removed: (id: TabId) => boolean;
   onContinue: (id: TabId, account: Account) => void;
   onResume: (id: TabId) => void;
   onSelect: (id: TabId) => void;
@@ -65,6 +69,8 @@ export function Sidebar(props: {
   onRemoveProject: (id: ProjectId) => void;
   onNewProject: () => void;
   onAccounts: () => void;
+  /** Setup is running, so only its own tabs show and nothing here can leave it. */
+  locked: boolean;
 }) {
   const [search, setSearch] = createSignal("");
   const [renaming, setRenaming] = createSignal<TabId>();
@@ -74,6 +80,8 @@ export function Sidebar(props: {
     at: MenuPlace;
     chosen?: Account;
   }>();
+  // A removed account's tab cannot resume there; only moving the chat applies.
+  const resumable = (id: TabId) => props.ended(id) && !props.removed(id);
   const targetsOf = (tab: TreeTab) =>
     continueTargets(tab, props.profiles.accounts, props.statuses.get);
 
@@ -106,20 +114,31 @@ export function Sidebar(props: {
 
   return (
     <aside class="sidebar">
-      <div class="sidebar-top">
-        <label class="search">
-          <SearchIcon />
-          <input
-            type="search"
-            placeholder="Search tabs"
-            aria-label="Search tabs"
-            value={search()}
-            onInput={(event) => setSearch(event.currentTarget.value)}
-          />
-        </label>
-      </div>
+      <Show when={!props.locked}>
+        <div class="sidebar-top">
+          <label class="search">
+            <SearchIcon />
+            <input
+              type="search"
+              placeholder="Search tabs"
+              aria-label="Search tabs"
+              value={search()}
+              onInput={(event) => setSearch(event.currentTarget.value)}
+            />
+          </label>
+        </div>
+      </Show>
       <nav class="tree" aria-label="Tabs">
-        <Index each={listed()}>
+        <Show when={props.locked}>
+          <p class="hint tree-empty">
+            Your projects and tabs show here once setup is done.
+          </p>
+        </Show>
+        <Index
+          each={
+            props.locked ? listed().filter((g) => g.project === null) : listed()
+          }
+        >
           {(group) => (
             <section>
               <ProjectHeader
@@ -146,10 +165,19 @@ export function Sidebar(props: {
                     <TabRow
                       row={row}
                       account={accountOf(row.tab)}
+                      color={
+                        row.tab.launch.account
+                          ? savedColor(
+                              props.profiles,
+                              row.tab.launch.account.id,
+                            )
+                          : undefined
+                      }
                       status={(id) => statusText(props.statuses.get(id))}
                       active={props.active === row.tab.id}
                       mark={props.mark(row.tab.id)}
                       ended={props.ended(row.tab.id)}
+                      removed={props.removed(row.tab.id)}
                       movingTo={props.movingTo(row.tab.id)}
                       shortcut={
                         props.movingTo(row.tab.id) !== undefined
@@ -163,7 +191,7 @@ export function Sidebar(props: {
                       onMenu={(at) => {
                         if (
                           targetsOf(row.tab).length > 0 ||
-                          props.ended(row.tab.id)
+                          resumable(row.tab.id)
                         )
                           setMenu({ tab: row.tab, at });
                       }}
@@ -197,10 +225,13 @@ export function Sidebar(props: {
         {(open) => (
           <TabMenu
             title={open().tab.title}
+            account={menuAccount(accountOf(open().tab), props.profiles, (id) =>
+              accountState(props.profiles, props.statuses.get(id), id),
+            )}
             targets={targetsOf(open().tab)}
             running={props.running(open().tab.id)}
             busy={props.movingTo(open().tab.id) !== undefined}
-            ended={props.ended(open().tab.id)}
+            ended={resumable(open().tab.id)}
             onResume={() => {
               const id = open().tab.id;
               setMenu(undefined);
@@ -213,13 +244,17 @@ export function Sidebar(props: {
               setMenu(undefined);
               props.onContinue(id, account);
             }}
+            onAccounts={() => {
+              setMenu(undefined);
+              props.onAccounts();
+            }}
             onDismiss={() => {
               setMenu(undefined);
             }}
           />
         )}
       </Show>
-      <footer class="sidebar-foot">
+      <footer class="sidebar-foot" hidden={props.locked}>
         <button
           type="button"
           class="foot-button"
@@ -248,10 +283,13 @@ export function Sidebar(props: {
 function TabRow(props: {
   row: Row;
   account: TabAccount | null;
+  /** The account's saved colour, so a choice in Accounts reaches tabs already open. */
+  color: string | undefined;
   status: (id: AccountId) => string;
   active: boolean;
   mark: Mark | undefined;
   ended: boolean;
+  removed: boolean;
   movingTo: string | undefined;
   shortcut: Account | undefined;
   renaming: boolean;
@@ -294,6 +332,7 @@ function TabRow(props: {
           last: props.row.last,
           active: props.active,
           done: props.mark?.kind === "done",
+          removed: props.removed,
           waiting: props.mark?.kind === "waiting",
         }}
       >
@@ -323,9 +362,10 @@ function TabRow(props: {
               <Show when={props.account}>
                 {(account) => (
                   <span
+                    class="tab-account"
                     title={`${account().name} · ${props.status(account().id)}`}
                   >
-                    <AccountDot id={account().id} />
+                    <AccountDot id={account().id} color={props.color} />
                   </span>
                 )}
               </Show>
@@ -427,10 +467,6 @@ function StateMark(props: { mark: Mark | undefined }) {
       </Match>
     </Switch>
   );
-}
-
-export function AccountDot(props: { id: AccountId }) {
-  return <span class="dot" style={{ background: accountColor(props.id) }} />;
 }
 
 function ProjectHeader(props: {

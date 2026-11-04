@@ -16,6 +16,8 @@ const EMPTY: Profiles = {
   sidebarWidth: null,
   alerts: true,
   suggestions: true,
+  retired: [],
+  setup: null,
   revision: 0,
 };
 
@@ -233,8 +235,11 @@ test("a row being renamed shows only Save and Cancel", async () => {
   const { root } = await renderStep({ profiles: ONE });
   const row = root.querySelector(".accounts li");
   if (!(row instanceof HTMLElement)) throw new Error("no account row");
+  // The colour dot is a button on every row, beside the row's actions.
   const labels = () =>
-    [...row.querySelectorAll("button")].map((b) => b.textContent);
+    [...row.querySelectorAll("button:not(.dot-button)")].map(
+      (b) => b.textContent,
+    );
 
   button(row, "Rename").click();
   expect(labels()).toEqual(["Save", "Cancel"]);

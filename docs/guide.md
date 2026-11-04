@@ -16,16 +16,34 @@ The first launch opens a short walkthrough:
    signs it in. Each account shows its email and plan, read from `claude auth status`.
 3. **New tabs.** Which account new tabs use.
 
+Setup ends with **Finish**, once there is an account, or with **Skip setup** at its top right.
+Nothing else leaves it: the sidebar shows only setup's own tabs (such as the installer),
+the app's shortcuts do nothing, and a `cerberus open` request waits until setup ends. Closing the
+app part way through reopens setup at the same step. After a skip, the start page says what is
+missing (Claude Code, or an account) and **Finish setup** reopens it there.
+
 **Accounts** (the person button at the bottom of the sidebar) adds, renames or removes accounts,
 and sets the account new tabs use, the shell the **Shell** button opens, where **New project**
-opens its folder picker, and whether alerts and shell suggestions are on. Removing an account only forgets it; its
-folder stays on disk.
+opens its folder picker, and whether alerts and shell suggestions are on.
+
+- **Colours.** Click an account's dot to pick its colour from eight. Every dot for that account
+  follows: the sidebar, the account pill, the new tab box and the menus. A new account gets the
+  first colour no other account shows; an account from before colours keeps the one it had.
+- **Removing an account** only forgets it; its folder stays on disk. When saved tabs use it,
+  Cerberus names them and asks first. On yes, their programs close and the tabs stay in the
+  sidebar, dimmed, with **Continue on `<account>`…** to carry each chat to another account.
+  The last account can't be removed.
 
 ## Projects and tabs
 
 **New project** opens a folder picker, and the folder's name becomes the project's name. The
-**+** beside a project opens the new tab box: pick the account, whether the tab goes on its own
-or under a planner, then **Claude Code** or **Shell**. The tab starts in the project's folder.
+**+** beside a project opens the new tab box beside it: pick the account, whether the tab goes on
+its own or under a planner, then **Claude Code** (Enter) or **Shell**. The tab starts in the
+project's folder. Ctrl+Shift+T (Cmd+T on macOS) opens the box beside the current project's **+**.
+
+The account pill at the top right shows the shown tab's account and its sign-in. Clicking it
+opens the same menu as right-clicking the tab: **Continue on `<account>`…** for the other
+accounts, **Resume chat** for an ended chat, and **Accounts**, always last.
 
 - A **planner** is a Claude Code tab at the top of a project.
 - A **sub-tab** sits under a planner: a Claude Code coder or a shell. Closing a planner moves its
@@ -62,6 +80,12 @@ Ctrl+Shift+R (Cmd+R and Cmd+Shift+R on macOS). Ctrl+R in a terminal still reache
 If a save fails, the bar shows "Tabs not saved" and Cerberus retries. Starting Cerberus again
 brings the open window forward instead of opening a second one. An unreadable `tree.db` is kept
 as `tree.db.bad` and Cerberus starts with no saved tabs.
+
+## Keyboard shortcuts
+
+Ctrl+Shift+/ (Cmd+/ or **Help > Keyboard Shortcuts** on macOS) shows every shortcut Cerberus
+answers to, from anywhere, setup included. Escape, a click outside or the same keys close it.
+Ctrl+/ alone stays with the terminal. The start page lists the main ones.
 
 ## The session board and alerts
 

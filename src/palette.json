@@ -1,0 +1,10 @@
+[
+  { "name": "terracotta", "label": "Terracotta", "hex": "#d97757" },
+  { "name": "blue", "label": "Blue", "hex": "#7aa2c8" },
+  { "name": "green", "label": "Green", "hex": "#7fb27f" },
+  { "name": "purple", "label": "Purple", "hex": "#b58ad6" },
+  { "name": "yellow", "label": "Yellow", "hex": "#d6b45a" },
+  { "name": "rose", "label": "Rose", "hex": "#d97a9e" },
+  { "name": "teal", "label": "Teal", "hex": "#4fb5a8" },
+  { "name": "silver", "label": "Silver", "hex": "#a9adb3" }
+]

@@ -1,3 +1,4 @@
+import { listen } from "@tauri-apps/api/event";
 import {
   batch,
   createEffect,
@@ -16,7 +17,10 @@ import {
 
 import {
   type Account,
+  accountState,
   isNewer,
+  isRemoved,
+  savedColor,
   loadProfiles,
   pickFolder,
   type Profiles,
@@ -26,7 +30,7 @@ import {
 } from "./accounts";
 import { AccountsScreen } from "./AccountsScreen";
 import { createAlertsSetting } from "./alerting";
-import { continueOnAccount } from "./carry";
+import { continueOnAccount, continueTargets } from "./carry";
 import {
   type Board,
   cleared,
@@ -37,10 +41,12 @@ import {
   reported,
   startedTabs,
 } from "./board";
-import { AppIcon, CloseIcon, MenuIcon, PanelIcon } from "./icons";
-import { keyHelp, shortcutFor } from "./keys";
+import { Home } from "./Home";
+import { AccountDot, MenuIcon } from "./icons";
+import { shortcutFor } from "./keys";
 import { type Launch, NewTab } from "./NewTab";
 import { createNotifier } from "./notify";
+import { type Anchor, onScreen, type Side } from "./place";
 import { followOpenRequests } from "./open";
 import { listPrograms } from "./pty";
 import {
@@ -51,10 +57,13 @@ import {
   saveTree,
   toSaved,
 } from "./saved";
-import { AccountDot, Sidebar } from "./Sidebar";
+import { Sidebar } from "./Sidebar";
 import { createStatuses } from "./statuses";
+import { setupGaps, type Step, stepFor } from "./steps";
 import { type Tab, tabFor } from "./tab";
+import { ShortcutsSheet } from "./ShortcutsSheet";
 import { SidebarEdge } from "./SidebarEdge";
+import { menuAccount, type MenuPlace, TabMenu } from "./TabMenu";
 import { TerminalView } from "./Terminal";
 import {
   addProject,
@@ -80,22 +89,35 @@ type Page = "walkthrough" | "accounts";
 
 interface Opening {
   projectId: ProjectId;
-  anchor: DOMRect | undefined;
+  anchor: Anchor | undefined;
+  side: Side;
 }
 
 export function App() {
   const [page, setPage] = createSignal<Page>();
+  // The step the walkthrough opens at, set when the start page sends the user to what is missing.
+  const [setupFrom, setSetupFrom] = createSignal<Step>("install");
   // A setup tab opened from a page shows over it, so the page keeps its place underneath.
   const [overPage, setOverPage] = createSignal(false);
+  // Setup is left only by its own Finish or Skip, so no click, key or request elsewhere ends it by mistake.
+  const inSetup = () => page() === "walkthrough";
   const showPage = (next: Page | undefined) => {
+    if (untrack(inSetup) && next !== "walkthrough") return;
     setPage(next);
+    setOverPage(false);
+  };
+  const endSetup = () => {
+    setPage(undefined);
     setOverPage(false);
   };
   // Signals, not a resource: an errored resource keeps throwing after a fresh value is set.
   const [profiles, setProfiles] = createSignal<Profiles>();
   const [loadError, setLoadError] = createSignal<string>();
   const loaded = (fresh: Profiles) => {
-    if (fresh.accounts.length === 0) showPage("walkthrough");
+    if (fresh.setup !== null) {
+      setSetupFrom(fresh.setup);
+      showPage("walkthrough");
+    }
     setLoadError(undefined);
     setProfiles(fresh);
   };
@@ -118,7 +140,9 @@ export function App() {
   const [tree, setTree] = createSignal<Tree>(emptyTree());
   const [active, setActive] = createSignal<TabId>();
   const [opening, setOpening] = createSignal<Opening>();
-  const [panelOpen, setPanelOpen] = createSignal(false);
+  // Holds the tab it opened for, so switching tabs while it is open cannot move another chat.
+  const [pillMenu, setPillMenu] = createSignal<{ at: MenuPlace; tab: TabId }>();
+  const [sheet, setSheet] = createSignal(false);
   // Held while dragging, so the edge follows the pointer before the saved value comes back.
   const [dragged, setDragged] = createSignal<number>();
   const sidebarWidth = () =>
@@ -279,13 +303,30 @@ export function App() {
       return next;
     });
   };
+  // A tab left on a removed account keeps its place but runs nothing until its chat moves.
+  const onRemoved = (id: TabId) => {
+    const account = tabById(id)?.launch.account;
+    const current = profiles();
+    return (
+      account != null && current !== undefined && isRemoved(current, account.id)
+    );
+  };
   const isRunning = (id: TabId) =>
     started().has(id) &&
     runOf(id) !== 0 &&
+    !onRemoved(id) &&
     !ended().has(id) &&
     markOf(board(), id)?.kind !== "done";
 
   const select = (id: TabId) => {
+    if (untrack(inSetup)) {
+      // Only setup's own tabs, such as the installer, open while it runs; they show over it.
+      if (tabById(id)?.projectId !== null) return;
+      setActive(id);
+      setOverPage(true);
+      setDrawer(false);
+      return;
+    }
     setActive(id);
     showPage(undefined);
     setDrawer(false);
@@ -338,6 +379,14 @@ export function App() {
         restart();
       },
     );
+  };
+
+  // A shell has no chat to carry, so a shell left on a removed account just starts again on another.
+  const restartOn = (id: TabId, account: Account) => {
+    batch(() => {
+      setTree(moveToAccount(tree(), id, account));
+      setRun(id, runOf(id) + 1);
+    });
   };
 
   const resume = (id: TabId) => {
@@ -419,12 +468,17 @@ export function App() {
     return projects.find((p) => p.id === projectId) ?? projects.at(-1);
   };
 
+  // Beside the project's +, else beside the shown tab's row, else centred when the sidebar is a closed drawer.
   const newTabIn = (projectId: ProjectId) => {
-    const button = document.querySelector(
-      `[data-new-tab="${String(projectId)}"]`,
-    );
+    const view = { width: innerWidth, height: innerHeight };
+    const anchor = [
+      document.querySelector(`[data-new-tab="${String(projectId)}"]`),
+      document.querySelector(".tab-row.active"),
+    ]
+      .map((el) => el?.getBoundingClientRect())
+      .find((rect) => rect !== undefined && onScreen(rect, view));
     setDrawer(false);
-    setOpening({ projectId, anchor: button?.getBoundingClientRect() });
+    setOpening({ projectId, anchor, side: "beside" });
   };
 
   const newProject = () => {
@@ -434,7 +488,7 @@ export function App() {
         const [next, id] = addProject(tree(), folder);
         setTree(next);
         showPage(undefined);
-        setOpening({ projectId: id, anchor: undefined });
+        newTabIn(id);
       },
       (error: unknown) => {
         console.error("could not open the folder picker:", error);
@@ -445,7 +499,8 @@ export function App() {
   followOpenRequests({
     tree,
     shown,
-    restored,
+    // A request waits in the core until setup ends, so it cannot open a tab past it.
+    restored: () => restored() && !inSetup(),
     // A picker left open would cover the tab the command asked for.
     select: (id) => {
       setOpening(undefined);
@@ -461,6 +516,11 @@ export function App() {
       if (!shortcut || profiles() === undefined) return;
       event.preventDefault();
       event.stopPropagation();
+      if (shortcut === "shortcuts") {
+        setSheet((open) => !open);
+        return;
+      }
+      if (inSetup() && shortcut !== "closeTab") return;
       if (shortcut === "nextTab" || shortcut === "previousTab") {
         const id = stepTab(tree(), shown(), shortcut === "nextTab" ? 1 : -1);
         if (id !== undefined) select(id);
@@ -477,8 +537,13 @@ export function App() {
       }
     };
     window.addEventListener("keydown", onKey, true);
+    // The macOS Help menu item sends this, since its Cmd+/ never reaches the page.
+    const fromMenu = listen("show-shortcuts", () => setSheet((open) => !open));
     onCleanup(() => {
       window.removeEventListener("keydown", onKey, true);
+      void fromMenu.then((stop) => {
+        stop();
+      });
     });
   });
 
@@ -507,7 +572,7 @@ export function App() {
         {(loaded) => (
           <div
             class="app"
-            classList={{ drawer: drawer(), "panel-open": panelOpen() }}
+            classList={{ drawer: drawer() }}
             style={{ "--sidebar-width": `${String(sidebarWidth())}px` }}
           >
             <SidebarEdge
@@ -516,6 +581,7 @@ export function App() {
               onDone={saveWidth}
             />
             <Sidebar
+              locked={inSetup()}
               tree={tree()}
               profiles={loaded()}
               statuses={statuses}
@@ -524,6 +590,7 @@ export function App() {
               running={isRunning}
               movingTo={(id) => moving().get(id)}
               ended={(id) => ended().has(id)}
+              removed={onRemoved}
               onContinue={continueOn}
               onResume={resume}
               onSelect={select}
@@ -531,7 +598,7 @@ export function App() {
               onRename={(id, title) => setTree(renameTab(tree(), id, title))}
               onNewTab={(projectId, anchor) => {
                 setDrawer(false);
-                setOpening({ projectId, anchor });
+                setOpening({ projectId, anchor, side: "beside" });
               }}
               onRenameProject={(id, name) =>
                 setTree(renameProject(tree(), id, name))
@@ -606,26 +673,31 @@ export function App() {
                 </Show>
                 <Show when={shownTab()?.launch.account}>
                   {(account) => (
-                    <span
+                    <button
+                      type="button"
                       class="account-pill"
                       title={statusText(statuses.get(account().id))}
+                      aria-haspopup="menu"
+                      aria-expanded={pillMenu() !== undefined}
+                      onClick={(event) => {
+                        const box = event.currentTarget.getBoundingClientRect();
+                        const id = shown();
+                        if (id !== undefined)
+                          setPillMenu({
+                            at: { x: box.left, y: box.bottom },
+                            tab: id,
+                          });
+                      }}
                     >
-                      <AccountDot id={account().id} />
+                      <AccountDot
+                        id={account().id}
+                        color={savedColor(loaded(), account().id)}
+                      />
                       {loaded().accounts.find((a) => a.id === account().id)
                         ?.name ?? account().name}
-                    </span>
+                    </button>
                   )}
                 </Show>
-                <button
-                  type="button"
-                  class="icon-button"
-                  aria-label="Side panel"
-                  aria-pressed={panelOpen()}
-                  title="Side panel"
-                  onClick={() => setPanelOpen((open) => !open)}
-                >
-                  <PanelIcon />
-                </button>
               </header>
               <Show when={shownTab()?.launch.signIn && shownTab()}>
                 {(tab) => (
@@ -677,10 +749,67 @@ export function App() {
                           classList={{ shown: shown() === id }}
                         >
                           <Show
-                            when={runOf(id)}
+                            when={onRemoved(id) ? 0 : runOf(id)}
                             keyed
                             fallback={
-                              <Show when={moving().get(id)}>
+                              <Show
+                                when={moving().get(id)}
+                                fallback={
+                                  <Show when={onRemoved(id)}>
+                                    <Show
+                                      when={tab().launch.program === "claude"}
+                                      fallback={
+                                        <div class="pane-note removed-note">
+                                          <p>
+                                            {tab().launch.account?.name} was
+                                            removed, so this shell closed.
+                                          </p>
+                                          <div class="removed-actions">
+                                            <For each={loaded().accounts}>
+                                              {(account) => (
+                                                <button
+                                                  type="button"
+                                                  class="secondary"
+                                                  onClick={() => {
+                                                    restartOn(id, account);
+                                                  }}
+                                                >
+                                                  Restart on {account.name}
+                                                </button>
+                                              )}
+                                            </For>
+                                          </div>
+                                        </div>
+                                      }
+                                    >
+                                      <div class="pane-note removed-note">
+                                        <p>
+                                          {tab().launch.account?.name} was
+                                          removed, so this tab's program closed.
+                                          Its chat is saved.
+                                        </p>
+                                        <button
+                                          type="button"
+                                          class="secondary"
+                                          onClick={(event) => {
+                                            const box =
+                                              event.currentTarget.getBoundingClientRect();
+                                            setPillMenu({
+                                              at: {
+                                                x: box.left,
+                                                y: box.bottom + 4,
+                                              },
+                                              tab: id,
+                                            });
+                                          }}
+                                        >
+                                          Continue on another account…
+                                        </button>
+                                      </div>
+                                    </Show>
+                                  </Show>
+                                }
+                              >
                                 {(to) => (
                                   <p class="pane-note">Moving to {to()}…</p>
                                 )}
@@ -719,13 +848,23 @@ export function App() {
                         <Home
                           project={homeProject()?.name}
                           hasProjects={tree().projects.length > 0}
+                          gaps={setupGaps(loaded(), programList())}
                           treeError={treeError()}
                           treeNotice={treeNotice()}
-                          onNewTab={() => {
+                          onNewTab={(anchor) => {
                             const project = homeProject();
-                            if (project) newTabIn(project.id);
+                            if (project)
+                              setOpening({
+                                projectId: project.id,
+                                anchor,
+                                side: "below",
+                              });
                           }}
                           onNewProject={newProject}
+                          onSetup={(gap) => {
+                            setSetupFrom(stepFor(gap));
+                            showPage("walkthrough");
+                          }}
                         />
                       }
                     >
@@ -735,12 +874,11 @@ export function App() {
                           programs={programList() ?? []}
                           programsError={programsError()}
                           statuses={statuses}
+                          start={setupFrom()}
                           onProfiles={changed}
                           onOpen={openSetupTab}
                           onRecheckPrograms={() => void recheckPrograms()}
-                          onFinish={() => {
-                            showPage(undefined);
-                          }}
+                          onFinish={endSetup}
                         />
                       </Match>
                       <Match when={page() === "accounts"}>
@@ -762,22 +900,54 @@ export function App() {
                 </Show>
               </div>
             </section>
-            <Show when={panelOpen()}>
-              <aside class="panel" aria-label="Side panel">
-                <header class="panel-head">
-                  Panel
-                  <span class="spacer" />
-                  <button
-                    type="button"
-                    class="icon-button"
-                    aria-label="Close panel"
-                    onClick={() => setPanelOpen(false)}
-                  >
-                    <CloseIcon />
-                  </button>
-                </header>
-                <p class="panel-empty">Nothing here yet.</p>
-              </aside>
+            <Show when={sheet()}>
+              <ShortcutsSheet onClose={() => setSheet(false)} />
+            </Show>
+            <Show
+              when={(() => {
+                const open = pillMenu();
+                return open === undefined ? undefined : tabById(open.tab);
+              })()}
+            >
+              {(tab) => (
+                <TabMenu
+                  title={tab().title}
+                  account={menuAccount(
+                    loaded().accounts.find(
+                      (a) => a.id === tab().launch.account?.id,
+                    ) ?? tab().launch.account,
+                    loaded(),
+                    (id) => accountState(loaded(), statuses.get(id), id),
+                  )}
+                  targets={continueTargets(
+                    tab(),
+                    loaded().accounts,
+                    statuses.get,
+                  )}
+                  running={isRunning(tab().id)}
+                  busy={moving().has(tab().id)}
+                  ended={ended().has(tab().id) && !onRemoved(tab().id)}
+                  at={pillMenu()?.at ?? { x: 0, y: 0 }}
+                  onContinue={(account) => {
+                    // Read before closing, since closing unmounts what holds the tab.
+                    const id = tab().id;
+                    setPillMenu(undefined);
+                    continueOn(id, account);
+                  }}
+                  onResume={() => {
+                    const id = tab().id;
+                    setPillMenu(undefined);
+                    resume(id);
+                  }}
+                  onAccounts={() => {
+                    setPillMenu(undefined);
+                    showPage("accounts");
+                  }}
+                  onDismiss={() => {
+                    setPillMenu(undefined);
+                  }}
+                />
+              )}
             </Show>
             <Show when={opening()}>
               {(open) => (
@@ -793,6 +963,7 @@ export function App() {
                       programsError={programsError()}
                       statuses={statuses}
                       anchor={open().anchor}
+                      side={open().side}
                       onLaunch={(chosen) => {
                         launch(project().id, chosen);
                       }}
@@ -808,89 +979,5 @@ export function App() {
         )}
       </Match>
     </Switch>
-  );
-}
-
-function Home(props: {
-  /** The project the last shown tab is in, where the main button opens a new tab. */
-  project: string | undefined;
-  hasProjects: boolean;
-  treeError: string | undefined;
-  treeNotice: string | undefined;
-  onNewTab: () => void;
-  onNewProject: () => void;
-}) {
-  return (
-    <main class="home">
-      <AppIcon />
-      <h1>Cerberus</h1>
-      <Show when={props.treeNotice}>
-        {(notice) => <p class="hint">{notice()}</p>}
-      </Show>
-      <Show when={props.treeError}>
-        {(error) => (
-          <p class="error">
-            {error()}. Tabs opened in this window will not be saved.
-          </p>
-        )}
-      </Show>
-      <Show
-        when={props.hasProjects && props.project}
-        fallback={
-          <>
-            <p class="home-lead">Add a project</p>
-            <p class="hint">
-              A project is a folder. Its tabs start there, each under the
-              account you pick.
-            </p>
-            <div class="home-actions">
-              <button
-                type="button"
-                class="primary"
-                onClick={() => {
-                  props.onNewProject();
-                }}
-              >
-                New project
-              </button>
-            </div>
-          </>
-        }
-      >
-        {(project) => (
-          <div class="home-actions">
-            <button
-              type="button"
-              class="primary"
-              title={`In ${project()}`}
-              onClick={() => {
-                props.onNewTab();
-              }}
-            >
-              New Claude Code tab
-            </button>
-            <button
-              type="button"
-              class="secondary"
-              onClick={() => {
-                props.onNewProject();
-              }}
-            >
-              New project
-            </button>
-          </div>
-        )}
-      </Show>
-      <dl class="home-keys">
-        <For each={keyHelp()}>
-          {(help) => (
-            <>
-              <dt>{help.keys}</dt>
-              <dd>{help.does}</dd>
-            </>
-          )}
-        </For>
-      </dl>
-    </main>
   );
 }

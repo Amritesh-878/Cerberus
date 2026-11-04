@@ -202,7 +202,7 @@ fn continue_within(
 ) -> Result<(), ContinueError> {
     let _moving = running.begin_move(tab).ok_or(ContinueError::Busy)?;
     let saved_tab = saved.tab(tab).ok_or(ContinueError::NoTab)?;
-    let from = accounts.claude_home(saved_tab.account)?;
+    let from = accounts.chat_home(saved_tab.account)?;
     let to = accounts.claude_home(Some(account))?;
     if saved_tab.account == Some(account) || from == to {
         return Err(ContinueError::SameAccount);

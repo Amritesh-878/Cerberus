@@ -1,4 +1,6 @@
 mod detect;
+mod palette;
+mod removal;
 mod status;
 mod store;
 
@@ -10,6 +12,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize, Serializer};
 
 pub use crate::accounts::detect::Candidate;
+pub use crate::accounts::removal::Removal;
 pub use crate::accounts::status::{AuthState, AuthStatus};
 use crate::accounts::store::Store;
 use crate::programs::Finder;
@@ -40,8 +43,14 @@ pub enum AccountsError {
     NoSuchDir(String),
     #[error("no account {0}")]
     NoAccount(AccountId),
+    #[error(
+        "{0} is the only account, and Cerberus needs one. Add another account before removing it."
+    )]
+    LastAccount(String),
     #[error("not a shell Cerberus knows: {0}")]
     UnknownShell(String),
+    #[error("not a colour Cerberus knows: {0}")]
+    UnknownColor(String),
 }
 
 impl Serialize for AccountsError {
@@ -56,6 +65,18 @@ pub struct Account {
     pub id: AccountId,
     pub name: String,
     pub config_dir: PathBuf,
+    /// A palette name; `None` keeps the colour the account's id gave it before colours were saved.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+}
+
+/// A walkthrough step, saved so a restart part way through setup reopens it there.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SetupStep {
+    Install,
+    Accounts,
+    Defaults,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -75,6 +96,12 @@ pub struct Profiles {
     /// Shell tabs suggest from history as you type, through each shell's own feature.
     #[serde(default = "on")]
     pub suggestions: bool,
+    /// Where setup is, until it is finished or skipped; a file from before the setting has finished it.
+    #[serde(default)]
+    pub setup: Option<SetupStep>,
+    /// Removed accounts, kept so a tab left on one can still carry its chat to another account.
+    #[serde(default)]
+    pub retired: Vec<Account>,
     // Raised on every save, so the webview can drop a reply that a newer one already replaced.
     #[serde(default)]
     pub revision: u64,
@@ -94,6 +121,8 @@ impl Default for Profiles {
             sidebar_width: None,
             alerts: true,
             suggestions: true,
+            setup: Some(SetupStep::Install),
+            retired: Vec::new(),
             revision: 0,
             next_id: 0,
         }
@@ -119,10 +148,12 @@ impl Profiles {
         }
         let id = self.next_id;
         self.next_id += 1;
+        let color = palette::first_free(&self.accounts);
         self.accounts.push(Account {
             id,
             name,
             config_dir,
+            color,
         });
         self.default_account.get_or_insert(id);
         Ok(id)
@@ -141,12 +172,42 @@ impl Profiles {
 
     /// Forgets the account; its folder and everything in it stay on disk.
     pub fn remove(&mut self, id: AccountId) -> Result<(), AccountsError> {
-        self.account(id)?;
+        let account = self.account(id)?.clone();
+        if self.accounts.len() == 1 {
+            return Err(AccountsError::LastAccount(account.name));
+        }
         self.accounts.retain(|a| a.id != id);
+        self.retired.push(account);
         if self.default_account == Some(id) {
             self.default_account = self.accounts.first().map(|a| a.id);
         }
         Ok(())
+    }
+
+    pub fn set_color(&mut self, id: AccountId, color: &str) -> Result<(), AccountsError> {
+        if !palette::is_known(color) {
+            return Err(AccountsError::UnknownColor(color.to_owned()));
+        }
+        let account = self
+            .accounts
+            .iter_mut()
+            .find(|a| a.id == id)
+            .ok_or(AccountsError::NoAccount(id))?;
+        account.color = Some(color.to_owned());
+        Ok(())
+    }
+
+    /// A colour from a newer build's palette is dropped, so the account shows its old colour, not an error.
+    fn forget_unknown_colors(&mut self) {
+        for account in self.accounts.iter_mut().chain(self.retired.iter_mut()) {
+            if account
+                .color
+                .as_deref()
+                .is_some_and(|c| !palette::is_known(c))
+            {
+                account.color = None;
+            }
+        }
     }
 
     pub fn set_default_account(&mut self, id: AccountId) -> Result<(), AccountsError> {
@@ -206,6 +267,14 @@ impl Profiles {
         if let Some(id) = self.default_account {
             replay.set_default_account(id)?;
         }
+        for account in &self.retired {
+            if account.id >= self.next_id || replay.account(account.id).is_ok() {
+                return Err(AccountsError::Corrupt(format!(
+                    "removed account id {} is invalid",
+                    account.id
+                )));
+            }
+        }
         replay.set_start_folder(self.start_folder.clone())
     }
 }
@@ -252,6 +321,14 @@ impl Accounts {
         let width = width.clamp(*SIDEBAR_WIDTHS.start(), *SIDEBAR_WIDTHS.end());
         self.update(|p| {
             p.sidebar_width = Some(width);
+            Ok(())
+        })
+    }
+
+    /// `None` ends setup, by finishing or skipping it.
+    pub fn set_setup(&self, step: Option<SetupStep>) -> Result<Profiles, AccountsError> {
+        self.update(|p| {
+            p.setup = step;
             Ok(())
         })
     }
@@ -331,6 +408,23 @@ impl Accounts {
         };
         let dir = self.load()?.account(id)?.config_dir.clone();
         Ok(env_dir(&self.home, dir))
+    }
+
+    /// Where a tab's chat lives, a removed account's folder included, so the chat can still move.
+    pub fn chat_home(&self, account: Option<AccountId>) -> Result<PathBuf, AccountsError> {
+        let Some(id) = account else {
+            return self.claude_home(None);
+        };
+        let profiles = self.load()?;
+        match profiles.account(id) {
+            Ok(account) => Ok(account.config_dir.clone()),
+            Err(e) => profiles
+                .retired
+                .iter()
+                .find(|a| a.id == id)
+                .map(|a| a.config_dir.clone())
+                .ok_or(e),
+        }
     }
 
     /// The folder Claude Code uses for this account, where `sessions/` and `projects/` live.
@@ -564,6 +658,37 @@ mod tests {
             profiles.remove(0),
             Err(AccountsError::NoAccount(0))
         ));
+    }
+
+    #[test]
+    fn a_new_account_takes_the_first_colour_no_other_shows() {
+        let mut profiles = two_accounts();
+        profiles.accounts[0].color = None;
+        profiles.accounts[1].color = Some("blue".to_owned());
+
+        let id = profiles.add("third", dir(r"C:\h\.claude-3")).unwrap();
+
+        // Account 0 shows terracotta by its id, and blue is saved on account 1.
+        assert_eq!(
+            profiles.account(id).unwrap().color.as_deref(),
+            Some("green")
+        );
+    }
+
+    #[test]
+    fn a_colour_outside_the_palette_is_refused() {
+        let mut profiles = two_accounts();
+
+        assert!(matches!(
+            profiles.set_color(0, "#ff0000"),
+            Err(AccountsError::UnknownColor(c)) if c == "#ff0000"
+        ));
+        assert!(matches!(
+            profiles.set_color(9, "teal"),
+            Err(AccountsError::NoAccount(9))
+        ));
+        profiles.set_color(0, "teal").unwrap();
+        assert_eq!(profiles.account(0).unwrap().color.as_deref(), Some("teal"));
     }
 
     #[test]
