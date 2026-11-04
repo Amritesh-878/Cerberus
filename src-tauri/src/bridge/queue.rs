@@ -79,6 +79,13 @@ impl<T> Queue<T> {
         gone.into()
     }
 
+    /// Takes out every message a tab sent, leaving those sent to it.
+    pub fn drop_from(&mut self, tab: TabId) -> Vec<Pending<T>> {
+        let (gone, kept) = self.items.drain(..).partition(|p| p.from == tab);
+        self.items = kept;
+        gone.into()
+    }
+
     pub fn views(&self) -> Vec<PendingView> {
         self.items
             .iter()
@@ -134,6 +141,18 @@ mod tests {
         let gone: Vec<String> = queue.drop_tab(1).into_iter().map(|p| p.text).collect();
 
         assert_eq!(gone, ["from 1", "to 1"]);
+        assert_eq!(ids(&queue), [kept]);
+    }
+
+    #[test]
+    fn a_restarted_sender_takes_only_its_own_messages() {
+        let mut queue = Queue::default();
+        queue.push(1, 2, "a".to_owned(), "from 1".to_owned(), ());
+        let kept = queue.push(2, 1, "b".to_owned(), "to 1".to_owned(), ());
+
+        let gone: Vec<String> = queue.drop_from(1).into_iter().map(|p| p.text).collect();
+
+        assert_eq!(gone, ["from 1"]);
         assert_eq!(ids(&queue), [kept]);
     }
 

@@ -71,7 +71,7 @@ fn arm(core: &Core, from: TabId, to: TabId, from_name: &str, body: &str) -> Resu
     state.next_delivery += 1;
     let id = state.next_delivery;
     let (written_tx, written) = mpsc::sync_channel(1);
-    state.deliveries.insert(id, written_tx);
+    state.deliveries.insert(id, (to, written_tx));
     let (seen_tx, seen) = mpsc::sync_channel(1);
     if let Some(target) = state.by_tab_mut(to) {
         target.sighting = Some((Sighting::default(), seen_tx));

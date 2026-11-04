@@ -78,7 +78,14 @@ fn answer(core: &Core, stream: link::Stream) -> io::Result<()> {
             outcome: send(core, tab, &ask.token, call, &to, message),
         },
         AskKind::Cancel { call } => {
-            let cancelled = core.state().queue.cancel(tab, &call);
+            let cancelled = {
+                let mut state = core.state();
+                let found = state.queue.cancel(tab, &call);
+                if found.is_none() {
+                    state.early_cancels.insert((tab, call));
+                }
+                found
+            };
             if let Some(pending) = cancelled {
                 let _ = pending.waiter.try_send(Outcome::Cancelled);
                 core.changed();
@@ -86,7 +93,11 @@ fn answer(core: &Core, stream: link::Stream) -> io::Result<()> {
             Reply::Ok
         }
         AskKind::Delivered { id, written } => {
-            if let Some(waiting) = core.state().deliveries.remove(&id) {
+            let mut state = core.state();
+            // Another tab's helper could guess an id; only the target's answer counts.
+            if state.deliveries.get(&id).is_some_and(|(to, _)| *to == tab)
+                && let Some((_, waiting)) = state.deliveries.remove(&id)
+            {
                 let _ = waiting.try_send(written);
             }
             Reply::Ok
@@ -104,12 +115,27 @@ fn listening(
     pipe: Option<String>,
 ) -> io::Result<()> {
     write_line(&stream, &Order::Ready)?;
-    if let Some(link) = core.state().links.get_mut(token) {
+    let ended = {
+        let mut state = core.state();
+        let Some(link) = state.links.get_mut(token) else {
+            return Ok(());
+        };
+        let again = link.hello.is_some();
+        let tab = link.tab;
         link.hello = Some(Hello {
             messaging,
             pipe,
             listen: Arc::new(Mutex::new(stream)),
         });
+        // A second hello is a restarted helper, whose earlier calls ended with it.
+        if again {
+            state.queue.drop_from(tab)
+        } else {
+            Vec::new()
+        }
+    };
+    for pending in ended {
+        let _ = pending.waiter.try_send(Outcome::Cancelled);
     }
     core.changed();
     Ok(())
@@ -168,6 +194,9 @@ fn send(core: &Core, from: TabId, token: &str, call: String, to: &str, message: 
     let (tx, rx) = mpsc::sync_channel(1);
     {
         let mut state = core.state();
+        if state.early_cancels.remove(&(from, call.clone())) {
+            return Outcome::Cancelled;
+        }
         let home = state.links.get(token).map(|l| l.home.clone());
         let Some(target) = state.by_tab(to) else {
             return refuse(format!(

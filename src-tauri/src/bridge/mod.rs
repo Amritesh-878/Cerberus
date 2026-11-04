@@ -12,7 +12,7 @@ pub mod spawn;
 mod tests;
 pub mod wire;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;
 use std::io;
 use std::path::Path;
@@ -168,8 +168,11 @@ impl TabLink {
 struct State {
     links: HashMap<String, TabLink>,
     queue: Queue<SyncSender<Outcome>>,
-    deliveries: HashMap<u64, SyncSender<Written>>,
+    /// Each delivery's target tab, so only that tab's helper can answer it.
+    deliveries: HashMap<u64, (TabId, SyncSender<Written>)>,
     next_delivery: u64,
+    /// Cancels that came before their send, since the two travel on separate connections.
+    early_cancels: HashSet<(TabId, String)>,
 }
 
 impl State {
@@ -299,6 +302,7 @@ impl Bridge {
             let Some(link) = state.links.remove(token) else {
                 return;
             };
+            state.early_cancels.retain(|(tab, _)| *tab != link.tab);
             state
                 .queue
                 .drop_tab(link.tab)

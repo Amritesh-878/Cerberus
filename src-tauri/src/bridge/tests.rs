@@ -12,9 +12,10 @@ use std::time::{Duration, Instant};
 use serde_json::{Value, json};
 
 use crate::bridge::check::prefill;
+#[cfg(windows)]
 use crate::bridge::inbox::{self, Letter};
 use crate::bridge::mcp::{self, Env};
-use crate::bridge::wire::{Ask, AskKind};
+use crate::bridge::wire::{Ask, AskKind, Outcome, Reply, Written};
 use crate::bridge::{
     Bridge, Decided, Decision, Hooks, Label, Note, Snapshot, TabNote, Ticket, link, lock,
 };
@@ -25,6 +26,7 @@ const WAIT: Duration = Duration::from_secs(20);
 /// What was typed into which PTY.
 type Typed = Arc<Mutex<Vec<(u32, Vec<u8>)>>>;
 // What Claude Code draws when a peer message lands, cursor moves and all.
+#[cfg(windows)]
 const ARRIVAL: &[u8] = b"\x1b[1m\xe2\x80\xba Message\x1b[1Cfrom @a-p-t1: hi";
 
 struct TestHooks(Mutex<Sender<Snapshot>>);
@@ -214,6 +216,7 @@ impl World {
     }
 
     /// Plays Claude Code drawing the peer message once the tab's inbox gets it, and hands back the bytes.
+    #[cfg(windows)]
     fn show_arrival(&self, tab: TabId) -> Vec<u8> {
         let target = &self.tabs[&tab];
         let bytes = target
@@ -243,6 +246,8 @@ fn body(text: &str) -> String {
     )
 }
 
+// macOS always types messages in, so inbox delivery is Windows only.
+#[cfg(windows)]
 #[test]
 fn an_approved_message_reaches_the_other_accounts_inbox_byte_for_byte() {
     let mut world = World::new("2.1.317");
@@ -285,6 +290,8 @@ fn an_approved_message_reaches_the_other_accounts_inbox_byte_for_byte() {
     assert!(world.bridge.snapshot().pending.is_empty());
 }
 
+// macOS always types messages in, so inbox delivery is Windows only.
+#[cfg(windows)]
 #[test]
 fn a_reply_takes_the_same_road_back() {
     let mut world = World::new("2.1.317");
@@ -346,6 +353,8 @@ fn a_rejected_message_goes_nowhere_and_the_sender_is_told() {
     );
 }
 
+// macOS always types messages in, so inbox delivery is Windows only.
+#[cfg(windows)]
 #[test]
 fn an_edited_message_is_delivered_as_edited_and_the_sender_sees_the_edit() {
     let mut world = World::new("2.1.317");
@@ -415,6 +424,8 @@ fn an_untested_version_is_typed_in_without_enter_and_the_tab_says_prefill_only()
     assert!(world.tabs[&2].inbox.try_recv().is_err());
 }
 
+// macOS always types messages in, so inbox delivery is Windows only.
+#[cfg(windows)]
 #[test]
 fn an_inbox_write_the_tab_never_shows_falls_back_to_prefill() {
     let mut world = World::new("2.1.317");
@@ -582,4 +593,134 @@ fn a_wrong_token_gets_no_answer() {
     let _ = (&stream).read_to_string(&mut answer);
 
     assert_eq!(answer, "");
+}
+
+#[cfg(unix)]
+#[test]
+fn on_macos_an_approved_message_is_typed_in() {
+    let mut world = World::new("2.1.317");
+    world.helper(1).send_to_tab("2", "hi");
+    let id = world.waiting();
+    let typed: Typed = Arc::default();
+    let into = Arc::clone(&typed);
+
+    let decided = world.bridge.decide(
+        id,
+        Decision::Approve {
+            text: "hi".to_owned(),
+        },
+        move |pty, bytes| {
+            lock(&into).push((pty, bytes.to_vec()));
+            Ok(())
+        },
+    );
+
+    assert_eq!(decided.unwrap(), Decided::Prefilled { from: 1, to: 2 });
+    assert_eq!(
+        lock(&typed).clone(),
+        [(102, prefill(&body("hi")).into_bytes())]
+    );
+    assert!(world.bridge.snapshot().notes.contains(&TabNote {
+        tab: 2,
+        note: Note::PrefillOnly
+    }));
+}
+
+/// One ask on its own connection, as a helper sends it, and the app's answer.
+fn ask(bridge: &Bridge, token: &str, kind: AskKind) -> Reply {
+    let name = bridge.0.as_ref().unwrap().name.clone();
+    let stream = link::connect(&name).unwrap().unwrap();
+    let ask = Ask {
+        token: token.to_owned(),
+        kind,
+    };
+    let mut out = &stream;
+    writeln!(out, "{}", serde_json::to_string(&ask).unwrap()).unwrap();
+    let mut answer = String::new();
+    BufReader::new(&stream).read_line(&mut answer).unwrap();
+    serde_json::from_str(&answer).unwrap()
+}
+
+#[test]
+fn a_cancel_that_beats_its_send_still_stops_it() {
+    let world = World::new("2.1.317");
+    let token = world.tabs[&1].ticket.token.clone();
+
+    ask(
+        &world.bridge,
+        &token,
+        AskKind::Cancel {
+            call: "7".to_owned(),
+        },
+    );
+    let reply = ask(
+        &world.bridge,
+        &token,
+        AskKind::Send {
+            call: "7".to_owned(),
+            to: "2".to_owned(),
+            message: "too late".to_owned(),
+        },
+    );
+
+    assert_eq!(
+        reply,
+        Reply::Outcome {
+            outcome: Outcome::Cancelled
+        }
+    );
+    assert!(world.bridge.snapshot().pending.is_empty());
+}
+
+#[test]
+fn only_the_target_tab_can_answer_a_delivery() {
+    let world = World::new("2.1.317");
+    let (tx, rx) = mpsc::sync_channel(1);
+    world
+        .bridge
+        .0
+        .as_ref()
+        .unwrap()
+        .state()
+        .deliveries
+        .insert(9, (2, tx));
+    let no = || Written::No {
+        reason: "forged".to_owned(),
+    };
+
+    ask(
+        &world.bridge,
+        &world.tabs[&3].ticket.token,
+        AskKind::Delivered {
+            id: 9,
+            written: no(),
+        },
+    );
+    assert!(rx.try_recv().is_err(), "another tab's answer was taken");
+    ask(
+        &world.bridge,
+        &world.tabs[&2].ticket.token,
+        AskKind::Delivered {
+            id: 9,
+            written: Written::Yes,
+        },
+    );
+
+    assert_eq!(rx.try_recv().unwrap(), Written::Yes);
+}
+
+#[test]
+fn a_restarted_helper_takes_its_old_calls_out_of_the_popup() {
+    let mut world = World::new("2.1.317");
+    world.helper(1).send_to_tab("2", "from the old helper");
+    world.waiting();
+    let tab = &world.tabs[&1];
+
+    let _again = Helper::start(&tab.ticket, Some(&tab.socket), Some(&tab.dir));
+
+    world.until(|state| state.queue.views().is_empty());
+    assert_eq!(
+        world.helper(1).result().0,
+        "Not sent: the call was cancelled."
+    );
 }
