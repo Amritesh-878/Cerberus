@@ -87,6 +87,29 @@ Ctrl+Shift+/ (Cmd+/ or **Help > Keyboard Shortcuts** on macOS) shows every short
 answers to, from anywhere, setup included. Escape, a click outside or the same keys close it.
 Ctrl+/ alone stays with the terminal. The start page lists the main ones.
 
+## The right panel
+
+The panel button at the right of the top bar, or Ctrl+Shift+B (Cmd+Shift+B on macOS), shows the
+tab on screen in cards, and follows you as you switch tabs. Drag its left edge to resize it
+(double-click resets it); click a card's title to fold it. Whether it is open, its width and the
+folded cards are kept in `profiles.json`.
+
+- **Environment:** the tab's account with its email and plan, the project folder (a click opens it
+  in the file manager) and the git branch.
+- **Changes:** lines added and removed on the branch since it left the remote's default branch
+  (`origin/HEAD`, else `main` or `master`), uncommitted and untracked files included. **Create PR**
+  opens a shell tab in the folder with `gh pr create --fill` typed; nothing runs until you press
+  Enter. With the [GitHub CLI](https://cli.github.com) signed in, the branch's open PR shows below;
+  a click opens it in the browser.
+- **Connectors:** the MCP servers the tab's `claude` would load: the account's user servers, its
+  servers for this folder, and the project's `.mcp.json`. Only names and kinds are read, never
+  commands, URLs, headers or env values. "Configured" means set up, not checked to be running.
+- **Skills:** the project's `.claude/skills` and the account's `skills` folder, with each skill's
+  description. Plugin skills are not listed yet.
+
+Nothing runs while the panel is closed. While it is open, git is read when it opens, on a tab
+change and every 10 seconds; GitHub is asked about a repo at most once a minute.
+
 ## The session board and alerts
 
 Each Claude Code tab's row shows what its chat is doing:
