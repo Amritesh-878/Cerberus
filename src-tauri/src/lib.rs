@@ -7,8 +7,10 @@ mod job;
 mod login_path;
 mod menu;
 mod open;
+mod panel;
 mod programs;
 mod pty;
+mod run;
 mod saved;
 mod sessions;
 mod suggestions;
@@ -20,6 +22,7 @@ use tauri::{Emitter, Manager, RunEvent};
 
 use crate::accounts::Accounts;
 use crate::handover::RunningTabs;
+use crate::panel::PrCache;
 use crate::pty::PtyManager;
 use crate::saved::Saved;
 use crate::suggestions::Suggestions;
@@ -43,6 +46,7 @@ pub fn run() {
         .manage(PtyManager::default())
         .manage(Arc::new(RunningTabs::default()))
         .manage(open::Pending::default())
+        .manage(PrCache::default())
         .setup(move |app| {
             let paths = app.path();
             let config_dir = paths.app_config_dir()?;
@@ -86,6 +90,7 @@ pub fn run() {
             commands::set_start_folder,
             commands::set_shell,
             commands::set_sidebar_width,
+            commands::set_panel,
             commands::set_alerts,
             commands::set_suggestions,
             commands::set_setup_step,
@@ -94,6 +99,12 @@ pub fn run() {
             commands::tree_save,
             commands::continue_on_account,
             commands::install_cli,
+            panel::panel_changes,
+            panel::panel_pr,
+            panel::panel_open_pr,
+            panel::panel_open_folder,
+            panel::panel_connectors,
+            panel::panel_skills,
             open::launch::open_take,
         ])
         .build(context)
