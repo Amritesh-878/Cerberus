@@ -25,9 +25,7 @@ function TabLine(props: { label: string; name: TabName }) {
         }
         fallback={<span class="dot" />}
       >
-        {(account) => (
-          <AccountDot id={account().id} color={props.name.color} />
-        )}
+        {(account) => <AccountDot id={account().id} color={props.name.color} />}
       </Show>
       <span class="approval-account">{props.name.account}</span>
       <span class="approval-place">{props.name.place}</span>

@@ -78,6 +78,7 @@ jobs:
           echo "codesign: ad-hoc signature verifies" >> "$GITHUB_STEP_SUMMARY"
           test -x "$app/Contents/MacOS/cerberus"
           test -x "$app/Contents/MacOS/cerberus-cli"
+          test -x "$app/Contents/MacOS/cerberus-mcp"
           hdiutil detach "$RUNNER_TEMP/dmg"
 
       - name: Hash the installer
