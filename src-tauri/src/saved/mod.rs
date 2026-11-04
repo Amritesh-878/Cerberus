@@ -315,15 +315,17 @@ impl Saved {
         tree.tabs
             .iter()
             .filter(|t| t.account == Some(account))
-            .map(|t| {
-                let project = tree
-                    .projects
-                    .iter()
-                    .find(|p| p.id == t.project_id)
-                    .map_or("", |p| p.name.as_str());
-                format!("{project} / {}", t.title)
-            })
+            .map(|t| place_in(tree, t))
             .collect()
+    }
+
+    /// A saved tab's account and "project / tab", so a message between tabs can name it.
+    pub fn place(&self, tab: TabId) -> Option<(Option<AccountId>, String)> {
+        let live = self.live().ok()?;
+        let snapshot = lock(&live.snapshot);
+        let tree = &snapshot.tree;
+        let found = tree.tabs.iter().find(|t| t.id == tab)?;
+        Some((found.account, place_in(tree, found)))
     }
 
     pub fn session_of(&self, tab: TabId) -> Option<String> {
@@ -358,6 +360,15 @@ impl Drop for Live {
             let _ = thread.join();
         }
     }
+}
+
+fn place_in(tree: &SavedTree, tab: &SavedTab) -> String {
+    let project = tree
+        .projects
+        .iter()
+        .find(|p| p.id == tab.project_id)
+        .map_or("", |p| p.name.as_str());
+    format!("{project} / {}", tab.title)
 }
 
 /// The tree as last written, read without waiting for a running app's lock.
@@ -527,6 +538,8 @@ pub(crate) mod tests {
 
         assert_eq!(saved.tabs_on(5), ["app / tab 4", "site / tab 7"]);
         assert!(saved.tabs_on(9).is_empty());
+        assert_eq!(saved.place(7), Some((Some(5), "site / tab 7".to_owned())));
+        assert_eq!(saved.place(99), None);
     }
 
     #[test]

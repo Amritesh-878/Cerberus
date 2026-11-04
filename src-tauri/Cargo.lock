@@ -426,6 +426,7 @@ name = "cerberus"
 version = "0.2.0"
 dependencies = [
  "dirs",
+ "getrandom 0.4.3",
  "libc",
  "portable-pty",
  "rusqlite",
