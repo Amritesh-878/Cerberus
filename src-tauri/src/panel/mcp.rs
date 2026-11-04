@@ -31,7 +31,7 @@ pub struct Connectors {
     pub unreadable: Vec<&'static str>,
 }
 
-// Only names and `type` are parsed; commands, args, URLs, headers and env hold tokens and are never read into memory.
+// Only names and `type` are deserialized; commands, args, URLs, headers and env hold tokens and are dropped unparsed.
 #[derive(Deserialize)]
 struct Server {
     #[serde(rename = "type")]
