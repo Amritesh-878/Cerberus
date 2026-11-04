@@ -467,6 +467,7 @@ export function App() {
     const setup = closing.projectId === null;
     const after = setup ? undefined : neighbour(tree(), id);
     setTree(closeTab(tree(), id));
+    split.forget(id);
     if (active() === id) {
       setActive(after);
       if (setup) setOverPage(false);

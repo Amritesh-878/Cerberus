@@ -148,6 +148,23 @@ test("escape and enter in the box never approve", async () => {
   expect(root.querySelector(".approval")).not.toBeNull();
 });
 
+test("enter on a focused approve button does not approve", async () => {
+  const { root, decisions } = show([message(1, "hi")]);
+  const approve = button(root, "Approve");
+  approve.focus();
+
+  const enter = new KeyboardEvent("keydown", {
+    key: "Enter",
+    bubbles: true,
+    cancelable: true,
+  });
+  approve.dispatchEvent(enter);
+  await settle();
+
+  expect(enter.defaultPrevented).toBe(true);
+  expect(decisions).toEqual([]);
+});
+
 test("an empty message cannot be approved", async () => {
   const { root } = show([message(1, "hi")]);
   const box = textBox(root);

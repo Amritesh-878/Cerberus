@@ -139,6 +139,10 @@ export function Approvals(props: {
                   type="button"
                   class="primary"
                   disabled={busy() || text().trim() === ""}
+                  onKeyDown={(event) => {
+                    // Only a click or Space approves, so an Enter meant for a chat never sends a message.
+                    if (event.key === "Enter") event.preventDefault();
+                  }}
                   onClick={() => {
                     choose(message(), { kind: "approve", text: text() });
                   }}

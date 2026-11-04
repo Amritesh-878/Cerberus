@@ -41,5 +41,9 @@ export function createSplit(shown: () => TabId | undefined) {
     close: () => {
       setPair(undefined);
     },
+    /** A closed tab takes the split with it, so no half stays blank. */
+    forget: (id: TabId) => {
+      setPair((now) => (now?.includes(id) ? undefined : now));
+    },
   };
 }

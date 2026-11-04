@@ -117,6 +117,24 @@ test("showing another tab closes the split", async () => {
   expect(views(root).filter((v) => v.includes("split"))).toEqual([]);
 });
 
+test("closing the other half ends the split", async () => {
+  const app = core({
+    pending: [{ id: 1, from: 3, to: 6, text: "hi" }],
+    notes: [],
+  });
+  const root = await renderApp(() => SAVED, app.core);
+  await open(root, "coder");
+  await open(root, "planner");
+  click(root, "Approve");
+  await settle();
+
+  click(root, "Close planner");
+  await settle();
+
+  expect(root.querySelector(".split-bar")).toBeNull();
+  expect(views(root)).toEqual(["shown"]);
+});
+
 test("a tab's note says when messages are prefill only or off", async () => {
   const app = core({ pending: [], notes: [{ tab: 6, note: "prefillOnly" }] });
   const root = await renderApp(() => SAVED, app.core);

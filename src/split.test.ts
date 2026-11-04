@@ -32,6 +32,20 @@ test("the split shows while one of its tabs is shown and closes for any other", 
   });
 });
 
+test("closing either of its tabs ends it", () => {
+  createRoot((dispose) => {
+    const split = createSplit(() => 3);
+    split.open(3, 6);
+
+    split.forget(9);
+    expect(split.has(6)).toBe(true);
+    split.forget(6);
+
+    expect(split.showing()).toBeUndefined();
+    dispose();
+  });
+});
+
 test("close ends it", () => {
   createRoot((dispose) => {
     const split = createSplit(() => 3);
