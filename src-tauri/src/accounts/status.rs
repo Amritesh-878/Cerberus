@@ -19,7 +19,7 @@ pub enum AuthState {
 pub struct AuthStatus {
     pub state: AuthState,
     pub summary: String,
-    /// Shown on its own in the right panel; `None` when signed out or not reported.
+    /// Shown on its own in the right panel, and `None` when signed out or not reported.
     pub email: Option<String>,
     pub plan: Option<String>,
 }
@@ -44,7 +44,7 @@ pub fn read(claude: Option<&Path>, config_dir: Option<&Path>, timeout: Duration)
         Some(dir) => command.env("CLAUDE_CONFIG_DIR", dir),
         None => command.env_remove("CLAUDE_CONFIG_DIR"),
     };
-    // The exit code is ignored: a logged-out account exits 1 and still prints its status.
+    // The exit code is ignored because a logged-out account exits 1 and still prints its status.
     match run(command, timeout) {
         Ok(ran) => parse(&ran.stdout),
         Err(RunError::Start(e)) => unknown(&format!("could not start Claude Code: {e}")),

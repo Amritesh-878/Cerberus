@@ -18,8 +18,8 @@ afterEach(() => {
   clearMocks();
 });
 
-const A: Target = { folder: String.raw`C:\a`, account: 1 };
-const B: Target = { folder: String.raw`C:\b`, account: 2 };
+const A: Target = { tab: 1, folder: String.raw`C:\a`, account: 1 };
+const B: Target = { tab: 2, folder: String.raw`C:\b`, account: 2 };
 
 /** A core that records each read and can hold `panel_changes` replies to release them in any order. */
 function core(options: { hold?: boolean } = {}) {
@@ -168,4 +168,47 @@ test("a late reply for the tab left behind never shows on the new one", async ()
   expect(shown && "value" in shown ? shown.value : undefined).toMatchObject({
     name: String.raw`C:\b`,
   });
+});
+
+test("a tab on the same folder and account still reloads the folder's files", async () => {
+  const { calls } = core();
+  const { setTarget } = feedFor(A);
+  await flush();
+
+  calls.length = 0;
+  setTarget({ ...A, tab: 9 });
+  await flush();
+
+  expect(calls.filter((c) => c.startsWith("panel_connectors"))).toHaveLength(1);
+  expect(calls.filter((c) => c.startsWith("panel_skills"))).toHaveLength(1);
+});
+
+test("a git reply that lands after the panel closes starts no PR read", async () => {
+  const { calls, held } = core({ hold: true });
+  feedFor(A);
+  await flush();
+  dispose?.();
+  dispose = undefined;
+
+  held[0]?.();
+  await flush();
+
+  expect(calls.filter((c) => c.startsWith("panel_pr"))).toEqual([]);
+});
+
+test("the left tab's late git reply starts no PR read for it", async () => {
+  const { calls, held } = core({ hold: true });
+  const { setTarget } = feedFor(A);
+  await flush();
+  setTarget(B);
+  await flush();
+
+  held[1]?.();
+  await flush();
+  held[0]?.();
+  await flush();
+
+  const prs = calls.filter((c) => c.startsWith("panel_pr"));
+  expect(prs).toHaveLength(1);
+  expect(prs[0]?.endsWith("b")).toBe(true);
 });

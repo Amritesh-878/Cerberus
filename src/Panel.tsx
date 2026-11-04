@@ -104,6 +104,7 @@ export function Panel(props: {
     const tab = props.tab;
     if (tab === undefined) return undefined;
     return {
+      tab: tab.id,
       folder: tab.launch.spec.cwd,
       account: tab.launch.account?.id ?? null,
     };

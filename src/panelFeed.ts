@@ -1,4 +1,11 @@
-import { createEffect, createSignal, on, onCleanup, untrack } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  on,
+  onCleanup,
+  untrack,
+} from "solid-js";
 
 import type { AccountId } from "./accounts";
 import {
@@ -14,6 +21,8 @@ import {
 
 /** What the panel reads for: the shown tab's folder and account. */
 export interface Target {
+  /** Only marks a tab switch, so two tabs on one folder still reload its files. */
+  tab: number;
   folder: string | null;
   account: AccountId | null;
 }
@@ -26,6 +35,7 @@ export const POLL_MS = 10_000;
 
 interface Slot<T> {
   get: () => Loaded<T>;
+  /** Resolves to the value only if it was the newest ask and is still for the tab on screen. */
   load: (key: string, ask: () => Promise<T>) => Promise<T | undefined>;
   clear: () => void;
 }
@@ -44,7 +54,8 @@ function slot<T>(current: () => string | undefined): Slot<T> {
       const fresh = () => n === asked && key === untrack(current);
       return ask().then(
         (value) => {
-          if (fresh()) setState({ key, loaded: { value } });
+          if (!fresh()) return undefined;
+          setState({ key, loaded: { value } });
           return value;
         },
         (error: unknown) => {
@@ -72,20 +83,23 @@ export function createPanelFeed(
   target: () => Target | undefined,
   every = POLL_MS,
 ): PanelFeed {
-  const keyOf = (t: Target) => JSON.stringify([t.folder, t.account]);
-  const current = () => {
+  const keyOf = (t: Target) => JSON.stringify([t.tab, t.folder, t.account]);
+  // A memo, so a rename or any other change to the tab object reads nothing again.
+  const current = createMemo(() => {
     const t = target();
     return t === undefined ? undefined : keyOf(t);
-  };
+  });
   const changes = slot<Changes>(current);
   const pr = slot<PrRow | null>(current);
   const connectors = slot<Connectors>(current);
   const skills = slot<Skill[]>(current);
 
-  const readRepo = (key: string, folder: string) => {
+  // `live` turns false once the tab changes or the panel closes, so a late reply starts no more reads.
+  const readRepo = (key: string, folder: string, live: () => boolean) => {
     void changes
       .load(key, () => panelChanges(folder))
       .then((found) => {
+        if (!live()) return;
         if (found?.kind === "repo" && found.branch !== null) {
           void pr.load(key, () => panelPr(folder));
         } else if (found !== undefined) {
@@ -99,18 +113,22 @@ export function createPanelFeed(
       const t = untrack(target);
       if (key === undefined || t === undefined) return;
       const folder = t.folder;
+      let live = true;
+      onCleanup(() => {
+        live = false;
+      });
       if (folder === null) {
         changes.clear();
         pr.clear();
       } else {
-        readRepo(key, folder);
+        readRepo(key, folder, () => live);
       }
       void connectors.load(key, () => panelConnectors(t.account, folder));
       void skills.load(key, () => panelSkills(t.account, folder));
       if (folder === null) return;
       // Only git can change under a running chat often enough to poll; config and skills reload on a tab change.
       const timer = setInterval(() => {
-        if (!document.hidden) readRepo(key, folder);
+        if (!document.hidden) readRepo(key, folder, () => live);
       }, every);
       onCleanup(() => {
         clearInterval(timer);

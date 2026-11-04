@@ -52,8 +52,12 @@ impl Git {
             .env("GIT_OPTIONAL_LOCKS", "0")
             .env("GIT_TERMINAL_PROMPT", "0");
         let ran = run(command, TIMEOUT).ok()?;
-        ran.success
-            .then(|| String::from_utf8_lossy(&ran.stdout).trim_end().to_owned())
+        // Only line ends go, since a record can end in a tab-separated empty field.
+        ran.success.then(|| {
+            String::from_utf8_lossy(&ran.stdout)
+                .trim_end_matches(['\r', '\n'])
+                .to_owned()
+        })
     }
 
     /// The repo holding `folder` and its branch, or `None` when it is not in one.
@@ -285,6 +289,24 @@ mod tests {
         assert_eq!(repo.base.as_deref(), Some("origin/main"));
         assert_eq!((repo.added, repo.removed), (3 + 1 + 2 + 1, 1));
         assert_eq!(repo.commit, None);
+    }
+
+    #[test]
+    fn a_local_only_branch_counts_its_commits_against_local_main() {
+        let dir = TestDir::new();
+        sh(dir.path(), &["init", "-q"]);
+        fs::write(dir.path().join("a.txt"), lines(5, "a")).unwrap();
+        sh(dir.path(), &["add", "."]);
+        sh(dir.path(), &["commit", "-q", "-m", "a"]);
+        sh(dir.path(), &["checkout", "-q", "-b", "feature"]);
+        fs::write(dir.path().join("b.txt"), lines(4, "b")).unwrap();
+        sh(dir.path(), &["add", "."]);
+        sh(dir.path(), &["commit", "-q", "-m", "b"]);
+
+        let repo = git().repo(dir.path()).unwrap();
+
+        assert_eq!(repo.base.as_deref(), Some("main"));
+        assert_eq!((repo.added, repo.removed), (4, 0));
     }
 
     #[test]

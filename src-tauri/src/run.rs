@@ -218,7 +218,7 @@ mod tests {
             ),
         ]);
 
-        // Long enough for a cold CI runner to start PowerShell and write its pid; 5 s was not.
+        // Long enough for a cold CI runner to start PowerShell and write its pid.
         let result = run(command, Duration::from_secs(20));
 
         assert!(matches!(result, Err(RunError::TimedOut(_))));
