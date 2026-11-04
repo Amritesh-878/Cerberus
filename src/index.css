@@ -2030,6 +2030,14 @@ button.card-row:focus-visible,
   justify-content: flex-end;
 }
 
+.approval-actions button {
+  width: auto;
+  min-width: 96px;
+  height: 34px;
+  padding: 0 16px;
+  margin-top: 0;
+}
+
 .messages-note {
   font-size: 12px;
   color: var(--dim);
@@ -2044,6 +2052,14 @@ button.card-row:focus-visible,
   font-size: 12px;
   color: var(--dim);
   border-bottom: 1px solid var(--line);
+}
+
+.split-bar button {
+  width: auto;
+  height: 26px;
+  padding: 0 12px;
+  margin-top: 0;
+  font-size: 12px;
 }
 
 .split-title {

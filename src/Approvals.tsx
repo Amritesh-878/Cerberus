@@ -16,8 +16,18 @@ function TabLine(props: { label: string; name: TabName }) {
   return (
     <div class="approval-tab">
       <span class="approval-role">{props.label}</span>
-      <Show when={props.name.accountId} fallback={<span class="dot" />}>
-        {(id) => <AccountDot id={id()} color={props.name.color} />}
+      <Show
+        when={
+          // Wrapped, since account 0 is falsy and would hide its dot.
+          props.name.accountId === undefined
+            ? undefined
+            : { id: props.name.accountId }
+        }
+        fallback={<span class="dot" />}
+      >
+        {(account) => (
+          <AccountDot id={account().id} color={props.name.color} />
+        )}
       </Show>
       <span class="approval-account">{props.name.account}</span>
       <span class="approval-place">{props.name.place}</span>
@@ -129,6 +139,7 @@ export function Approvals(props: {
                 </button>
                 <button
                   type="button"
+                  class="primary"
                   disabled={busy() || text().trim() === ""}
                   onClick={() => {
                     choose(message(), { kind: "approve", text: text() });
@@ -148,6 +159,7 @@ export function Approvals(props: {
           <div class="approval-actions">
             <button
               type="button"
+              class="primary"
               onClick={() => {
                 setNotice(undefined);
               }}

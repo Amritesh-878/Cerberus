@@ -80,6 +80,8 @@ test("the popup shows both tabs and the whole message", () => {
   expect(lines).toEqual(["Frompersonalalpha / planner", "Toworkbeta / coder"]);
   expect(textBox(root).value).toBe("what is 2+2?\nshow your work");
   expect(root.querySelector(".approval-count")).toBeNull();
+  // Account 0 keeps its colour dot too.
+  expect(root.querySelectorAll(".approval-tab .dot[style]")).toHaveLength(2);
 });
 
 test("approve sends the text as it was and shows both chats", async () => {
