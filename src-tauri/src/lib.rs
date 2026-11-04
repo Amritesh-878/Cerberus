@@ -129,6 +129,7 @@ pub fn run() {
             messages::set_messages,
             messages::bridge_snapshot,
             messages::bridge_decide,
+            messages::bridge_type_in,
             open::launch::open_take,
         ])
         .build(context)

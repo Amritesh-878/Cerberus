@@ -427,30 +427,42 @@ fn an_untested_version_is_typed_in_without_enter_and_the_tab_says_prefill_only()
 // macOS always types messages in, so inbox delivery is Windows only.
 #[cfg(windows)]
 #[test]
-fn an_inbox_write_the_tab_never_shows_falls_back_to_prefill() {
+fn an_inbox_write_the_tab_never_shows_is_not_typed_unless_asked() {
     let mut world = World::new("2.1.317");
     world.helper(1).send_to_tab("2", "anyone there?");
     let id = world.waiting();
     let typed = Arc::new(Mutex::new(0));
     let into = Arc::clone(&typed);
 
+    let count = move |_: u32, _: &[u8]| {
+        *lock(&into) += 1;
+        Ok(())
+    };
+
     let decided = world.bridge.decide(
         id,
         Decision::Approve {
             text: "anyone there?".to_owned(),
         },
-        move |_, _| {
-            *lock(&into) += 1;
-            Ok(())
-        },
+        count.clone(),
     );
 
-    assert_eq!(decided.unwrap(), Decided::Prefilled { from: 1, to: 2 });
-    assert_eq!(*lock(&typed), 1);
+    assert_eq!(
+        decided.unwrap(),
+        Decided::Unconfirmed { id, from: 1, to: 2 }
+    );
     assert!(
         world.tabs[&2].inbox.recv_timeout(WAIT).is_ok(),
         "the inbox write was not tried"
     );
+    assert_eq!(*lock(&typed), 0, "typed in as well as written");
+    assert!(world.helper(1).result().0.contains("may still arrive"));
+    world.bridge.type_in(id, count.clone()).unwrap();
+    assert_eq!(*lock(&typed), 1);
+    assert!(matches!(
+        world.bridge.type_in(id, count),
+        Err(super::BridgeError::Gone)
+    ));
 }
 
 #[test]

@@ -25,7 +25,7 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize, Serializer};
 
 use crate::bridge::check::Sighting;
-use crate::bridge::deliver::{deliver, prefill_into};
+use crate::bridge::deliver::{Landed, land, prefill_into};
 use crate::bridge::queue::{PendingView, Queue};
 use crate::bridge::wire::{MOST_MESSAGE, Outcome, Written};
 use crate::pty::SessionId;
@@ -42,6 +42,8 @@ pub enum BridgeError {
     TooLong(usize),
     #[error("the message is empty")]
     Empty,
+    #[error("{0}")]
+    NotTyped(String),
 }
 
 impl Serialize for BridgeError {
@@ -112,6 +114,12 @@ pub enum Decided {
         from: TabId,
         to: TabId,
     },
+    /// In the target's inbox but not shown yet; `id` lets the user type it in instead.
+    Unconfirmed {
+        id: u64,
+        from: TabId,
+        to: TabId,
+    },
     Rejected,
     Failed {
         reason: String,
@@ -173,6 +181,8 @@ struct State {
     next_delivery: u64,
     /// Cancels that came before their send, since the two travel on separate connections.
     early_cancels: HashSet<(TabId, String)>,
+    /// Messages written to an inbox that did not show, kept so the user can type one in instead.
+    unseen: HashMap<u64, (TabId, String)>,
 }
 
 impl State {
@@ -303,6 +313,7 @@ impl Bridge {
                 return;
             };
             state.early_cancels.retain(|(tab, _)| *tab != link.tab);
+            state.unseen.retain(|_, (to, _)| *to != link.tab);
             state
                 .queue
                 .drop_tab(link.tab)
@@ -368,6 +379,17 @@ impl Bridge {
         }
     }
 
+    /// Types a message that reached an inbox but never showed into the target's input, once.
+    pub fn type_in(
+        &self,
+        id: u64,
+        type_into: impl Fn(SessionId, &[u8]) -> io::Result<()>,
+    ) -> Result<(), BridgeError> {
+        let core = self.0.as_ref().ok_or(BridgeError::Gone)?;
+        let (to, body) = core.state().unseen.remove(&id).ok_or(BridgeError::Gone)?;
+        prefill_into(core, to, &body, type_into).map_err(BridgeError::NotTyped)
+    }
+
     pub fn snapshot(&self) -> Snapshot {
         self.0
             .as_ref()
@@ -406,32 +428,33 @@ impl Bridge {
             "[Cerberus: a message from tab \"{id}\" ({from_label}), approved by the user. Reply with send_to_tab to tab \"{id}\".]\n{text}",
             id = pending.from
         );
-        let (outcome, decided) = match deliver(core, pending.from, pending.to, &from_label, &body) {
-            Ok(()) => (
+        let (from, target) = (pending.from, pending.to);
+        let (outcome, decided) = match land(core, (from, target), &from_label, &body, type_into) {
+            Landed::Seen => (
                 Outcome::Delivered { to, edited },
-                Decided::Delivered {
-                    from: pending.from,
-                    to: pending.to,
-                },
+                Decided::Delivered { from, to: target },
             ),
-            Err(why) => {
-                eprintln!("bridge: typing into tab {} instead: {why}", pending.to);
-                match prefill_into(core, pending.to, &body, type_into) {
-                    Ok(()) => (
-                        Outcome::Prefilled { to, edited },
-                        Decided::Prefilled {
-                            from: pending.from,
-                            to: pending.to,
-                        },
-                    ),
-                    Err(reason) => (
-                        Outcome::Failed {
-                            reason: reason.clone(),
-                        },
-                        Decided::Failed { reason },
-                    ),
-                }
+            Landed::Unseen => {
+                core.state().unseen.insert(id, (target, body));
+                (
+                    Outcome::Unconfirmed { to, edited },
+                    Decided::Unconfirmed {
+                        id,
+                        from,
+                        to: target,
+                    },
+                )
             }
+            Landed::Typed => (
+                Outcome::Prefilled { to, edited },
+                Decided::Prefilled { from, to: target },
+            ),
+            Landed::Failed(reason) => (
+                Outcome::Failed {
+                    reason: reason.clone(),
+                },
+                Decided::Failed { reason },
+            ),
         };
         let _ = pending.waiter.try_send(outcome);
         Ok(decided)

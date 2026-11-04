@@ -33,11 +33,16 @@ function TabLine(props: { label: string; name: TabName }) {
   );
 }
 
+function waitsForEnter(where: string): string {
+  return `It's in the input box of ${where}. Press Enter there to send it.`;
+}
+
 /** The first waiting message, to approve, edit or reject; nothing approves by itself, and Escape is the terminal's. */
 export function Approvals(props: {
   pending: PendingMessage[];
   name: (tab: number) => TabName;
   decide: (id: number, decision: Decision) => Promise<Decided>;
+  typeIn: (id: number) => Promise<void>;
   /** An approved message reached its tab or its input box, so both chats can be shown. */
   onApproved: (from: number, to: number) => void;
 }) {
@@ -46,7 +51,10 @@ export function Approvals(props: {
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal<string>();
   // What happened to a message that needs the user to read it, held after it leaves the queue.
-  const [notice, setNotice] = createSignal<string>();
+  const [notice, setNotice] = createSignal<{
+    text: string;
+    typeIn?: { id: number; where: string };
+  }>();
   createEffect(
     on(
       () => first()?.id,
@@ -68,16 +76,45 @@ export function Approvals(props: {
       .then(
         (decided) => {
           const to = props.name(message.to);
-          if (decided.how === "delivered" || decided.how === "prefilled") {
+          const where = `${to.account} · ${to.place}`;
+          if (
+            decided.how === "delivered" ||
+            decided.how === "prefilled" ||
+            decided.how === "unconfirmed"
+          ) {
             props.onApproved(decided.from, decided.to);
           }
           if (decided.how === "prefilled") {
-            setNotice(
-              `It's in the input box of ${to.account} · ${to.place}. Press Enter there to send it.`,
-            );
+            setNotice({ text: waitsForEnter(where) });
+          } else if (decided.how === "unconfirmed") {
+            setNotice({
+              text: `It went to the inbox of ${where}, but that tab hasn't shown it yet. It may still arrive.`,
+              typeIn: { id: decided.id, where },
+            });
           } else if (decided.how === "failed") {
-            setNotice(`Not delivered: ${decided.reason}`);
+            setNotice({ text: `Not delivered: ${decided.reason}` });
           }
+        },
+        (e: unknown) => {
+          setError(String(e));
+        },
+      )
+      .finally(() => {
+        setBusy(false);
+      });
+  };
+
+  // Only on the user's click, since the inbox copy may still show and Enter would then send it twice.
+  const typeInstead = (id: number, where: string) => {
+    setBusy(true);
+    setError(undefined);
+    props
+      .typeIn(id)
+      .then(
+        () => {
+          setNotice({
+            text: waitsForEnter(where),
+          });
         },
         (e: unknown) => {
           setError(String(e));
@@ -157,8 +194,25 @@ export function Approvals(props: {
     >
       {(said) => (
         <section class="approval" role="status">
-          <p>{said()}</p>
+          <p>{said().text}</p>
+          <Show when={error()}>
+            <p class="error">{error()}</p>
+          </Show>
           <div class="approval-actions">
+            <Show when={said().typeIn}>
+              {(target) => (
+                <button
+                  type="button"
+                  class="secondary"
+                  disabled={busy()}
+                  onClick={() => {
+                    typeInstead(target().id, target().where);
+                  }}
+                >
+                  Type it in instead
+                </button>
+              )}
+            </Show>
             <button
               type="button"
               class="primary"

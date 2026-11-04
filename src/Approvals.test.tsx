@@ -43,6 +43,7 @@ function show(
 ) {
   const decisions: [number, Decision][] = [];
   const approved: [number, number][] = [];
+  const typed: number[] = [];
   const [pending, setPending] = createSignal(first);
   const root = document.createElement("div");
   document.body.append(root);
@@ -57,12 +58,16 @@ function show(
           setPending((all) => all.filter((m) => m.id !== id));
           return Promise.resolve(answer);
         }}
+        typeIn={(id) => {
+          typed.push(id);
+          return Promise.resolve();
+        }}
         onApproved={(from, to) => approved.push([from, to])}
       />
     ),
     root,
   );
-  return { root, decisions, approved, setPending };
+  return { root, decisions, approved, typed, setPending };
 }
 
 function textBox(root: HTMLElement): HTMLTextAreaElement {
@@ -205,5 +210,30 @@ test("a failed delivery says why", async () => {
 
   expect(root.querySelector(".approval")?.textContent).toContain(
     "Not delivered: the target tab is closed",
+  );
+});
+
+test("an inbox message that hasn't shown is typed in only when asked", async () => {
+  const { root, approved, typed } = show([message(1, "hi")], {
+    how: "unconfirmed",
+    id: 1,
+    from: 3,
+    to: 6,
+  });
+
+  click(root, "Approve");
+  await settle();
+
+  expect(approved).toEqual([[3, 6]]);
+  expect(typed).toEqual([]);
+  expect(root.querySelector(".approval")?.textContent).toContain(
+    "It went to the inbox of work · beta / coder, but that tab hasn't shown it yet.",
+  );
+  click(root, "Type it in instead");
+  await settle();
+
+  expect(typed).toEqual([1]);
+  expect(root.querySelector(".approval")?.textContent).toContain(
+    "It's in the input box of work · beta / coder. Press Enter there to send it.",
   );
 });

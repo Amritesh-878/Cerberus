@@ -164,7 +164,9 @@ tab message a Claude Code tab on another of your accounts, and every message wai
   shows there as "Message from @<account>-<tab>" and the chat reads it as a message from another
   session, not as your words. When that isn't possible, Cerberus types the message into the
   target's input box instead, never pressing Enter: you press Enter there to send it, and the popup
-  says so.
+  says so. If the inbox took the message but the tab hasn't shown it within 5 seconds (a long turn,
+  say), the popup says it may still arrive and offers **Type it in instead**; nothing is typed
+  unless you click it, so the message can't land twice.
 - **Both chats side by side.** After an approval the sender and target show split until you close
   the split or open another tab. The reply takes the same road and the same popup.
 - **Cancelling.** Esc in the sending chat stops its call and the message leaves the popup. A closed

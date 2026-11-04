@@ -23,11 +23,17 @@ export type Decision = { kind: "approve"; text: string } | { kind: "reject" };
 export type Decided =
   | { how: "delivered"; from: number; to: number }
   | { how: "prefilled"; from: number; to: number }
+  | { how: "unconfirmed"; id: number; from: number; to: number }
   | { how: "rejected" }
   | { how: "failed"; reason: string };
 
 export function decide(id: number, decision: Decision): Promise<Decided> {
   return invoke<Decided>("bridge_decide", { id, decision });
+}
+
+/** Types a message that reached an inbox but never showed into the target's input box. */
+export function typeIn(id: number): Promise<void> {
+  return invoke("bridge_type_in", { id });
 }
 
 export const NOTE_TEXT: Record<MessagesNote, { label: string; title: string }> =

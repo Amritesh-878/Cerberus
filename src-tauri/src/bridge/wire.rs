@@ -108,6 +108,11 @@ pub enum Outcome {
         to: String,
         edited: Option<String>,
     },
+    /// Written to the target's inbox, but the tab had not shown it after a few seconds.
+    Unconfirmed {
+        to: String,
+        edited: Option<String>,
+    },
     Rejected {
         to: String,
     },
@@ -139,6 +144,15 @@ impl Outcome {
                 with_edit(
                     format!(
                         "Approved and placed in the input box of {to}; it is sent when the user presses Enter there."
+                    ),
+                    edited,
+                ),
+                false,
+            ),
+            Self::Unconfirmed { to, edited } => (
+                with_edit(
+                    format!(
+                        "Written to the inbox of {to}, but that tab had not shown it after 5 seconds. It may still arrive there."
                     ),
                     edited,
                 ),

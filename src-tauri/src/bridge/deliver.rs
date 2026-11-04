@@ -24,24 +24,52 @@ struct Armed {
     seen: Receiver<()>,
 }
 
-/// Asks the target's helper to write into its own inbox, then waits for the tab to show it.
-pub fn deliver(
+/// Where an approved message ended up.
+pub enum Landed {
+    /// In the target's inbox, and the tab showed it.
+    Seen,
+    /// In the target's inbox, but not shown yet; typing it in too could send it twice.
+    Unseen,
+    /// Typed into the target's input box, waiting for Enter.
+    Typed,
+    Failed(String),
+}
+
+/// The inbox first; typed in only when nothing reached the inbox.
+pub fn land(
+    core: &Core,
+    route: (TabId, TabId),
+    from_name: &str,
+    body: &str,
+    type_into: impl Fn(SessionId, &[u8]) -> io::Result<()>,
+) -> Landed {
+    let (from, to) = route;
+    match deliver(core, from, to, from_name, body) {
+        Ok(true) => Landed::Seen,
+        Ok(false) => Landed::Unseen,
+        Err(why) => {
+            eprintln!("bridge: typing into tab {to} instead: {why}");
+            match prefill_into(core, to, body, type_into) {
+                Ok(()) => Landed::Typed,
+                Err(reason) => Landed::Failed(reason),
+            }
+        }
+    }
+}
+
+/// Asks the target's helper to write into its own inbox; `Ok` says whether the tab then showed it.
+fn deliver(
     core: &Core,
     from: TabId,
     to: TabId,
     from_name: &str,
     body: &str,
-) -> Result<(), String> {
+) -> Result<bool, String> {
     let armed = arm(core, from, to, from_name, body)?;
     let result = send_order(&armed.listen, &armed.order)
         .map_err(|e| format!("could not reach the target's helper: {e}"))
         .and_then(|()| wait_written(&armed.written))
-        .and_then(|()| {
-            armed
-                .seen
-                .recv_timeout(DELIVERY_WAIT)
-                .map_err(|_| "the target tab did not show the message".to_owned())
-        });
+        .map(|()| armed.seen.recv_timeout(DELIVERY_WAIT).is_ok());
     let mut state = core.state();
     state.deliveries.remove(&armed.id);
     if let Some(target) = state.by_tab_mut(to) {

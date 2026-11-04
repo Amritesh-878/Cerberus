@@ -46,7 +46,7 @@ import { Home } from "./Home";
 import { AccountDot, MenuIcon, PanelIcon } from "./icons";
 import { shortcutFor } from "./keys";
 import { type Launch, NewTab } from "./NewTab";
-import { createMessaging, decide, NOTE_TEXT } from "./messaging";
+import { createMessaging, decide, NOTE_TEXT, typeIn } from "./messaging";
 import { createNotifier } from "./notify";
 import { type Anchor, onScreen, type Side } from "./place";
 import { followOpenRequests } from "./open";
@@ -1025,6 +1025,7 @@ export function App() {
               pending={messaging.pending()}
               name={tabName}
               decide={decide}
+              typeIn={typeIn}
               onApproved={(from, to) => {
                 split.open(from, to);
                 // The target, since a typed-in message waits there for Enter.

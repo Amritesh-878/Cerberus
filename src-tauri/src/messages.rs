@@ -52,6 +52,18 @@ pub fn bridge_decide(
     })
 }
 
+/// Types an approved message that reached an inbox but never showed into the target's input.
+#[tauri::command(async)]
+pub fn bridge_type_in(
+    bridge: State<'_, Bridge>,
+    manager: State<'_, PtyManager>,
+    id: u64,
+) -> Result<(), BridgeError> {
+    bridge.type_in(id, |pty, bytes| {
+        manager.write(pty, bytes).map_err(io::Error::other)
+    })
+}
+
 #[tauri::command(async)]
 pub fn set_messages(accounts: State<'_, Accounts>, on: bool) -> Result<Profiles, AccountsError> {
     accounts.set_messages(on)
