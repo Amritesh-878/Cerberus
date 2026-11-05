@@ -3,6 +3,7 @@ mod git;
 mod mcp;
 mod reveal;
 mod skills;
+mod vscode;
 
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -27,6 +28,8 @@ pub enum PanelError {
     NoFolder,
     #[error("no pull request is known for this folder yet")]
     NoPr,
+    #[error("VS Code was not found")]
+    NoVsCode,
     #[error("could not open it: {0}")]
     Open(#[from] std::io::Error),
 }
@@ -53,6 +56,8 @@ pub enum Changes {
         removed: u64,
         /// Whether Create PR has a `gh` to type for.
         gh: bool,
+        /// Whether Open in VS Code has an editor to start.
+        vscode: bool,
     },
 }
 
@@ -90,6 +95,7 @@ pub fn panel_changes(folder: PathBuf) -> Result<Changes, PanelError> {
         added: repo.added,
         removed: repo.removed,
         gh: Finder::from_env().find("gh").is_some(),
+        vscode: vscode::find().is_some(),
     })
 }
 
@@ -118,6 +124,14 @@ pub fn panel_open_pr(prs: State<'_, PrCache>, folder: PathBuf) -> Result<(), Pan
         .and_then(|root| prs.url(&root))
         .ok_or(PanelError::NoPr)?;
     Ok(reveal::open(url.as_ref())?)
+}
+
+/// Opens the folder in VS Code, whose Source Control view shows the diff.
+#[tauri::command(async)]
+pub fn panel_open_vscode(folder: PathBuf) -> Result<(), PanelError> {
+    let folder = self::folder(&folder)?;
+    let code = vscode::find().ok_or(PanelError::NoVsCode)?;
+    Ok(vscode::open(&code, folder)?)
 }
 
 #[tauri::command(async)]
@@ -154,8 +168,9 @@ pub fn panel_skills(
     folder: Option<PathBuf>,
 ) -> Result<Vec<Skill>, PanelError> {
     let home = accounts.claude_home(account)?;
+    let usage = skills::usage(&account_config(&accounts, account)?);
     let folder = folder.as_deref().map(self::folder).transpose()?;
-    Ok(skills::read(folder, &home))
+    Ok(skills::read(folder, &home, &usage))
 }
 
 #[cfg(test)]

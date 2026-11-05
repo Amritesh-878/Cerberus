@@ -1895,9 +1895,75 @@ button.card-row:hover {
   opacity: 0.5;
 }
 
+.row-button.icon {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  padding: 0;
+}
+
+.skill-main {
+  display: flex;
+  flex: 1;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: default;
+  background: none;
+  border: 0;
+  border-radius: 4px;
+}
+
+.card-subtitle {
+  margin: 0 0 4px;
+  font-size: 12px;
+  color: var(--faint);
+}
+
+.star {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  color: var(--faint);
+  cursor: pointer;
+  background: none;
+  border: 0;
+  border-radius: 6px;
+  opacity: 0.4;
+}
+
+/* Faint until the row is pointed at, so the list stays quiet but the star is still found. */
+.skill-row:hover .star,
+.star:focus-visible,
+.star[aria-pressed="true"] {
+  opacity: 1;
+}
+
+.star:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+
+.star[aria-pressed="true"] {
+  color: #e0b84f;
+}
+
+.star[aria-pressed="true"] path {
+  fill: currentColor;
+}
+
 .card-title:focus-visible,
 button.card-row:focus-visible,
-.row-button:focus-visible {
+.row-button:focus-visible,
+.skill-main:focus-visible,
+.star:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }

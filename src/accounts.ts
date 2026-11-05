@@ -22,6 +22,10 @@ export interface PanelPrefs {
   /** In pixels; `null` keeps the default. */
   width: number | null;
   collapsed: PanelCard[];
+  /** Cards folded at first that the user opened. */
+  expanded: PanelCard[];
+  /** Starred skill names by account id. */
+  favourites: Partial<Record<string, string[]>>;
 }
 
 export interface Profiles {

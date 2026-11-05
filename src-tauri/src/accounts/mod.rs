@@ -4,6 +4,7 @@ mod removal;
 mod status;
 mod store;
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::io;
 use std::path::{Component, Path, PathBuf};
@@ -23,6 +24,10 @@ const SIDEBAR_WIDTHS: std::ops::RangeInclusive<u32> = 200..=560;
 const PANEL_WIDTHS: std::ops::RangeInclusive<u32> = 240..=640;
 /// The right panel's cards that can be collapsed; a name not here is dropped when saved.
 const PANEL_CARDS: [&str; 4] = ["environment", "changes", "connectors", "skills"];
+/// Cards that start folded, so for these the saved list is the ones the user opened.
+const PANEL_FOLDED_AT_FIRST: [&str; 1] = ["connectors"];
+const MAX_FAVOURITES: usize = 200;
+const MAX_SKILL_NAME: usize = 200;
 
 const STATUS_TIMEOUT: Duration = Duration::from_secs(15);
 
@@ -81,6 +86,10 @@ pub struct PanelPrefs {
     /// In pixels; `None` keeps the app's default.
     pub width: Option<u32>,
     pub collapsed: Vec<String>,
+    /// Cards folded at first that the user opened.
+    pub expanded: Vec<String>,
+    /// Skill names starred per account id, kept as text since JSON keys are strings.
+    pub favourites: BTreeMap<String, Vec<String>>,
 }
 
 /// A walkthrough step, saved so a restart part way through setup reopens it there.
@@ -349,16 +358,34 @@ impl Accounts {
         let width = prefs
             .width
             .map(|w| w.clamp(*PANEL_WIDTHS.start(), *PANEL_WIDTHS.end()));
-        let collapsed = PANEL_CARDS
-            .into_iter()
-            .filter(|card| prefs.collapsed.iter().any(|c| c == card))
-            .map(str::to_owned)
-            .collect();
+        let known = |cards: &[String], folded_at_first: bool| -> Vec<String> {
+            PANEL_CARDS
+                .into_iter()
+                .filter(|card| PANEL_FOLDED_AT_FIRST.contains(card) == folded_at_first)
+                .filter(|card| cards.iter().any(|c| c == card))
+                .map(str::to_owned)
+                .collect()
+        };
+        let collapsed = known(&prefs.collapsed, false);
+        let expanded = known(&prefs.expanded, true);
         self.update(|p| {
+            let favourites = prefs
+                .favourites
+                .into_iter()
+                // Keyed by the canonical id, since the panel looks favourites up by String(account).
+                .filter_map(|(id, names)| {
+                    let id: AccountId = id.parse().ok()?;
+                    p.account(id).ok()?;
+                    Some((id.to_string(), skill_names(names)))
+                })
+                .filter(|(_, names)| !names.is_empty())
+                .collect();
             p.panel = PanelPrefs {
                 open: prefs.open,
                 width,
                 collapsed,
+                expanded,
+                favourites,
             };
             Ok(())
         })
@@ -493,6 +520,20 @@ impl Accounts {
             STATUS_TIMEOUT,
         ))
     }
+}
+
+// Names typed into a chat, so anything that is not one plain line is dropped.
+fn skill_names(names: Vec<String>) -> Vec<String> {
+    let mut kept: Vec<String> = Vec::new();
+    for name in names {
+        let plain = !name.trim().is_empty()
+            && name.chars().count() <= MAX_SKILL_NAME
+            && !name.chars().any(char::is_control);
+        if plain && !kept.contains(&name) && kept.len() < MAX_FAVOURITES {
+            kept.push(name);
+        }
+    }
+    kept
 }
 
 // Claude Code reads `~/.claude` when the variable is unset, so the default account leaves it unset.
@@ -822,9 +863,11 @@ mod tests {
             .set_panel(PanelPrefs {
                 open: true,
                 width: Some(9000),
-                collapsed: ["skills", "bogus", "changes", "skills"]
+                collapsed: ["skills", "bogus", "changes", "skills", "connectors"]
                     .map(String::from)
                     .to_vec(),
+                expanded: ["connectors", "skills"].map(String::from).to_vec(),
+                favourites: BTreeMap::new(),
             })
             .unwrap();
 
@@ -832,11 +875,58 @@ mod tests {
             open: true,
             width: Some(640),
             collapsed: vec!["changes".to_owned(), "skills".to_owned()],
+            expanded: vec!["connectors".to_owned()],
+            favourites: BTreeMap::new(),
         };
         assert_eq!(saved.panel, expected);
         assert_eq!(accounts.load().unwrap().panel, expected);
         let raw = fs::read_to_string(app.join("profiles.json")).unwrap();
         assert!(raw.contains(r#""open": true"#), "{raw}");
+    }
+
+    #[test]
+    fn favourite_skills_are_saved_per_known_account_as_plain_names() {
+        let home = TestDir::new();
+        let app = home.path().join("app");
+        let accounts = Accounts::new(&app, home.path().to_path_buf());
+        accounts
+            .add("work", home.path().join(".claude-work"))
+            .unwrap();
+        let work = accounts.load().unwrap().accounts[0].id;
+        let names = |list: &[&str]| list.iter().map(|n| (*n).to_owned()).collect::<Vec<_>>();
+
+        accounts
+            .set_panel(PanelPrefs {
+                favourites: BTreeMap::from([
+                    (
+                        work.to_string(),
+                        names(&["verify", "verify", "", "bad\rname", "release"]),
+                    ),
+                    ((work + 7).to_string(), names(&["gone"])),
+                    ("x".to_owned(), names(&["odd"])),
+                ]),
+                ..PanelPrefs::default()
+            })
+            .unwrap();
+
+        let reloaded = Accounts::new(&app, home.path().to_path_buf())
+            .load()
+            .unwrap();
+        assert_eq!(
+            reloaded.panel.favourites,
+            BTreeMap::from([(work.to_string(), names(&["verify", "release"]))])
+        );
+
+        let padded = accounts
+            .set_panel(PanelPrefs {
+                favourites: BTreeMap::from([(format!("0{work}"), names(&["verify"]))]),
+                ..PanelPrefs::default()
+            })
+            .unwrap();
+        assert_eq!(
+            padded.panel.favourites,
+            BTreeMap::from([(work.to_string(), names(&["verify"]))])
+        );
     }
 
     #[test]

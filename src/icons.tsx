@@ -223,3 +223,17 @@ export function SkillIcon() {
     />
   );
 }
+
+export function StarIcon() {
+  return (
+    <Stroke
+      d="M8 2.2 9.8 5.9l4 .6-2.9 2.8.7 4L8 11.4l-3.6 1.9.7-4-2.9-2.8 4-.6z"
+      size={13}
+      width={1.3}
+    />
+  );
+}
+
+export function CodeIcon() {
+  return <Stroke d="M5.5 4.5 2 8l3.5 3.5M10.5 4.5 14 8l-3.5 3.5" size={13} />;
+}

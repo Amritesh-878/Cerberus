@@ -124,6 +124,7 @@ pub fn run() {
             panel::panel_pr,
             panel::panel_open_pr,
             panel::panel_open_folder,
+            panel::panel_open_vscode,
             panel::panel_connectors,
             panel::panel_skills,
             messages::set_messages,
