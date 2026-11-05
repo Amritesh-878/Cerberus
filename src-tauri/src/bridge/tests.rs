@@ -15,9 +15,9 @@ use crate::bridge::check::prefill;
 #[cfg(windows)]
 use crate::bridge::inbox::{self, Letter};
 use crate::bridge::mcp::{self, Env};
-use crate::bridge::wire::{Ask, AskKind, Outcome, Reply};
 #[cfg(windows)]
-use crate::bridge::wire::{Order, Written};
+use crate::bridge::wire::Written;
+use crate::bridge::wire::{Ask, AskKind, Order, Outcome, Reply};
 use crate::bridge::{
     Bridge, Decided, Decision, Hooks, Label, Note, Snapshot, TabNote, Ticket, link, lock,
 };
@@ -687,7 +687,6 @@ fn a_cancel_that_beats_its_send_still_stops_it() {
 }
 
 /// Takes over a tab's order line from its helper, so the test answers its orders by hand.
-#[cfg(windows)]
 fn hold_orders(world: &World, tab: TabId) -> link::Stream {
     let core = world.bridge.0.as_ref().unwrap();
     let listen_of = |state: &super::State| {
@@ -713,7 +712,6 @@ fn hold_orders(world: &World, tab: TabId) -> link::Stream {
 }
 
 /// One order line, read a byte at a time so nothing after it is taken.
-#[cfg(windows)]
 fn read_order(stream: &link::Stream) -> Order {
     let mut line = Vec::new();
     let mut byte = [0u8];
@@ -817,9 +815,10 @@ fn a_new_turn_is_not_proof_a_message_landed_and_a_dismissed_one_is_forgotten() {
 }
 
 #[test]
-fn a_restarted_helper_forgets_the_old_helpers_cancels() {
+fn a_restarted_helpers_calls_are_not_stopped_by_old_cancels() {
     let world = World::new("2.1.317");
     let tab = &world.tabs[&1];
+    // An old run's early cancel, under the bare id a new run also starts from.
     ask(
         &world.bridge,
         &tab.ticket.token,
@@ -827,15 +826,49 @@ fn a_restarted_helper_forgets_the_old_helpers_cancels() {
             call: "1".to_owned(),
         },
     );
-    world.until(|state| !state.early_cancels.is_empty());
 
     let mut again = Helper::start(&tab.ticket, Some(&tab.socket), Some(&tab.dir));
-    world.until(|state| state.early_cancels.is_empty());
-    // A new MCP session numbers its calls from 1 again.
     assert_eq!(again.send_to_tab("2", "after the restart"), 1);
 
     world.waiting();
     assert_eq!(world.bridge.snapshot().pending[0].text, "after the restart");
+}
+
+#[test]
+fn a_cancel_that_beats_a_restarted_helpers_hello_still_stops_its_send() {
+    let world = World::new("2.1.317");
+    let token = world.tabs[&1].ticket.token.clone();
+    ask(
+        &world.bridge,
+        &token,
+        AskKind::Cancel {
+            call: "new:1".to_owned(),
+        },
+    );
+
+    let _orders = hold_orders(&world, 1);
+    let bridge = world.bridge.clone();
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        let reply = ask(
+            &bridge,
+            &token,
+            AskKind::Send {
+                call: "new:1".to_owned(),
+                to: "2".to_owned(),
+                message: "cancelled before hello".to_owned(),
+            },
+        );
+        let _ = tx.send(reply);
+    });
+
+    assert_eq!(
+        rx.recv_timeout(WAIT)
+            .expect("the cancelled send was queued"),
+        Reply::Outcome {
+            outcome: Outcome::Cancelled
+        }
+    );
 }
 
 #[test]

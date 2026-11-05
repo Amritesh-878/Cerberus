@@ -179,7 +179,7 @@ struct State {
     /// Each delivery's target tab, so only that tab's helper can answer it.
     deliveries: HashMap<u64, (TabId, SyncSender<Written>)>,
     next_delivery: u64,
-    /// Cancels that came before their send, since the two travel on separate connections.
+    /// Cancels that came before their send, since the two travel on separate connections; a call id carries its helper run's tag, so a restart can't reuse one.
     early_cancels: HashSet<(TabId, String)>,
     /// Messages written to an inbox that did not show, kept so the user can type one in instead.
     unseen: HashMap<u64, (TabId, String)>,

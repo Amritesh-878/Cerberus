@@ -353,6 +353,8 @@ pub fn run(input: impl BufRead, output: impl Write + Send + 'static, env: Env) {
             }
         });
     }
+    // Call ids start over in each run, so the bridge sees them under this run's own tag.
+    let run_tag = link::random_hex(8).unwrap_or_else(|_| std::process::id().to_string());
     let cancelled: Arc<Mutex<HashMap<String, bool>>> = Arc::default();
     for line in input.lines() {
         let Ok(line) = line else { break };
@@ -371,10 +373,11 @@ pub fn run(input: impl BufRead, output: impl Write + Send + 'static, env: Env) {
             Step::Call { id, name, args } => {
                 let key = id.to_string();
                 lock(&cancelled).insert(key.clone(), false);
+                let call = format!("{run_tag}:{key}");
                 let (out, client, cancelled) =
                     (Arc::clone(&out), client.clone(), Arc::clone(&cancelled));
                 thread::spawn(move || {
-                    let result = call_tool(client.as_deref(), key.clone(), &name, &args);
+                    let result = call_tool(client.as_deref(), call, &name, &args);
                     // A cancelled request gets no response.
                     if lock(&cancelled).remove(&key) == Some(false) {
                         send(&out, &json!({"jsonrpc": "2.0", "id": id, "result": result}));
@@ -385,8 +388,9 @@ pub fn run(input: impl BufRead, output: impl Write + Send + 'static, env: Env) {
                 if let Some(flag) = lock(&cancelled).get_mut(&key) {
                     *flag = true;
                     if let Some(client) = client.clone() {
+                        let call = format!("{run_tag}:{key}");
                         thread::spawn(move || {
-                            let _ = client.ask(AskKind::Cancel { call: key });
+                            let _ = client.ask(AskKind::Cancel { call });
                         });
                     }
                 }
