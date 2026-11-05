@@ -92,6 +92,8 @@ export function TerminalView(props: {
   onExit: () => void;
   /** The chat ended by itself, so this pane now runs the shell. */
   onEnded: () => void;
+  /** Hands over a function that types into this pane without Enter; the returned function takes it back. */
+  onTyper?: (type: (text: string) => void) => () => void;
 }) {
   let host: HTMLDivElement | undefined;
   const [notice, setNotice] = createSignal<string>();
@@ -201,6 +203,10 @@ export function TerminalView(props: {
       session.write(input);
     };
     element.addEventListener("paste", onPaste, true);
+    const untype = props.onTyper?.((text) => {
+      session.write(text);
+      term.focus();
+    });
 
     const subscriptions = [
       term.onData((data) => {
@@ -229,6 +235,7 @@ export function TerminalView(props: {
 
     onCleanup(() => {
       disposed = true;
+      untype?.();
       clearTimeout(noticeTimer);
       observer.disconnect();
       refit.cancel();

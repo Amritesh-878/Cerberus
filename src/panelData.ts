@@ -18,6 +18,8 @@ export type Changes =
       removed: number;
       /** Whether `gh` is installed for Create PR. */
       gh: boolean;
+      /** Whether VS Code was found for Open in VS Code. */
+      vscode: boolean;
     };
 
 export interface PrRow {
@@ -41,6 +43,8 @@ export interface Skill {
   name: string;
   description: string | null;
   scope: "project" | "account";
+  /** How often the account has used it; the core lists the most used first. */
+  uses: number;
 }
 
 export function panelChanges(folder: string): Promise<Changes> {
@@ -60,6 +64,10 @@ export function openFolder(folder: string): Promise<void> {
   return invoke("panel_open_folder", { folder });
 }
 
+export function openVsCode(folder: string): Promise<void> {
+  return invoke("panel_open_vscode", { folder });
+}
+
 export function panelConnectors(
   account: AccountId | null,
   folder: string | null,
@@ -76,3 +84,17 @@ export function panelSkills(
 
 /** The command Create PR types into a new shell tab, for the user to send. */
 export const CREATE_PR = "gh pr create --fill";
+
+/** Starred skills first, each group kept in the core's use order. */
+export function favouritesFirst(
+  skills: readonly Skill[],
+  favourites: readonly string[],
+): Skill[] {
+  const starred = skills.filter((s) => favourites.includes(s.name));
+  return [...starred, ...skills.filter((s) => !favourites.includes(s.name))];
+}
+
+/** What a shift-click types into a chat: control characters dropped, so a name can never carry an Enter. */
+export function skillCommand(name: string): string {
+  return `/${name.replace(/\p{Cc}/gu, "")}`;
+}

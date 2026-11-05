@@ -1,17 +1,32 @@
 import { createSignal, For, type JSX, Match, Show, Switch } from "solid-js";
 
-import { type PanelCard, type Profiles, savedColor } from "./accounts";
+import {
+  type AccountId,
+  type PanelCard,
+  type Profiles,
+  savedColor,
+} from "./accounts";
 import {
   AccountDot,
   BranchIcon,
   ChevronIcon,
+  CodeIcon,
   DiffIcon,
   FolderIcon,
   PlugIcon,
   PrIcon,
   SkillIcon,
+  StarIcon,
 } from "./icons";
-import { type Changes, openFolder, openPr } from "./panelData";
+import {
+  type Changes,
+  favouritesFirst,
+  openFolder,
+  openPr,
+  openVsCode,
+  type Skill,
+  skillCommand,
+} from "./panelData";
 import { createPanelFeed, type Loaded, type Target } from "./panelFeed";
 import type { PanelState } from "./panelPrefs";
 import { PanelEdge } from "./SidebarEdge";
@@ -22,6 +37,8 @@ function Card(props: {
   id: PanelCard;
   title: string;
   meta?: string;
+  /** One line under the title while the card is open. */
+  subtitle?: string;
   state: PanelState;
   children: JSX.Element;
 }) {
@@ -45,7 +62,12 @@ function Card(props: {
         </Show>
       </h2>
       <Show when={open()}>
-        <div class="card-body">{props.children}</div>
+        <div class="card-body">
+          <Show when={props.subtitle}>
+            <p class="card-subtitle">{props.subtitle}</p>
+          </Show>
+          {props.children}
+        </div>
       </Show>
     </section>
   );
@@ -98,7 +120,11 @@ export function Panel(props: {
   profiles: Profiles;
   statuses: Statuses;
   state: PanelState;
+  /** Whether the shown tab is a running chat that a shift-clicked skill can be typed into. */
+  canType: boolean;
   onCreatePr: (folder: string) => void;
+  /** Types into the shown chat, never with Enter. */
+  onType: (text: string) => void;
 }) {
   const target = (): Target | undefined => {
     const tab = props.tab;
@@ -124,7 +150,12 @@ export function Panel(props: {
   const accountName = (id: number, fallback: string) =>
     props.profiles.accounts.find((a) => a.id === id)?.name ?? fallback;
   const connectors = () => loadedValue(feed.connectors());
-  const skills = () => loadedValue(feed.skills());
+  const skills = () => {
+    const found = loadedValue(feed.skills());
+    const id = account()?.id;
+    if (found === undefined || id === undefined) return found;
+    return favouritesFirst(found, props.state.favourites(id));
+  };
 
   return (
     <aside
@@ -211,11 +242,40 @@ export function Panel(props: {
               onOpenPr={(folder) => {
                 act(openPr(folder));
               }}
+              onOpenVsCode={(folder) => {
+                act(openVsCode(folder));
+              }}
             />
+          </Card>
+          <Card
+            id="skills"
+            title="Skills"
+            meta={skills()?.length ? String(skills()?.length) : undefined}
+            state={props.state}
+          >
+            <Show
+              when={skills()}
+              fallback={<Note>{loadedError(feed.skills()) ?? "Reading…"}</Note>}
+            >
+              {(found) => (
+                <For each={found()} fallback={<Note>No skills</Note>}>
+                  {(skill) => (
+                    <SkillRow
+                      skill={skill}
+                      account={account()?.id}
+                      state={props.state}
+                      canType={props.canType}
+                      onType={props.onType}
+                    />
+                  )}
+                </For>
+              )}
+            </Show>
           </Card>
           <Card
             id="connectors"
             title="Connectors"
+            subtitle="MCP servers this chat loads"
             meta={
               connectors()?.servers.length
                 ? `${String(connectors()?.servers.length)} configured`
@@ -250,30 +310,6 @@ export function Panel(props: {
               )}
             </Show>
           </Card>
-          <Card
-            id="skills"
-            title="Skills"
-            meta={skills()?.length ? String(skills()?.length) : undefined}
-            state={props.state}
-          >
-            <Show
-              when={skills()}
-              fallback={<Note>{loadedError(feed.skills()) ?? "Reading…"}</Note>}
-            >
-              {(found) => (
-                <For each={found()} fallback={<Note>No skills</Note>}>
-                  {(skill) => (
-                    <Row
-                      icon={<SkillIcon />}
-                      text={skill.name}
-                      detail={skill.description}
-                      title={skill.description ?? undefined}
-                    />
-                  )}
-                </For>
-              )}
-            </Show>
-          </Card>
           <Show when={failed()}>
             {(message) => <p class="panel-error">{message()}</p>}
           </Show>
@@ -283,12 +319,82 @@ export function Panel(props: {
   );
 }
 
+function skillTitle(skill: Skill, canType: boolean): string {
+  const command = skillCommand(skill.name);
+  const lines = [
+    skill.description,
+    skill.uses > 0
+      ? `Used ${String(skill.uses)} time${skill.uses === 1 ? "" : "s"}`
+      : null,
+    canType
+      ? `Shift-click types ${command} into the chat, for you to send`
+      : `Shift-click types ${command} in Claude Code tabs`,
+  ];
+  return lines.filter((line) => line !== null).join("\n");
+}
+
+function SkillRow(props: {
+  skill: Skill;
+  account: AccountId | undefined;
+  state: PanelState;
+  canType: boolean;
+  onType: (text: string) => void;
+}) {
+  const starred = () =>
+    props.account !== undefined &&
+    props.state.favourites(props.account).includes(props.skill.name);
+  return (
+    <div
+      class="card-row skill-row"
+      title={skillTitle(props.skill, props.canType)}
+      // Keeps a shift-click from selecting text across the rows.
+      onMouseDown={(event) => {
+        if (event.shiftKey) event.preventDefault();
+      }}
+      onClick={(event) => {
+        if (event.shiftKey && props.canType) {
+          props.onType(skillCommand(props.skill.name));
+        }
+      }}
+    >
+      <span class="row-icon">
+        <SkillIcon />
+      </span>
+      <span class="row-text">
+        <span class="row-main">{props.skill.name}</span>
+        <Show when={props.skill.description}>
+          <span class="row-detail">{props.skill.description}</span>
+        </Show>
+      </span>
+      {/* An id, which may be 0, so the check is against undefined rather than truthiness. */}
+      <Show when={props.account !== undefined}>
+        <button
+          type="button"
+          class="star"
+          aria-label={`Favourite ${props.skill.name}`}
+          aria-pressed={starred()}
+          title={starred() ? "Unpin from the top" : "Pin to the top"}
+          onClick={(event) => {
+            event.stopPropagation();
+            if (props.account !== undefined) {
+              props.state.toggleFavourite(props.account, props.skill.name);
+            }
+          }}
+        >
+          <StarIcon />
+        </button>
+      </Show>
+    </div>
+  );
+}
+
 function ChangesBody(props: {
   folder: string | null;
   changes: Loaded<Changes>;
   pr: { number: number; title: string } | null;
   onCreatePr: (folder: string) => void;
   onOpenPr: (folder: string) => void;
+  onOpenVsCode: (folder: string) => void;
 }) {
   const repo = () => {
     const found = loadedValue(props.changes);
@@ -338,6 +444,20 @@ function ChangesBody(props: {
                   >
                     Create PR
                   </button>
+                  <Show when={found().vscode}>
+                    <button
+                      type="button"
+                      class="row-button icon"
+                      aria-label="Open in VS Code"
+                      title="Open in VS Code, whose Source Control view shows the diff"
+                      onClick={() => {
+                        if (props.folder !== null)
+                          props.onOpenVsCode(props.folder);
+                      }}
+                    >
+                      <CodeIcon />
+                    </button>
+                  </Show>
                 </>
               }
             />

@@ -15,7 +15,7 @@ import {
   SAVED,
   settle,
 } from "./harness";
-import type { Changes } from "./panelData";
+import { type Changes, type Skill, skillCommand } from "./panelData";
 import type { SavedTree } from "./saved";
 
 afterEach(cleanup);
@@ -60,12 +60,27 @@ const REPO: Changes = {
   added: 736,
   removed: 2,
   gh: true,
+  vscode: true,
 };
+
+// In the core's use order: most used first, then by name.
+const SKILLS: Skill[] = [
+  { name: "verify", description: "Run the gate", scope: "project", uses: 9 },
+  { name: "release", description: null, scope: "account", uses: 2 },
+  { name: "notes", description: "Draft notes", scope: "account", uses: 0 },
+];
 
 function withPanel(panel: Partial<PanelPrefs>): Profiles {
   return {
     ...SAVED,
-    panel: { open: false, width: null, collapsed: [], ...panel },
+    panel: {
+      open: false,
+      width: null,
+      collapsed: [],
+      expanded: [],
+      favourites: {},
+      ...panel,
+    },
   };
 }
 
@@ -107,11 +122,10 @@ function panelCore(start: Profiles) {
             : [],
         unreadable: [],
       })),
-      ...record("panel_skills", () => [
-        { name: "verify", description: "Run the gate", scope: "project" },
-      ]),
+      ...record("panel_skills", () => SKILLS),
       ...record("panel_open_pr", () => null),
       ...record("panel_open_folder", () => null),
+      ...record("panel_open_vscode", () => null),
     },
   };
 }
@@ -173,7 +187,7 @@ test("Ctrl+Shift+B closes and opens the panel, and closing stops the reads", asy
 });
 
 test("the cards show the shown tab and switch with it", async () => {
-  const core = panelCore(withPanel({ open: true }));
+  const core = panelCore(withPanel({ open: true, expanded: ["connectors"] }));
   const root = await renderApp(core.profiles, core.core);
   await open(root, "planner");
 
@@ -212,14 +226,14 @@ test("a card folds from its title and the folded set is saved", async () => {
 
 test("a saved folded card and width come back on start", async () => {
   const core = panelCore(
-    withPanel({ open: true, width: 360, collapsed: ["connectors"] }),
+    withPanel({ open: true, width: 360, collapsed: ["skills"] }),
   );
   const root = await renderApp(core.profiles, core.core);
   await open(root, "planner");
 
   expect(panel(root)?.style.getPropertyValue("--panel-width")).toBe("360px");
-  expect(card(root, "Connectors").querySelector(".card-body")).toBeNull();
-  expect(card(root, "Skills").querySelector(".card-body")).not.toBeNull();
+  expect(card(root, "Skills").querySelector(".card-body")).toBeNull();
+  expect(card(root, "Changes").querySelector(".card-body")).not.toBeNull();
 });
 
 test("the panel edge resizes from the left and double-click resets", async () => {
@@ -287,4 +301,164 @@ test("the PR row opens through the core, which holds the URL", async () => {
 
   const opened = core.calls.filter((c) => c.cmd === "panel_open_pr");
   expect(opened.map((c) => field(c.args, "folder"))).toEqual([ALPHA]);
+});
+
+function skillNames(root: HTMLElement): string[] {
+  return [...card(root, "Skills").querySelectorAll(".skill-row .row-main")].map(
+    (row) => row.textContent,
+  );
+}
+
+function skillRow(root: HTMLElement, name: string): HTMLElement {
+  const found = [
+    ...card(root, "Skills").querySelectorAll<HTMLElement>(".skill-row"),
+  ].find((row) => row.querySelector(".row-main")?.textContent === name);
+  if (!found) throw new Error(`no ${name} skill`);
+  return found;
+}
+
+function shiftClick(element: HTMLElement): void {
+  element.dispatchEvent(
+    new MouseEvent("click", { bubbles: true, shiftKey: true }),
+  );
+}
+
+/** A panel core whose terminal writes are recorded. */
+function typingCore() {
+  const core = panelCore(withPanel({ open: true }));
+  const writes: string[] = [];
+  return {
+    core,
+    writes,
+    ipc: {
+      ...core.core,
+      pty_write: (args: unknown) => {
+        writes.push(String(field(args, "data")));
+      },
+    },
+  };
+}
+
+test("Connectors sits below Skills, folded until opened, and opening it is kept", async () => {
+  const core = panelCore(withPanel({ open: true }));
+  const root = await renderApp(core.profiles, core.core);
+  await open(root, "planner");
+
+  const titles = [...root.querySelectorAll(".card-title")].map(
+    (t) => t.textContent,
+  );
+  expect(titles).toEqual(["Environment", "Changes", "Skills", "Connectors"]);
+  expect(card(root, "Connectors").querySelector(".card-body")).toBeNull();
+
+  card(root, "Connectors")
+    .querySelector<HTMLButtonElement>(".card-title")
+    ?.click();
+  await settle();
+
+  expect(card(root, "Connectors").textContent).toContain(
+    "MCP servers this chat loads",
+  );
+  expect(core.saved.at(-1)?.expanded).toEqual(["connectors"]);
+  expect(core.saved.at(-1)?.collapsed).toEqual([]);
+
+  await cleanup();
+  const again = await renderApp(core.profiles, core.core);
+  await open(again, "planner");
+  expect(card(again, "Connectors").querySelector(".card-body")).not.toBeNull();
+});
+
+test("skills come in use order, and a star pins one to the top for that account", async () => {
+  const core = panelCore(withPanel({ open: true }));
+  const root = await renderApp(core.profiles, core.core);
+  await open(root, "planner");
+  expect(skillNames(root)).toEqual(["verify", "release", "notes"]);
+
+  click(skillRow(root, "notes"), "Favourite notes");
+  await settle();
+
+  expect(skillNames(root)).toEqual(["notes", "verify", "release"]);
+  expect(core.saved.at(-1)?.favourites).toEqual({ "1": ["notes"] });
+
+  await open(root, "notes shell");
+  expect(skillNames(root)).toEqual(["verify", "release", "notes"]);
+
+  await cleanup();
+  const again = await renderApp(core.profiles, core.core);
+  await open(again, "planner");
+  expect(skillNames(again)).toEqual(["notes", "verify", "release"]);
+  expect(
+    button(skillRow(again, "notes"), "Favourite notes").getAttribute(
+      "aria-pressed",
+    ),
+  ).toBe("true");
+});
+
+test("starred skills keep their use order above the rest", async () => {
+  const core = panelCore(
+    withPanel({ open: true, favourites: { "1": ["notes", "verify"] } }),
+  );
+  const root = await renderApp(core.profiles, core.core);
+  await open(root, "planner");
+
+  expect(skillNames(root)).toEqual(["verify", "notes", "release"]);
+});
+
+test("shift-click types the skill into the chat without Enter, and a plain click types nothing", async () => {
+  const { core, writes, ipc } = typingCore();
+  const root = await renderApp(core.profiles, ipc);
+  await open(root, "planner");
+
+  skillRow(root, "release").click();
+  click(skillRow(root, "release"), "Favourite release");
+  shiftClick(skillRow(root, "verify"));
+  await settle();
+
+  expect(writes).toEqual(["/verify"]);
+  expect(skillRow(root, "verify").title).toContain(
+    "Shift-click types /verify into the chat, for you to send",
+  );
+  expect(skillRow(root, "verify").title).toContain("Used 9 times");
+});
+
+test("shift-click types nothing into a shell tab, and the tooltip says where it works", async () => {
+  const { core, writes, ipc } = typingCore();
+  const root = await renderApp(core.profiles, ipc);
+  await open(root, "notes shell");
+
+  shiftClick(skillRow(root, "verify"));
+  await settle();
+
+  expect(writes).toEqual([]);
+  expect(skillRow(root, "verify").title).toContain(
+    "Shift-click types /verify in Claude Code tabs",
+  );
+});
+
+test("a skill name never types a control character, so never an Enter", () => {
+  expect(skillCommand("verify")).toBe("/verify");
+  expect(skillCommand("bad\rname\n\u001b[A\u009b")).toBe("/badname[A");
+});
+
+test("Open in VS Code asks the core for the folder, and hides without VS Code", async () => {
+  const core = panelCore(withPanel({ open: true }));
+  const root = await renderApp(core.profiles, core.core);
+  await open(root, "planner");
+
+  click(card(root, "Changes"), "Open in VS Code");
+  await settle();
+  expect(
+    core.calls
+      .filter((c) => c.cmd === "panel_open_vscode")
+      .map((c) => field(c.args, "folder")),
+  ).toEqual([ALPHA]);
+
+  await cleanup();
+  const without = panelCore(withPanel({ open: true }));
+  const again = await renderApp(without.profiles, {
+    ...without.core,
+    panel_changes: () => ({ ...REPO, vscode: false }),
+  });
+  await open(again, "planner");
+  expect(card(again, "Changes").textContent).toContain("+736");
+  expect(() => button(card(again, "Changes"), "Open in VS Code")).toThrow();
 });

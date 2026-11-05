@@ -574,6 +574,20 @@ export function App() {
     select(id);
   };
 
+  // Each open pane's way to type into its program, for the panel's prefills.
+  const typers = new Map<TabId, (text: string) => void>();
+  const chatShown = () => {
+    const tab = shownTab();
+    return tab?.launch.program === "claude" && isRunning(tab.id)
+      ? tab.id
+      : undefined;
+  };
+  // Typed into the chat's input for the user to send; a shell tab or an ended chat gets nothing.
+  const typeIntoChat = (text: string) => {
+    const id = chatShown();
+    if (id !== undefined) typers.get(id)?.(text);
+  };
+
   const startFresh = () => {
     resetProfiles().then(loaded, fail);
   };
@@ -882,6 +896,14 @@ export function App() {
                                 markEnded(id, true);
                                 setBoard((b) => cleared(b, id));
                               }}
+                              onTyper={(type) => {
+                                typers.set(id, type);
+                                // A restarted pane may have set its own already.
+                                return () => {
+                                  if (typers.get(id) === type)
+                                    typers.delete(id);
+                                };
+                              }}
                             />
                           </Show>
                         </div>
@@ -954,7 +976,9 @@ export function App() {
                 profiles={loaded()}
                 statuses={statuses}
                 state={panel}
+                canType={chatShown() !== undefined}
                 onCreatePr={createPr}
+                onType={typeIntoChat}
               />
             </Show>
             <Show when={sheet()}>
