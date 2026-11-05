@@ -36,6 +36,11 @@ export function typeIn(id: number): Promise<void> {
   return invoke("bridge_type_in", { id });
 }
 
+/** Drops the text kept for **Type it in instead** once the user closes its notice. */
+export function discard(id: number): Promise<void> {
+  return invoke("bridge_discard", { id });
+}
+
 export const NOTE_TEXT: Record<MessagesNote, { label: string; title: string }> =
   {
     prefillOnly: {

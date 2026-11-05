@@ -43,6 +43,7 @@ export function Approvals(props: {
   name: (tab: number) => TabName;
   decide: (id: number, decision: Decision) => Promise<Decided>;
   typeIn: (id: number) => Promise<void>;
+  discard: (id: number) => Promise<void>;
   /** An approved message reached its tab or its input box, so both chats can be shown. */
   onApproved: (from: number, to: number) => void;
 }) {
@@ -113,7 +114,7 @@ export function Approvals(props: {
       .then(
         () => {
           setNotice({
-            text: waitsForEnter(where),
+            text: `${waitsForEnter(where)} If the first copy shows up there too, clear the input box instead.`,
           });
         },
         (e: unknown) => {
@@ -217,7 +218,13 @@ export function Approvals(props: {
               type="button"
               class="primary"
               onClick={() => {
+                const kept = said().typeIn;
                 setNotice(undefined);
+                if (kept) {
+                  props.discard(kept.id).catch((e: unknown) => {
+                    console.error("could not drop a kept message:", e);
+                  });
+                }
               }}
             >
               OK

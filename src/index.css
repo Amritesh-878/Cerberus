@@ -1944,6 +1944,7 @@ button.card-row:focus-visible,
   width: min(460px, calc(100vw - 32px));
   max-height: calc(100vh - 68px);
   padding: 14px 16px 16px;
+  overflow-y: auto;
   background: #202020;
   border: 1px solid #3a3a3a;
   border-radius: 12px;
@@ -1972,9 +1973,11 @@ button.card-row:focus-visible,
   color: var(--dim);
 }
 
+/* Names wrap rather than cut off, since telling two tabs apart is what the user approves. */
 .approval-tab {
   display: flex;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 2px 8px;
   align-items: center;
   min-width: 0;
 }
@@ -1986,14 +1989,13 @@ button.card-row:focus-visible,
 
 .approval-account {
   font-weight: 600;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .approval-place {
-  overflow: hidden;
+  min-width: 0;
   color: var(--dim);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .approval-text {

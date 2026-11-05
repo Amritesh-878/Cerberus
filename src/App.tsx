@@ -46,7 +46,13 @@ import { Home } from "./Home";
 import { AccountDot, MenuIcon, PanelIcon } from "./icons";
 import { shortcutFor } from "./keys";
 import { type Launch, NewTab } from "./NewTab";
-import { createMessaging, decide, NOTE_TEXT, typeIn } from "./messaging";
+import {
+  createMessaging,
+  decide,
+  discard,
+  NOTE_TEXT,
+  typeIn,
+} from "./messaging";
 import { createNotifier } from "./notify";
 import { type Anchor, onScreen, type Side } from "./place";
 import { followOpenRequests } from "./open";
@@ -1026,7 +1032,10 @@ export function App() {
               name={tabName}
               decide={decide}
               typeIn={typeIn}
+              discard={discard}
               onApproved={(from, to) => {
+                // Delivery can take seconds, and either tab may have closed meanwhile.
+                if (!tabById(from) || !tabById(to)) return;
                 split.open(from, to);
                 // The target, since a typed-in message waits there for Enter.
                 select(to);

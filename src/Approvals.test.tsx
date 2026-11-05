@@ -44,6 +44,7 @@ function show(
   const decisions: [number, Decision][] = [];
   const approved: [number, number][] = [];
   const typed: number[] = [];
+  const dropped: number[] = [];
   const [pending, setPending] = createSignal(first);
   const root = document.createElement("div");
   document.body.append(root);
@@ -62,12 +63,16 @@ function show(
           typed.push(id);
           return Promise.resolve();
         }}
+        discard={(id) => {
+          dropped.push(id);
+          return Promise.resolve();
+        }}
         onApproved={(from, to) => approved.push([from, to])}
       />
     ),
     root,
   );
-  return { root, decisions, approved, typed, setPending };
+  return { root, decisions, approved, typed, dropped, setPending };
 }
 
 function textBox(root: HTMLElement): HTMLTextAreaElement {
@@ -233,7 +238,27 @@ test("an inbox message that hasn't shown is typed in only when asked", async () 
   await settle();
 
   expect(typed).toEqual([1]);
-  expect(root.querySelector(".approval")?.textContent).toContain(
+  const said = root.querySelector(".approval")?.textContent;
+  expect(said).toContain(
     "It's in the input box of work · beta / coder. Press Enter there to send it.",
   );
+  expect(said).toContain("If the first copy shows up there too");
+});
+
+test("closing an unshown message's notice drops its kept text", async () => {
+  const { root, typed, dropped } = show([message(1, "hi")], {
+    how: "unconfirmed",
+    id: 1,
+    from: 3,
+    to: 6,
+  });
+
+  click(root, "Approve");
+  await settle();
+  click(root, "OK");
+  await settle();
+
+  expect(dropped).toEqual([1]);
+  expect(typed).toEqual([]);
+  expect(root.querySelector(".approval")).toBeNull();
 });
