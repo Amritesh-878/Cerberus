@@ -372,8 +372,12 @@ impl Accounts {
             let favourites = prefs
                 .favourites
                 .into_iter()
-                .filter(|(id, _)| id.parse().is_ok_and(|id| p.account(id).is_ok()))
-                .map(|(id, names)| (id, skill_names(names)))
+                // Keyed by the canonical id, since the panel looks favourites up by String(account).
+                .filter_map(|(id, names)| {
+                    let id: AccountId = id.parse().ok()?;
+                    p.account(id).ok()?;
+                    Some((id.to_string(), skill_names(names)))
+                })
                 .filter(|(_, names)| !names.is_empty())
                 .collect();
             p.panel = PanelPrefs {
@@ -911,6 +915,17 @@ mod tests {
         assert_eq!(
             reloaded.panel.favourites,
             BTreeMap::from([(work.to_string(), names(&["verify", "release"]))])
+        );
+
+        let padded = accounts
+            .set_panel(PanelPrefs {
+                favourites: BTreeMap::from([(format!("0{work}"), names(&["verify"]))]),
+                ..PanelPrefs::default()
+            })
+            .unwrap();
+        assert_eq!(
+            padded.panel.favourites,
+            BTreeMap::from([(work.to_string(), names(&["verify"]))])
         );
     }
 
