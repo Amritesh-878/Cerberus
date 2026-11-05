@@ -1,8 +1,9 @@
+use std::collections::BTreeMap;
 use std::fs::{self, File};
 use std::io::Read;
 use std::path::Path;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 // A skill's front matter sits at the top; the rest of the file is never read.
 const HEAD_BYTES: u64 = 16 * 1024;
@@ -22,10 +23,44 @@ pub struct Skill {
     pub name: String,
     pub description: Option<String>,
     pub scope: Scope,
+    /// How often the account has used it, from Claude Code's own count.
+    pub uses: u64,
 }
 
-/// The project's `.claude/skills` first, then the account's `skills`; a name the project has hides the account's.
-pub fn read(folder: Option<&Path>, claude_home: &Path) -> Vec<Skill> {
+// Only each skill's name and count are deserialized; every other key in the file is skipped unparsed.
+#[derive(Deserialize)]
+struct Usage {
+    #[serde(default, rename = "usageCount")]
+    count: u64,
+}
+
+#[derive(Deserialize)]
+struct UsageConfig {
+    #[serde(default, rename = "skillUsage")]
+    usage: BTreeMap<String, Usage>,
+}
+
+/// Each skill's use count from an account's `.claude.json`; empty when the file is missing or unreadable.
+pub fn usage(account_config: &Path) -> BTreeMap<String, u64> {
+    fs::read(account_config)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<UsageConfig>(&bytes).ok())
+        .map(|config| {
+            config
+                .usage
+                .into_iter()
+                .map(|(name, usage)| (name, usage.count))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// The project's `.claude/skills` and the account's `skills`, most used first; a name the project has hides the account's.
+pub fn read(
+    folder: Option<&Path>,
+    claude_home: &Path,
+    usage: &BTreeMap<String, u64>,
+) -> Vec<Skill> {
     let mut skills = folder
         .map(|f| in_dir(&f.join(".claude").join("skills"), Scope::Project))
         .unwrap_or_default();
@@ -34,6 +69,14 @@ pub fn read(folder: Option<&Path>, claude_home: &Path) -> Vec<Skill> {
             skills.push(skill);
         }
     }
+    for skill in &mut skills {
+        skill.uses = usage.get(&skill.name).copied().unwrap_or(0);
+    }
+    skills.sort_by(|a, b| {
+        b.uses
+            .cmp(&a.uses)
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
     skills.truncate(MAX_SKILLS);
     skills
 }
@@ -52,6 +95,7 @@ fn in_dir(dir: &Path, scope: Scope) -> Vec<Skill> {
                 name: name.unwrap_or(folder),
                 description,
                 scope,
+                uses: 0,
             })
         })
         .take(MAX_SKILLS)
@@ -153,7 +197,7 @@ mod tests {
         skill(&account_skills, "bare", "No front matter here.\n");
         fs::create_dir_all(account_skills.join("empty")).unwrap();
 
-        let found = read(Some(&project), &home);
+        let found = read(Some(&project), &home, &BTreeMap::new());
 
         let listed: Vec<(&str, Option<&str>, Scope)> = found
             .iter()
@@ -162,9 +206,9 @@ mod tests {
         assert_eq!(
             listed,
             [
+                ("bare", None, Scope::Account),
                 ("release-notes", Some("Draft the notes."), Scope::Project),
                 ("shared", Some("mine"), Scope::Project),
-                ("bare", None, Scope::Account),
                 (
                     "writing-voice",
                     Some("Plain words, answer first."),
@@ -174,11 +218,79 @@ mod tests {
         );
     }
 
+    fn usage_config(dir: &TestDir, text: &str) -> std::path::PathBuf {
+        let config = dir.path().join("acct").join(".claude.json");
+        fs::create_dir_all(config.parent().unwrap()).unwrap();
+        fs::write(&config, text).unwrap();
+        config
+    }
+
+    #[test]
+    fn skills_are_listed_most_used_first_then_by_name() {
+        let dir = TestDir::new();
+        let home = dir.path().join("home");
+        for name in ["alpha", "Beta", "gamma", "delta"] {
+            skill(
+                &home.join("skills"),
+                name,
+                &format!(
+                    "---
+name: {name}
+---
+"
+                ),
+            );
+        }
+        let config = usage_config(
+            &dir,
+            r#"{
+                "oauthAccount": { "emailAddress": "fake-account@example.com" },
+                "primaryApiKey": "FAKE-KEY-SECRET",
+                "skillUsage": {
+                    "gamma": { "usageCount": 7, "lastUsedAt": 1762300000000 },
+                    "delta": { "usageCount": 2, "lastUsedAt": 1762200000000 },
+                    "removed-skill": { "usageCount": 40, "lastUsedAt": 1762100000000 }
+                },
+                "projects": { "C:/x": { "history": [{ "display": "FAKE-PROMPT-SECRET" }] } }
+            }"#,
+        );
+
+        let found = read(None, &home, &usage(&config));
+
+        let listed: Vec<(&str, u64)> = found.iter().map(|s| (s.name.as_str(), s.uses)).collect();
+        assert_eq!(
+            listed,
+            [("gamma", 7), ("delta", 2), ("alpha", 0), ("Beta", 0)]
+        );
+        let shown = format!("{}{found:?}", serde_json::to_string(&found).unwrap());
+        for secret in ["FAKE", "fake-account", "removed-skill", "1762"] {
+            assert!(!shown.contains(secret), "{secret} in {shown}");
+        }
+    }
+
+    #[test]
+    fn usage_is_empty_without_a_readable_count() {
+        let dir = TestDir::new();
+
+        assert!(usage(&dir.path().join("missing.json")).is_empty());
+        let broken = usage_config(&dir, r#"{ "skillUsage": { "x": "FAKE-SECRET" "#);
+        assert!(usage(&broken).is_empty());
+        let none = usage_config(&dir, r#"{ "skillUsage": { "x": { "lastUsedAt": 1 } } }"#);
+        assert_eq!(usage(&none), BTreeMap::from([("x".to_owned(), 0)]));
+    }
+
     #[test]
     fn missing_folders_have_no_skills() {
         let dir = TestDir::new();
 
-        assert!(read(Some(&dir.path().join("none")), &dir.path().join("none")).is_empty());
+        assert!(
+            read(
+                Some(&dir.path().join("none")),
+                &dir.path().join("none"),
+                &BTreeMap::new()
+            )
+            .is_empty()
+        );
     }
 
     #[test]
