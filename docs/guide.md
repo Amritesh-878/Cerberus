@@ -106,7 +106,7 @@ folded cards and starred skills are kept in `profiles.json`.
 - **Skills:** the project's `.claude/skills` and the account's `skills` folder, with each skill's
   description, the ones the account uses most first (Claude Code's own count, from the account's
   `.claude.json`; only skill names and counts are read from it). The star on a row pins it to the
-  top for that account. **Shift-click** a skill to type `/<skill>` into the chat's input; nothing
+  top for that account. **Shift-click** a skill (or Shift+Enter on it) to type `/<skill>` into the chat's input; nothing
   is sent until you press Enter, and shell tabs get nothing. Plugin skills are not listed yet.
 - **Connectors:** the MCP servers the tab's `claude` would load: the account's user servers, its
   servers for this folder, and the project's `.mcp.json`. Only names and kinds are read, never
