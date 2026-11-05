@@ -12,6 +12,7 @@ import {
 } from "./accounts";
 import { installCli, type Linked } from "./cli";
 import { PLATFORM } from "./keys";
+import { MessagesSetting } from "./MessagesSetting";
 import type { ProgramChoice } from "./pty";
 import type { Statuses } from "./statuses";
 import { shellChoice, type Tab } from "./tab";
@@ -67,6 +68,11 @@ export function AccountsScreen(props: {
         </label>
       </div>
       <SuggestionsSetting
+        profiles={props.profiles}
+        onProfiles={props.onProfiles}
+      />
+      <h3>Claude tabs</h3>
+      <MessagesSetting
         profiles={props.profiles}
         onProfiles={props.onProfiles}
       />

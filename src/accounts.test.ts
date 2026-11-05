@@ -21,6 +21,7 @@ const PROFILES: Profiles = {
   panel: { open: false, width: null, collapsed: [] },
   alerts: true,
   suggestions: true,
+  messages: true,
   retired: [],
   setup: null,
   revision: 0,
