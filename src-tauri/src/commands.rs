@@ -10,6 +10,8 @@ use crate::accounts::{
     AccountId, Accounts, AccountsError, AuthState, AuthStatus, Candidate, PanelPrefs, Profiles,
     Removal, SetupStep,
 };
+use crate::bridge::Bridge;
+use crate::bridge::spawn::Messages;
 use crate::cli_link::{self, LinkError, Linked};
 use crate::handover::{ContinueError, RunningTabs, continue_chat};
 use crate::programs::{Finder, ProgramChoice, pick_shell};
@@ -100,6 +102,13 @@ pub fn pty_spawn(
     {
         (request.args, request.env) = (setup.args, setup.env);
     }
+    let bridge = Bridge::clone(&app.state::<Bridge>());
+    let token = claude_home
+        .as_deref()
+        .zip(tab)
+        .and_then(|(home, tab)| link_messages(&app, &accounts, &mut request, home, tab));
+    let (output_bridge, output_token) = (bridge.clone(), token.clone());
+    let (exit_bridge, exit_token) = (bridge.clone(), token.clone());
     let ended_saved = Saved::clone(&saved);
     let started_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -118,11 +127,17 @@ pub fn pty_spawn(
     let spawned = manager.spawn(
         &request,
         move |bytes| {
+            if let Some(token) = &output_token {
+                output_bridge.output(token, &bytes);
+            }
             // A send fails only once the webview is gone, and then nobody is left to show it.
             let _ = events.send(InvokeResponseBody::Raw(bytes));
         },
         move |exit: Exit| {
             drop(stop);
+            if let Some(token) = &exit_token {
+                exit_bridge.closed(token);
+            }
             // Only a flag that was kept makes the tab a shell; otherwise its next start would run `claude` again.
             let ended = chat_ended(runs_claude, exit)
                 && tab.is_some_and(|tab| ended_saved.set_ended(tab, true));
@@ -144,9 +159,15 @@ pub fn pty_spawn(
             if let Some(tab) = tab {
                 running.ended(tab);
             }
+            if let Some(token) = &token {
+                bridge.closed(token);
+            }
             return Err(e.into());
         }
     };
+    if let Some(token) = &token {
+        bridge.attach(token, id);
+    }
     let pid = manager.pid(id);
     if let (Some(tab), Some(pid)) = (tab, pid) {
         running.spawned(tab, pid);
@@ -165,6 +186,9 @@ pub fn pty_spawn(
             }
         };
         let on_state = move |state: TabState| {
+            if let Some(token) = &token {
+                bridge.working(token, state == TabState::Working);
+            }
             if let Ok(body) = state.body() {
                 let _ = state_events.send(body);
             }
@@ -180,6 +204,25 @@ pub fn pty_spawn(
         }
     }
     Ok(Spawned { id, resume })
+}
+
+/// With messages on, links the tab to the bridge and adds the `cerberus` MCP server; off leaves the spawn as it was.
+fn link_messages(
+    app: &AppHandle,
+    accounts: &Accounts,
+    request: &mut SpawnRequest,
+    home: &std::path::Path,
+    tab: TabId,
+) -> Option<String> {
+    let messages = app.state::<Messages>();
+    // An unreadable profiles file is reported elsewhere; the tab starts without messages.
+    if !messages.ready() || !accounts.load().is_ok_and(|p| p.messages) {
+        return None;
+    }
+    let ticket = app.state::<Bridge>().register(tab, home)?;
+    request.args = messages.args(&request.args);
+    request.env.extend(ticket.env);
+    Some(ticket.token)
 }
 
 /// Lets an ended chat's tab run `claude --resume` again the next time it starts.

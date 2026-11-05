@@ -13,6 +13,9 @@ CodeMirror in the webview, a Claude Code mod in TypeScript.
 
 - **Interactive use only.** The app may prefill a prompt but never sends one by itself: Anthropic's
   Consumer Terms bar automated access to subscription accounts (see `../Plans/project_state.md`).
+  One override (DEC-002, DEC-003): a message from a chat on one account to a chat on another is
+  delivered to the target's inbox only after the user approves that one message in Cerberus's
+  popup. Nothing is ever sent without that click.
 - **Planning lives in the sibling repo `../Plans/`**, never in this one. Agent files and
   `coding_standards.md` say "plans/" and "templates/"; read them as `../Plans/` and
   `../Plans/templates/`. The repo checks live in `../Plans/tools/`. Start sessions here with

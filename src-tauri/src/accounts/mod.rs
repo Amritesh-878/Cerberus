@@ -120,6 +120,9 @@ pub struct Profiles {
     /// Shell tabs suggest from history as you type, through each shell's own feature.
     #[serde(default = "on")]
     pub suggestions: bool,
+    /// Claude tabs can message tabs on other accounts, each message approved first.
+    #[serde(default = "on")]
+    pub messages: bool,
     /// Where setup is, until it is finished or skipped; a file from before the setting has finished it.
     #[serde(default)]
     pub setup: Option<SetupStep>,
@@ -134,7 +137,7 @@ pub struct Profiles {
     next_id: AccountId,
 }
 
-// Written out because alerts and suggestions start on, on a first run as in a file saved before the setting existed.
+// Written out because alerts, suggestions and messages start on, on a first run as in a file saved before the setting existed.
 impl Default for Profiles {
     fn default() -> Self {
         Self {
@@ -146,6 +149,7 @@ impl Default for Profiles {
             panel: PanelPrefs::default(),
             alerts: true,
             suggestions: true,
+            messages: true,
             setup: Some(SetupStep::Install),
             retired: Vec::new(),
             revision: 0,
@@ -401,6 +405,13 @@ impl Accounts {
     pub fn set_suggestions(&self, on: bool) -> Result<Profiles, AccountsError> {
         self.update(|p| {
             p.suggestions = on;
+            Ok(())
+        })
+    }
+
+    pub fn set_messages(&self, on: bool) -> Result<Profiles, AccountsError> {
+        self.update(|p| {
+            p.messages = on;
             Ok(())
         })
     }
@@ -929,6 +940,16 @@ mod tests {
         let saved = fs::read_to_string(app.join("profiles.json")).unwrap();
         assert!(saved.contains(r#""suggestions": false"#));
         assert!(accounts.set_suggestions(true).unwrap().suggestions);
+    }
+
+    #[test]
+    fn messages_between_accounts_start_on_and_the_choice_is_saved() {
+        let home = TestDir::new();
+        let accounts = Accounts::new(&home.path().join("app"), home.path().to_path_buf());
+
+        assert!(accounts.load().unwrap().messages);
+        assert!(!accounts.set_messages(false).unwrap().messages);
+        assert!(!accounts.load().unwrap().messages);
     }
 
     #[test]

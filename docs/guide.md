@@ -153,6 +153,46 @@ and says why; in the rare case that putting the older copy back fails too, the m
 it stays under a `.cerberus-old` name. The copy moves files only; Cerberus never reads what is in
 them.
 
+## Messages between accounts
+
+Claude Code's own `SendMessage` reaches chats on the same account only. Cerberus lets a Claude Code
+tab message a Claude Code tab on another of your accounts, and every message waits for you.
+
+- **Sending.** Each Claude Code tab gets a `cerberus` MCP server with two tools: `list_tabs` (the
+  Claude Code tabs on your other accounts, with their ids) and `send_to_tab`. Ask a chat to message
+  another tab and it calls `send_to_tab`; the call waits while you decide.
+- **Approving.** A popup shows the sending tab, the target tab, each with its account colour, and
+  the whole message in a box you can edit. **Approve**, **Approve edited** or **Reject**. Nothing
+  approves by itself, there is no "always allow", and Escape stays with the terminal. Several
+  messages wait in the order they came, with a count. The sending chat is told what happened:
+  delivered, delivered as you edited it (with the new text), rejected, or waiting for Enter.
+- **Delivery.** An approved message goes into the target chat's own Claude Code inbox, so it
+  shows there as "Message from @<account>-<tab>" and the chat reads it as a message from another
+  session, not as your words. When that isn't possible, Cerberus types the message into the
+  target's input box instead, never pressing Enter: you press Enter there to send it, and the popup
+  says so. If the inbox took the message but the tab hasn't shown it within 5 seconds (a long turn,
+  say), the popup says it may still arrive and offers **Type it in instead**. Nothing is typed
+  unless you click it, but the inbox copy can still show after you do: check the target chat
+  before pressing Enter, or the message arrives twice.
+- **Both chats side by side.** After an approval the sender and target show split until you close
+  the split or open another tab. The reply takes the same road and the same popup.
+- **Cancelling.** Esc in the sending chat stops its call and the message leaves the popup. A closed
+  target tab or a restart ends a waiting message, and the sending chat is told it wasn't sent.
+- **Notes.** A tab whose messages can only be typed in shows "messages: prefill only" in the top
+  bar: a Claude Code version Cerberus hasn't tested, or macOS, where inbox delivery isn't checked
+  yet. "messages off" means the tab's helper didn't start within 10 seconds.
+- **Turning it off.** **Accounts > Messages between accounts.** Off, Claude Code tabs start exactly
+  as before. A change applies to Claude Code tabs started after it. Your own MCP servers load either
+  way.
+
+How it works: Cerberus starts each Claude Code tab with `--mcp-config=<app data>/mcp.json` and
+`--allowedTools=mcp__cerberus__send_to_tab`, beside your own MCP servers. The server is
+`cerberus-mcp`, installed next to the app. It reaches the app over a local pipe that only your user
+can open, with a random token per tab handed over in the tab's environment, never written to disk.
+The message text stays in memory: Cerberus never logs it or saves it. Delivery into the inbox uses
+the token Claude Code gives its own child processes; Cerberus reads no credentials, key files or
+transcripts for it.
+
 ## `cerberus open`
 
 The project matches by name, then the same name in any case, then its folder's name; the tab by
@@ -234,6 +274,7 @@ start on macOS.
 | Accounts and settings (`profiles.json`) | `%APPDATA%\com.cerberus.terminal` | `~/Library/Application Support/com.cerberus.terminal` |
 | Saved tabs (`tree.db`) | same folder | same folder |
 | zsh suggestion files (`shell/zsh`) | same folder | same folder |
+| MCP config for messages between accounts (`mcp.json`) | `%APPDATA%\com.cerberus.terminal` | `~/Library/Application Support/com.cerberus.terminal` |
 
 Uninstalling on Windows keeps this folder unless you tick the box to delete the app data. An
 unreadable `profiles.json` is kept as `profiles.json.bad` and the app offers to start fresh.

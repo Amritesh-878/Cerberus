@@ -27,6 +27,7 @@ const PROFILES: Profiles = {
   },
   alerts: true,
   suggestions: true,
+  messages: true,
   retired: [],
   setup: null,
   revision: 0,

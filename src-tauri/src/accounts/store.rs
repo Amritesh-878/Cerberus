@@ -409,7 +409,7 @@ mod tests {
     }
 
     #[test]
-    fn a_file_saved_before_the_alerts_and_suggestions_settings_has_both_on() {
+    fn a_file_saved_before_the_alerts_suggestions_and_messages_settings_has_them_on() {
         let dir = TestDir::new();
         let text = r#"{"version":3,"nextId":0,"accounts":[],"defaultAccount":null,
             "shell":null,"startFolder":null,"sidebarWidth":300}"#;
@@ -418,6 +418,7 @@ mod tests {
 
         assert!(loaded.alerts);
         assert!(loaded.suggestions);
+        assert!(loaded.messages);
         assert_eq!(loaded.sidebar_width, Some(300));
     }
 

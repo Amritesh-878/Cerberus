@@ -42,6 +42,8 @@ export interface Profiles {
   alerts: boolean;
   /** Shell tabs suggest from history as you type, through each shell's own feature. */
   suggestions: boolean;
+  /** Claude tabs can message tabs on other accounts, each message approved first. */
+  messages: boolean;
   /** The walkthrough step to reopen at; `null` once setup is finished or skipped. */
   setup: Step | null;
   /** Removed accounts, still named on the tabs left on them. */
@@ -151,6 +153,16 @@ export function setSuggestions(on: boolean): Promise<Profiles> {
     invoke<Profiles>("set_suggestions", { on }),
   );
   suggestionsSaving = saved.catch(() => undefined);
+  return saved;
+}
+
+let messagesSaving: Promise<unknown> = Promise.resolve();
+
+export function setMessages(on: boolean): Promise<Profiles> {
+  const saved = messagesSaving.then(() =>
+    invoke<Profiles>("set_messages", { on }),
+  );
+  messagesSaving = saved.catch(() => undefined);
   return saved;
 }
 

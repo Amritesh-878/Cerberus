@@ -1,4 +1,5 @@
 mod accounts;
+mod bridge;
 mod cli_link;
 mod commands;
 mod handover;
@@ -6,6 +7,7 @@ mod job;
 #[cfg(unix)]
 mod login_path;
 mod menu;
+mod messages;
 mod open;
 mod panel;
 mod programs;
@@ -21,6 +23,8 @@ use tauri::webview::PageLoadEvent;
 use tauri::{Emitter, Manager, RunEvent};
 
 use crate::accounts::Accounts;
+use crate::bridge::Bridge;
+use crate::bridge::spawn::Messages;
 use crate::handover::RunningTabs;
 use crate::panel::PrCache;
 use crate::pty::PtyManager;
@@ -28,6 +32,15 @@ use crate::saved::Saved;
 use crate::suggestions::Suggestions;
 
 pub use crate::open::console;
+
+/// The `cerberus-mcp` helper's whole life: MCP on stdio until its `claude` closes it.
+pub fn mcp_server() {
+    bridge::mcp::run(
+        std::io::stdin().lock(),
+        std::io::stdout(),
+        bridge::mcp::Env::from_process(),
+    );
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -52,6 +65,14 @@ pub fn run() {
             let config_dir = paths.app_config_dir()?;
             app.manage(Accounts::new(&config_dir, paths.home_dir()?));
             app.manage(Suggestions::new(&paths.app_data_dir()?));
+            app.manage(Messages::prepare(&paths.app_data_dir()?));
+            // Without its pipe the bridge is off, and every tab starts as it did before.
+            let bridge =
+                Bridge::start(messages::AppHooks(app.handle().clone())).unwrap_or_else(|e| {
+                    eprintln!("messages between accounts are off: {e}");
+                    Bridge::off()
+                });
+            app.manage(bridge);
             let handle = app.handle().clone();
             let report = move |failure: Option<&str>| {
                 // Fails only once the window is gone, and then nobody is left to show it.
@@ -106,6 +127,11 @@ pub fn run() {
             panel::panel_open_vscode,
             panel::panel_connectors,
             panel::panel_skills,
+            messages::set_messages,
+            messages::bridge_snapshot,
+            messages::bridge_decide,
+            messages::bridge_discard,
+            messages::bridge_type_in,
             open::launch::open_take,
         ])
         .build(context)
@@ -113,6 +139,7 @@ pub fn run() {
 
     app.run(|handle, event| {
         if let RunEvent::Exit = event {
+            handle.state::<Bridge>().shutdown();
             handle.state::<PtyManager>().kill_all();
             handle.state::<Saved>().flush();
             job::spare_children_on_exit();
