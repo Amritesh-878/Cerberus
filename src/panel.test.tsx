@@ -317,8 +317,14 @@ function skillRow(root: HTMLElement, name: string): HTMLElement {
   return found;
 }
 
-function shiftClick(element: HTMLElement): void {
-  element.dispatchEvent(
+function insertButton(row: HTMLElement): HTMLElement {
+  const found = row.querySelector<HTMLElement>(".skill-main");
+  if (!found) throw new Error("no insert button");
+  return found;
+}
+
+function shiftClick(row: HTMLElement): void {
+  insertButton(row).dispatchEvent(
     new MouseEvent("click", { bubbles: true, shiftKey: true }),
   );
 }
@@ -403,19 +409,29 @@ test("starred skills keep their use order above the rest", async () => {
   expect(skillNames(root)).toEqual(["verify", "notes", "release"]);
 });
 
-test("shift-click types the skill into the chat without Enter, and a plain click types nothing", async () => {
+test("shift-click or Shift+Enter types the skill into the chat without Enter, and a plain click types nothing", async () => {
   const { core, writes, ipc } = typingCore();
   const root = await renderApp(core.profiles, ipc);
   await open(root, "planner");
 
-  skillRow(root, "release").click();
+  insertButton(skillRow(root, "release")).click();
   click(skillRow(root, "release"), "Favourite release");
   shiftClick(skillRow(root, "verify"));
+  insertButton(skillRow(root, "notes")).dispatchEvent(
+    new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+  );
+  insertButton(skillRow(root, "notes")).dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: "Enter",
+      shiftKey: true,
+      bubbles: true,
+    }),
+  );
   await settle();
 
-  expect(writes).toEqual(["/verify"]);
+  expect(writes).toEqual(["/verify", "/notes"]);
   expect(skillRow(root, "verify").title).toContain(
-    "Shift-click types /verify into the chat, for you to send",
+    "Shift-click or Shift+Enter types /verify into the chat, for you to send",
   );
   expect(skillRow(root, "verify").title).toContain("Used 9 times");
 });

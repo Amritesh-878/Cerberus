@@ -1902,6 +1902,22 @@ button.card-row:hover {
   padding: 0;
 }
 
+.skill-main {
+  display: flex;
+  flex: 1;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: default;
+  background: none;
+  border: 0;
+  border-radius: 4px;
+}
+
 .card-subtitle {
   margin: 0 0 4px;
   font-size: 12px;
@@ -1946,6 +1962,7 @@ button.card-row:hover {
 .card-title:focus-visible,
 button.card-row:focus-visible,
 .row-button:focus-visible,
+.skill-main:focus-visible,
 .star:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;

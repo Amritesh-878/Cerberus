@@ -327,7 +327,7 @@ function skillTitle(skill: Skill, canType: boolean): string {
       ? `Used ${String(skill.uses)} time${skill.uses === 1 ? "" : "s"}`
       : null,
     canType
-      ? `Shift-click types ${command} into the chat, for you to send`
+      ? `Shift-click or Shift+Enter types ${command} into the chat, for you to send`
       : `Shift-click types ${command} in Claude Code tabs`,
   ];
   return lines.filter((line) => line !== null).join("\n");
@@ -343,29 +343,42 @@ function SkillRow(props: {
   const starred = () =>
     props.account !== undefined &&
     props.state.favourites(props.account).includes(props.skill.name);
+  const insert = () => {
+    if (props.canType) props.onType(skillCommand(props.skill.name));
+  };
   return (
     <div
       class="card-row skill-row"
       title={skillTitle(props.skill, props.canType)}
-      // Keeps a shift-click from selecting text across the rows.
-      onMouseDown={(event) => {
-        if (event.shiftKey) event.preventDefault();
-      }}
-      onClick={(event) => {
-        if (event.shiftKey && props.canType) {
-          props.onType(skillCommand(props.skill.name));
-        }
-      }}
     >
-      <span class="row-icon">
-        <SkillIcon />
-      </span>
-      <span class="row-text">
-        <span class="row-main">{props.skill.name}</span>
-        <Show when={props.skill.description}>
-          <span class="row-detail">{props.skill.description}</span>
-        </Show>
-      </span>
+      <button
+        type="button"
+        class="skill-main"
+        // Keeps a shift-click from selecting text across the rows.
+        onMouseDown={(event) => {
+          if (event.shiftKey) event.preventDefault();
+        }}
+        // A plain click does nothing, so only Shift with a click or Enter types.
+        onClick={(event) => {
+          if (event.shiftKey) insert();
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && event.shiftKey) {
+            event.preventDefault();
+            insert();
+          }
+        }}
+      >
+        <span class="row-icon">
+          <SkillIcon />
+        </span>
+        <span class="row-text">
+          <span class="row-main">{props.skill.name}</span>
+          <Show when={props.skill.description}>
+            <span class="row-detail">{props.skill.description}</span>
+          </Show>
+        </span>
+      </button>
       {/* An id, which may be 0, so the check is against undefined rather than truthiness. */}
       <Show when={props.account !== undefined}>
         <button
@@ -374,8 +387,7 @@ function SkillRow(props: {
           aria-label={`Favourite ${props.skill.name}`}
           aria-pressed={starred()}
           title={starred() ? "Unpin from the top" : "Pin to the top"}
-          onClick={(event) => {
-            event.stopPropagation();
+          onClick={() => {
             if (props.account !== undefined) {
               props.state.toggleFavourite(props.account, props.skill.name);
             }
