@@ -58,8 +58,12 @@ fn answer(core: &Core, stream: link::Stream) -> io::Result<()> {
         return Ok(());
     };
     let reply = match ask.kind {
-        AskKind::Listen { messaging, pipe } => {
-            return listening(core, &ask.token, stream, messaging, pipe);
+        AskKind::Listen {
+            messaging,
+            pipe,
+            run,
+        } => {
+            return listening(core, &ask.token, stream, (messaging, pipe), &run);
         }
         AskKind::Facts {
             version,
@@ -111,8 +115,8 @@ fn listening(
     core: &Core,
     token: &str,
     stream: link::Stream,
-    messaging: bool,
-    pipe: Option<String>,
+    (messaging, pipe): (bool, Option<String>),
+    run: &str,
 ) -> io::Result<()> {
     write_line(&stream, &Order::Ready)?;
     let ended = {
@@ -127,9 +131,9 @@ fn listening(
             pipe,
             listen: Arc::new(Mutex::new(stream)),
         });
-        // A second hello is a restarted helper, whose earlier calls ended with it.
+        // A second hello is a restarted helper, whose earlier calls ended with it; its own may already be queued.
         if again {
-            state.queue.drop_from(tab)
+            state.queue.drop_from(tab, run)
         } else {
             Vec::new()
         }

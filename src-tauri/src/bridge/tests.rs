@@ -703,6 +703,7 @@ fn hold_orders(world: &World, tab: TabId) -> link::Stream {
         kind: AskKind::Listen {
             messaging: true,
             pipe: Some(target.socket.clone()),
+            run: "held".to_owned(),
         },
     };
     writeln!(&stream, "{}", serde_json::to_string(&ask).unwrap()).unwrap();
@@ -842,7 +843,7 @@ fn a_cancel_that_beats_a_restarted_helpers_hello_still_stops_its_send() {
         &world.bridge,
         &token,
         AskKind::Cancel {
-            call: "new:1".to_owned(),
+            call: "held:1".to_owned(),
         },
     );
 
@@ -854,7 +855,7 @@ fn a_cancel_that_beats_a_restarted_helpers_hello_still_stops_its_send() {
             &bridge,
             &token,
             AskKind::Send {
-                call: "new:1".to_owned(),
+                call: "held:1".to_owned(),
                 to: "2".to_owned(),
                 message: "cancelled before hello".to_owned(),
             },
@@ -885,4 +886,39 @@ fn a_restarted_helper_takes_its_old_calls_out_of_the_popup() {
         world.helper(1).result().0,
         "Not sent: the call was cancelled."
     );
+}
+
+#[test]
+fn a_restart_keeps_the_new_runs_send_that_beat_its_hello() {
+    let world = World::new("2.1.317");
+    let token = world.tabs[&1].ticket.token.clone();
+    for (call, text) in [
+        ("old:1", "from the old run"),
+        ("held:1", "from the new run"),
+    ] {
+        let (bridge, token) = (world.bridge.clone(), token.clone());
+        thread::spawn(move || {
+            ask(
+                &bridge,
+                &token,
+                AskKind::Send {
+                    call: call.to_owned(),
+                    to: "2".to_owned(),
+                    message: text.to_owned(),
+                },
+            )
+        });
+    }
+    world.until(|state| state.queue.views().len() == 2);
+
+    let _orders = hold_orders(&world, 1);
+
+    let left: Vec<String> = world
+        .bridge
+        .snapshot()
+        .pending
+        .into_iter()
+        .map(|p| p.text)
+        .collect();
+    assert_eq!(left, ["from the new run"]);
 }

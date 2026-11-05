@@ -79,9 +79,12 @@ impl<T> Queue<T> {
         gone.into()
     }
 
-    /// Takes out every message a tab sent, leaving those sent to it.
-    pub fn drop_from(&mut self, tab: TabId) -> Vec<Pending<T>> {
-        let (gone, kept) = self.items.drain(..).partition(|p| p.from == tab);
+    /// Takes out every message a tab's earlier helper runs sent, leaving run `run`'s and those sent to it.
+    pub fn drop_from(&mut self, tab: TabId, run: &str) -> Vec<Pending<T>> {
+        let (gone, kept) = self
+            .items
+            .drain(..)
+            .partition(|p| p.from == tab && !p.call.starts_with(&format!("{run}:")));
         self.items = kept;
         gone.into()
     }
@@ -147,13 +150,18 @@ mod tests {
     #[test]
     fn a_restarted_sender_takes_only_its_own_messages() {
         let mut queue = Queue::default();
-        queue.push(1, 2, "a".to_owned(), "from 1".to_owned(), ());
-        let kept = queue.push(2, 1, "b".to_owned(), "to 1".to_owned(), ());
+        queue.push(1, 2, "old:1".to_owned(), "from 1".to_owned(), ());
+        let to = queue.push(2, 1, "b".to_owned(), "to 1".to_owned(), ());
+        let new = queue.push(1, 2, "new:1".to_owned(), "new run".to_owned(), ());
 
-        let gone: Vec<String> = queue.drop_from(1).into_iter().map(|p| p.text).collect();
+        let gone: Vec<String> = queue
+            .drop_from(1, "new")
+            .into_iter()
+            .map(|p| p.text)
+            .collect();
 
         assert_eq!(gone, ["from 1"]);
-        assert_eq!(ids(&queue), [kept]);
+        assert_eq!(ids(&queue), [to, new]);
     }
 
     #[test]

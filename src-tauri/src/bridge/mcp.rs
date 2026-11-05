@@ -305,13 +305,14 @@ fn report_facts(client: &Client, env: &Env) {
 }
 
 /// Says hello, then carries out the app's orders for as long as the app keeps the link open.
-fn follow_orders(client: &Arc<Client>, env: &Arc<Env>) -> io::Result<()> {
+fn follow_orders(client: &Arc<Client>, env: &Arc<Env>, run: String) -> io::Result<()> {
     let stream = client.connect()?;
     client.write_ask(
         &stream,
         AskKind::Listen {
             messaging: env.messaging(),
             pipe: env.socket.clone(),
+            run,
         },
     )?;
     for line in BufReader::new(&stream).lines() {
@@ -345,16 +346,16 @@ pub fn run(input: impl BufRead, output: impl Write + Send + 'static, env: Env) {
         _ => None,
     };
     let env = Arc::new(env);
+    // Call ids start over in each run, so the bridge sees them under this run's own tag.
+    let run_tag = link::random_hex(8).unwrap_or_else(|_| std::process::id().to_string());
     if let Some(client) = &client {
-        let (client, env) = (Arc::clone(client), Arc::clone(&env));
+        let (client, env, run) = (Arc::clone(client), Arc::clone(&env), run_tag.clone());
         thread::spawn(move || {
-            if let Err(e) = follow_orders(&client, &env) {
+            if let Err(e) = follow_orders(&client, &env, run) {
                 eprintln!("cerberus helper: the link to Cerberus ended: {e}");
             }
         });
     }
-    // Call ids start over in each run, so the bridge sees them under this run's own tag.
-    let run_tag = link::random_hex(8).unwrap_or_else(|_| std::process::id().to_string());
     let cancelled: Arc<Mutex<HashMap<String, bool>>> = Arc::default();
     for line in input.lines() {
         let Ok(line) = line else { break };

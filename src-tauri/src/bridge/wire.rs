@@ -30,6 +30,8 @@ pub enum AskKind {
         messaging: bool,
         /// That inbox's address, sent as `from` when this tab's messages are delivered.
         pipe: Option<String>,
+        /// The tag on this run's call ids, so a restart drops only the earlier runs' sends.
+        run: String,
     },
     /// What the tab's own session file says, once the helper finds it.
     #[serde(rename_all = "camelCase")]
