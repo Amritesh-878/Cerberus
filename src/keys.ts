@@ -58,6 +58,7 @@ export type Shortcut =
   | "newTab"
   | "closeTab"
   | "nextWaiting"
+  | "panel"
   | "shortcuts";
 
 type Chords = readonly (readonly [Shortcut, string])[];
@@ -69,6 +70,8 @@ const OTHER_CHORDS: Chords = [
   ["newTab", "Ctrl+Shift+T"],
   ["nextWaiting", "Ctrl+Shift+A"],
   ["closeTab", "Ctrl+Shift+W"],
+  // Ctrl+B is Claude Code's background-task key, so the panel takes it only with Shift.
+  ["panel", "Ctrl+Shift+B"],
   // Ctrl+/ stays with the terminal, where editors and shells use it.
   ["shortcuts", "Ctrl+Shift+/"],
 ];
@@ -82,6 +85,7 @@ const MAC_CHORDS: Chords = [
   ["newTab", "Cmd+T"],
   ["nextWaiting", "Cmd+Shift+A"],
   ["closeTab", "Cmd+W"],
+  ["panel", "Cmd+Shift+B"],
   ["shortcuts", "Cmd+/"],
 ];
 
@@ -193,6 +197,7 @@ const SHEET_ROWS: readonly (readonly [Shortcut, string])[] = [
   ["newTab", "New tab"],
   ["closeTab", "Close tab"],
   ["nextWaiting", "Next chat waiting on you"],
+  ["panel", "Show or hide the right panel"],
   ["shortcuts", "Show or hide this sheet"],
 ];
 

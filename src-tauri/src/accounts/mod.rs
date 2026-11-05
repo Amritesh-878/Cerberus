@@ -20,6 +20,9 @@ use crate::programs::Finder;
 pub type AccountId = u32;
 
 const SIDEBAR_WIDTHS: std::ops::RangeInclusive<u32> = 200..=560;
+const PANEL_WIDTHS: std::ops::RangeInclusive<u32> = 240..=640;
+/// The right panel's cards that can be collapsed; a name not here is dropped when saved.
+const PANEL_CARDS: [&str; 4] = ["environment", "changes", "connectors", "skills"];
 
 const STATUS_TIMEOUT: Duration = Duration::from_secs(15);
 
@@ -70,6 +73,16 @@ pub struct Account {
     pub color: Option<String>,
 }
 
+/// The right panel: whether it shows, its width, and the cards folded to their title.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct PanelPrefs {
+    pub open: bool,
+    /// In pixels; `None` keeps the app's default.
+    pub width: Option<u32>,
+    pub collapsed: Vec<String>,
+}
+
 /// A walkthrough step, saved so a restart part way through setup reopens it there.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -90,6 +103,8 @@ pub struct Profiles {
     /// In pixels; `None` keeps the app's default.
     #[serde(default)]
     pub sidebar_width: Option<u32>,
+    #[serde(default)]
+    pub panel: PanelPrefs,
     /// Desktop notifications when a chat in another tab needs you.
     #[serde(default = "on")]
     pub alerts: bool,
@@ -119,6 +134,7 @@ impl Default for Profiles {
             shell: None,
             start_folder: None,
             sidebar_width: None,
+            panel: PanelPrefs::default(),
             alerts: true,
             suggestions: true,
             setup: Some(SetupStep::Install),
@@ -321,6 +337,25 @@ impl Accounts {
         let width = width.clamp(*SIDEBAR_WIDTHS.start(), *SIDEBAR_WIDTHS.end());
         self.update(|p| {
             p.sidebar_width = Some(width);
+            Ok(())
+        })
+    }
+
+    pub fn set_panel(&self, prefs: PanelPrefs) -> Result<Profiles, AccountsError> {
+        let width = prefs
+            .width
+            .map(|w| w.clamp(*PANEL_WIDTHS.start(), *PANEL_WIDTHS.end()));
+        let collapsed = PANEL_CARDS
+            .into_iter()
+            .filter(|card| prefs.collapsed.iter().any(|c| c == card))
+            .map(str::to_owned)
+            .collect();
+        self.update(|p| {
+            p.panel = PanelPrefs {
+                open: prefs.open,
+                width,
+                collapsed,
+            };
             Ok(())
         })
     }
@@ -763,6 +798,34 @@ mod tests {
             Some(560)
         );
         assert_eq!(accounts.load().unwrap().sidebar_width, Some(560));
+    }
+
+    #[test]
+    fn the_panel_is_saved_closed_by_default_with_its_width_and_known_cards() {
+        let home = TestDir::new();
+        let app = home.path().join("app");
+        let accounts = Accounts::new(&app, home.path().to_path_buf());
+        assert_eq!(accounts.load().unwrap().panel, PanelPrefs::default());
+
+        let saved = accounts
+            .set_panel(PanelPrefs {
+                open: true,
+                width: Some(9000),
+                collapsed: ["skills", "bogus", "changes", "skills"]
+                    .map(String::from)
+                    .to_vec(),
+            })
+            .unwrap();
+
+        let expected = PanelPrefs {
+            open: true,
+            width: Some(640),
+            collapsed: vec!["changes".to_owned(), "skills".to_owned()],
+        };
+        assert_eq!(saved.panel, expected);
+        assert_eq!(accounts.load().unwrap().panel, expected);
+        let raw = fs::read_to_string(app.join("profiles.json")).unwrap();
+        assert!(raw.contains(r#""open": true"#), "{raw}");
     }
 
     #[test]

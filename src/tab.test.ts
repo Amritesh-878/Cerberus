@@ -92,6 +92,7 @@ const PROFILES: Profiles = {
   shell: null,
   startFolder: null,
   sidebarWidth: null,
+  panel: { open: false, width: null, collapsed: [] },
   alerts: true,
   suggestions: true,
   retired: [],

@@ -9,6 +9,8 @@
   --dim: #8a8a8a;
   --faint: #5c5c5c;
   --accent: #d97757;
+  --added: #6cc07a;
+  --removed: #e5736b;
   --sidebar-width: 248px;
 
   color-scheme: dark;
@@ -31,7 +33,7 @@ button {
   color: inherit;
 }
 
-/* The last column stays empty until the right panel has something to show. */
+/* The last column holds the right panel while it is open. */
 .app {
   position: relative;
   display: grid;
@@ -51,7 +53,9 @@ button {
 }
 
 .sidebar-edge:hover,
-.sidebar-edge:focus-visible {
+.sidebar-edge:focus-visible,
+.panel-edge:hover,
+.panel-edge:focus-visible {
   background: linear-gradient(
     to right,
     transparent 2px,
@@ -1689,4 +1693,240 @@ pre {
   flex-wrap: wrap;
   gap: 6px;
   margin: 0;
+}
+
+/* The right panel: the shown tab's cards, as in the desktop app. */
+.panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: clamp(240px, var(--panel-width), 40vw);
+  min-height: 0;
+  background: var(--side);
+  border-left: 1px solid var(--line);
+}
+
+.panel-edge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  z-index: 5;
+  width: 6px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.panel-cards {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  padding: 8px;
+  overflow-y: auto;
+  scrollbar-color: #3a3a3a transparent;
+}
+
+.panel-empty {
+  padding: 24px 12px;
+  margin: 0;
+  color: var(--faint);
+  text-align: center;
+}
+
+.panel-error {
+  padding: 0 4px;
+  margin: 0;
+  font-size: 12px;
+  color: var(--removed);
+}
+
+.card {
+  flex: none;
+  padding: 10px 12px;
+  background: #1b1b1b;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.card-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.card-title {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 2px 4px;
+  margin: -2px -4px;
+  font-weight: 600;
+  cursor: pointer;
+  background: none;
+  border: 0;
+  border-radius: 4px;
+}
+
+.card-title svg {
+  color: var(--dim);
+  transition: transform 150ms ease;
+}
+
+.card.folded .card-title svg {
+  transform: rotate(-90deg);
+}
+
+.card-meta {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+.card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 8px;
+}
+
+.card-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+  min-height: 28px;
+  padding: 3px 6px;
+  margin: 0 -6px;
+  text-align: left;
+  border-radius: 6px;
+}
+
+button.card-row {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  background: none;
+  border: 0;
+}
+
+button.card-row:hover {
+  background: var(--hover);
+}
+
+.row-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 16px;
+  color: var(--dim);
+}
+
+.row-icon.pr {
+  color: #b58ad6;
+}
+
+.row-icon .dot.none {
+  background: var(--faint);
+}
+
+.row-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.row-main,
+.row-detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row-detail {
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.row-meta {
+  display: flex;
+  flex: none;
+  gap: 6px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+.added {
+  color: var(--added);
+}
+
+.removed {
+  color: var(--removed);
+}
+
+.row-button {
+  height: 24px;
+  padding: 0 8px;
+  margin-left: 4px;
+  font-size: 12px;
+  color: var(--dim);
+  cursor: pointer;
+  background: none;
+  border: 1px solid #333;
+  border-radius: 6px;
+}
+
+.row-button:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--hover);
+}
+
+.row-button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.card-title:focus-visible,
+button.card-row:focus-visible,
+.row-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.card-note {
+  margin: 2px 0;
+  font-size: 12px;
+  color: var(--dim);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card-title svg {
+    transition: none;
+  }
+}
+
+/* Narrow windows: the panel lies over the terminal, below the bar that toggles it. */
+@media (width <= 720px) {
+  .panel {
+    position: fixed;
+    top: 38px;
+    right: 0;
+    bottom: 0;
+    z-index: 15;
+    width: min(var(--panel-width), 85vw);
+    box-shadow: -8px 0 24px rgb(0 0 0 / 50%);
+  }
+
+  .panel-edge {
+    display: none;
+  }
 }

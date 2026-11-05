@@ -1,11 +1,10 @@
-use std::io::{self, Read};
 use std::path::Path;
-use std::process::{Child, Command, Stdio};
-use std::sync::mpsc;
-use std::thread;
-use std::time::{Duration, Instant};
+use std::process::Command;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
+
+use crate::run::{RunError, run};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -20,6 +19,9 @@ pub enum AuthState {
 pub struct AuthStatus {
     pub state: AuthState,
     pub summary: String,
+    /// Shown on its own in the right panel, and `None` when signed out or not reported.
+    pub email: Option<String>,
+    pub plan: Option<String>,
 }
 
 // Only the fields shown are parsed, so renamed or new keys elsewhere change nothing.
@@ -32,20 +34,6 @@ struct Reported {
     subscription_type: Option<String>,
 }
 
-#[derive(Debug, thiserror::Error)]
-enum RunError {
-    #[error("could not start Claude Code: {0}")]
-    Start(io::Error),
-    #[error("could not read Claude Code's answer: {0}")]
-    Read(io::Error),
-    #[error("Claude Code did not answer in {} s", .0.as_secs())]
-    TimedOut(Duration),
-}
-
-#[cfg(windows)]
-const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-const EXIT_POLL: Duration = Duration::from_millis(10);
-
 pub fn read(claude: Option<&Path>, config_dir: Option<&Path>, timeout: Duration) -> AuthStatus {
     let Some(claude) = claude else {
         return unknown("Claude Code is not installed");
@@ -56,95 +44,15 @@ pub fn read(claude: Option<&Path>, config_dir: Option<&Path>, timeout: Duration)
         Some(dir) => command.env("CLAUDE_CONFIG_DIR", dir),
         None => command.env_remove("CLAUDE_CONFIG_DIR"),
     };
+    // The exit code is ignored because a logged-out account exits 1 and still prints its status.
     match run(command, timeout) {
-        Ok(stdout) => parse(&stdout),
-        Err(e) => unknown(&e.to_string()),
-    }
-}
-
-// The exit code is ignored: a logged-out account exits 1 and still prints its status.
-fn run(mut command: Command, timeout: Duration) -> Result<Vec<u8>, RunError> {
-    command
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null());
-    #[cfg(windows)]
-    std::os::windows::process::CommandExt::creation_flags(&mut command, CREATE_NO_WINDOW);
-    // Its own group, so a timeout can end whatever a wrapper script started.
-    #[cfg(unix)]
-    std::os::unix::process::CommandExt::process_group(&mut command, 0);
-    let mut child = command.spawn().map_err(RunError::Start)?;
-    let Some(mut stdout) = child.stdout.take() else {
-        return Err(RunError::Read(io::Error::other("no output pipe")));
-    };
-    let deadline = Instant::now() + timeout;
-    let (tx, rx) = mpsc::channel();
-    thread::Builder::new()
-        .spawn(move || {
-            let mut out = Vec::new();
-            let _ = tx.send(stdout.read_to_end(&mut out).map(|_| out));
-        })
-        .map_err(RunError::Read)?;
-    let result = match rx.recv_timeout(timeout) {
-        Ok(read) => read.map_err(RunError::Read),
-        Err(_) => Err(RunError::TimedOut(timeout)),
-    };
-    let result = finished(result, || exits_by(&mut child, deadline), timeout);
-    if result.is_err() {
-        kill_tree(&mut child);
-    }
-    let _ = child.wait();
-    result
-}
-
-// Output from a program that then misses the deadline is not trusted, however complete it looks.
-fn finished(
-    read: Result<Vec<u8>, RunError>,
-    exits: impl FnOnce() -> bool,
-    timeout: Duration,
-) -> Result<Vec<u8>, RunError> {
-    let stdout = read?;
-    if exits() {
-        Ok(stdout)
-    } else {
-        Err(RunError::TimedOut(timeout))
-    }
-}
-
-// A program can close its output and still not exit, so the wait shares the read's deadline.
-fn exits_by(child: &mut Child, deadline: Instant) -> bool {
-    loop {
-        match child.try_wait() {
-            Ok(Some(_)) => return true,
-            Ok(None) if Instant::now() < deadline => thread::sleep(EXIT_POLL),
-            _ => return false,
+        Ok(ran) => parse(&ran.stdout),
+        Err(RunError::Start(e)) => unknown(&format!("could not start Claude Code: {e}")),
+        Err(RunError::Read(e)) => unknown(&format!("could not read Claude Code's answer: {e}")),
+        Err(RunError::TimedOut(t)) => {
+            unknown(&format!("Claude Code did not answer in {} s", t.as_secs()))
         }
     }
-}
-
-// A `.cmd` shim's child is cmd.exe, so killing only that would leave Claude Code running.
-fn kill_tree(child: &mut Child) {
-    #[cfg(windows)]
-    {
-        let mut taskkill = Command::new("taskkill");
-        taskkill
-            .args(["/PID", &child.id().to_string(), "/T", "/F"])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null());
-        std::os::windows::process::CommandExt::creation_flags(&mut taskkill, CREATE_NO_WINDOW);
-        if taskkill.status().is_ok_and(|status| status.success()) {
-            return;
-        }
-    }
-    #[cfg(unix)]
-    if let Ok(group) = libc::pid_t::try_from(child.id()) {
-        // SAFETY: signals the group `run` gave the child; no memory is touched.
-        if unsafe { libc::killpg(group, libc::SIGKILL) } == 0 {
-            return;
-        }
-    }
-    let _ = child.kill();
 }
 
 /// Never echoes the output on failure, since it may hold the account's email.
@@ -156,6 +64,8 @@ fn parse(stdout: &[u8]) -> AuthStatus {
         return AuthStatus {
             state: AuthState::LoggedOut,
             summary: "signed out".to_owned(),
+            email: None,
+            plan: None,
         };
     }
     let plan = reported.subscription_type.as_deref().map(capitalized);
@@ -166,7 +76,10 @@ fn parse(stdout: &[u8]) -> AuthStatus {
             .as_deref()
             .is_none_or(|email| !org.contains(email))
     });
-    let parts: Vec<String> = [reported.email, plan, org].into_iter().flatten().collect();
+    let parts: Vec<String> = [reported.email.clone(), plan.clone(), org]
+        .into_iter()
+        .flatten()
+        .collect();
     AuthStatus {
         state: AuthState::LoggedIn,
         summary: if parts.is_empty() {
@@ -174,6 +87,8 @@ fn parse(stdout: &[u8]) -> AuthStatus {
         } else {
             parts.join(" · ")
         },
+        email: reported.email,
+        plan,
     }
 }
 
@@ -189,6 +104,8 @@ fn unknown(reason: &str) -> AuthStatus {
     AuthStatus {
         state: AuthState::Unknown,
         summary: format!("status unknown: {reason}"),
+        email: None,
+        plan: None,
     }
 }
 
@@ -207,6 +124,8 @@ mod tests {
 
         assert_eq!(status.state, AuthState::LoggedIn);
         assert_eq!(status.summary, "user@example.com · Team · Example Team");
+        assert_eq!(status.email.as_deref(), Some("user@example.com"));
+        assert_eq!(status.plan.as_deref(), Some("Team"));
     }
 
     #[test]
@@ -268,178 +187,5 @@ mod tests {
             "{}",
             status.summary
         );
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn output_is_read_whatever_the_exit_code() {
-        let mut command = Command::new("cmd");
-        // Raw, because Rust's quoting for an argument with quotes is not what cmd's echo expects.
-        std::os::windows::process::CommandExt::raw_arg(
-            &mut command,
-            r#"/c echo {"loggedIn":false}& exit 1"#,
-        );
-
-        let stdout = run(command, Duration::from_secs(20)).unwrap();
-
-        assert_eq!(parse(&stdout).state, AuthState::LoggedOut);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn output_is_read_whatever_the_exit_code() {
-        let mut command = Command::new("/bin/sh");
-        command.args(["-c", r#"echo '{"loggedIn":false}'; exit 1"#]);
-
-        let stdout = run(command, Duration::from_secs(20)).unwrap();
-
-        assert_eq!(parse(&stdout).state, AuthState::LoggedOut);
-    }
-
-    #[test]
-    fn output_from_a_program_that_never_exits_is_a_timeout() {
-        let second = Duration::from_secs(1);
-        let status = br#"{"loggedIn":true}"#.to_vec();
-
-        let hung = finished(Ok(status.clone()), || false, second);
-        let done = finished(Ok(status.clone()), || true, second);
-        let unread = finished(Err(RunError::TimedOut(second)), || true, second);
-
-        assert!(matches!(hung, Err(RunError::TimedOut(_))));
-        assert_eq!(done.unwrap(), status);
-        assert!(matches!(unread, Err(RunError::TimedOut(_))));
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn the_exit_wait_gives_up_at_the_deadline() {
-        let mut hung = Command::new("powershell")
-            .args(["-NoProfile", "-Command", "Start-Sleep -Seconds 30"])
-            .spawn()
-            .unwrap();
-        let mut quick = Command::new("cmd").args(["/c", "exit 0"]).spawn().unwrap();
-        let started = Instant::now();
-
-        let hung_exited = exits_by(&mut hung, started + Duration::from_millis(300));
-        kill_tree(&mut hung);
-        let _ = hung.wait();
-
-        assert!(!hung_exited);
-        assert!(
-            started.elapsed() < Duration::from_secs(5),
-            "{:?}",
-            started.elapsed()
-        );
-        assert!(exits_by(
-            &mut quick,
-            Instant::now() + Duration::from_secs(10)
-        ));
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn a_hung_program_times_out() {
-        let mut command = Command::new("powershell");
-        command.args(["-NoProfile", "-Command", "Start-Sleep -Seconds 30"]);
-
-        let result = run(command, Duration::from_millis(300));
-
-        assert!(matches!(result, Err(RunError::TimedOut(_))));
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn a_timeout_ends_what_a_wrapper_started() {
-        let dir = crate::accounts::testdir::TestDir::new();
-        let pid_file = dir.path().join("pid.txt");
-        let mut command = Command::new("cmd");
-        command.args([
-            "/c",
-            "powershell",
-            "-NoProfile",
-            "-Command",
-            &format!(
-                "$PID | Set-Content '{}'; Start-Sleep -Seconds 30",
-                pid_file.display()
-            ),
-        ]);
-
-        // Long enough for a cold CI runner to start PowerShell and write its pid; 5 s was not.
-        let result = run(command, Duration::from_secs(20));
-
-        assert!(matches!(result, Err(RunError::TimedOut(_))));
-        let pid = std::fs::read_to_string(&pid_file).unwrap();
-        let listed = Command::new("tasklist")
-            .args(["/FI", &format!("PID eq {}", pid.trim()), "/NH"])
-            .output()
-            .unwrap();
-        let listed = String::from_utf8_lossy(&listed.stdout);
-        assert!(!listed.contains(pid.trim()), "still running: {listed}");
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn the_exit_wait_gives_up_at_the_deadline() {
-        use std::os::unix::process::CommandExt;
-        let mut hung = Command::new("/bin/sleep")
-            .arg("30")
-            .process_group(0)
-            .spawn()
-            .unwrap();
-        let mut quick = Command::new("/usr/bin/true").spawn().unwrap();
-        let started = Instant::now();
-
-        let hung_exited = exits_by(&mut hung, started + Duration::from_millis(300));
-        kill_tree(&mut hung);
-        let _ = hung.wait();
-
-        assert!(!hung_exited);
-        assert!(
-            started.elapsed() < Duration::from_secs(5),
-            "{:?}",
-            started.elapsed()
-        );
-        assert!(exits_by(
-            &mut quick,
-            Instant::now() + Duration::from_secs(10)
-        ));
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn a_hung_program_times_out() {
-        let mut command = Command::new("/bin/sleep");
-        command.arg("30");
-
-        let result = run(command, Duration::from_millis(300));
-
-        assert!(matches!(result, Err(RunError::TimedOut(_))));
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn a_timeout_ends_what_a_wrapper_started() {
-        let dir = crate::accounts::testdir::TestDir::new();
-        let pid_file = dir.path().join("pid.txt");
-        let mut command = Command::new("/bin/sh");
-        // Backgrounded and waited on, so sleep is the wrapper's child rather than its replacement.
-        command.args([
-            "-c",
-            &format!("sleep 30 & echo $! > '{}'; wait", pid_file.display()),
-        ]);
-
-        let result = run(command, Duration::from_secs(5));
-
-        assert!(matches!(result, Err(RunError::TimedOut(_))));
-        let pid: u32 = std::fs::read_to_string(&pid_file)
-            .unwrap()
-            .trim()
-            .parse()
-            .unwrap();
-        let gone = (0..100).any(|_| {
-            thread::sleep(Duration::from_millis(20));
-            !crate::sessions::procs::is_running(pid)
-        });
-        assert!(gone, "still running: {pid}");
     }
 }

@@ -168,3 +168,58 @@ export function WarnIcon() {
 export function MenuIcon() {
   return <Stroke d="M3 4.5h10M3 8h10M3 11.5h10" size={16} />;
 }
+
+export function PanelIcon() {
+  return (
+    <Stroke
+      d="M3.5 3h9A1.5 1.5 0 0 1 14 4.5v7a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 11.5v-7A1.5 1.5 0 0 1 3.5 3M10 3v10"
+      size={16}
+      width={1.4}
+    />
+  );
+}
+
+export function BranchIcon() {
+  return (
+    <Stroke
+      d="M5 3v10M5 13a1.5 1.5 0 1 0 0-.01M11 6.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3M11 6.5c0 2.5-6 2-6 5"
+      width={1.4}
+    />
+  );
+}
+
+export function DiffIcon() {
+  return (
+    <Stroke
+      d="M3.5 2.5h9a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1M8 4.8v4.4M5.8 7h4.4M5.8 11.2h4.4"
+      width={1.3}
+    />
+  );
+}
+
+export function PrIcon() {
+  return (
+    <Stroke
+      d="M4.5 5.5v8M4.5 5.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3M11.5 10.5V6.5c0-1.1-.9-2-2-2H7.5M9 3l-1.5 1.5L9 6M11.5 13.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3"
+      width={1.4}
+    />
+  );
+}
+
+export function PlugIcon() {
+  return (
+    <Stroke
+      d="M6 2v3M10 2v3M4.5 5h7v2.5a3.5 3.5 0 0 1-7 0zM8 11v3"
+      width={1.4}
+    />
+  );
+}
+
+export function SkillIcon() {
+  return (
+    <Stroke
+      d="M8 2.5 9.4 6.6 13.5 8 9.4 9.4 8 13.5 6.6 9.4 2.5 8 6.6 6.6z"
+      width={1.3}
+    />
+  );
+}

@@ -7,8 +7,8 @@ use tauri::ipc::{Channel, InvokeResponseBody, IpcResponse};
 use tauri::{AppHandle, Manager, State};
 
 use crate::accounts::{
-    AccountId, Accounts, AccountsError, AuthState, AuthStatus, Candidate, Profiles, Removal,
-    SetupStep,
+    AccountId, Accounts, AccountsError, AuthState, AuthStatus, Candidate, PanelPrefs, Profiles,
+    Removal, SetupStep,
 };
 use crate::cli_link::{self, LinkError, Linked};
 use crate::handover::{ContinueError, RunningTabs, continue_chat};
@@ -296,6 +296,14 @@ pub fn set_sidebar_width(
     width: u32,
 ) -> Result<Profiles, AccountsError> {
     accounts.set_sidebar_width(width)
+}
+
+#[tauri::command(async)]
+pub fn set_panel(
+    accounts: State<'_, Accounts>,
+    panel: PanelPrefs,
+) -> Result<Profiles, AccountsError> {
+    accounts.set_panel(panel)
 }
 
 #[tauri::command(async)]

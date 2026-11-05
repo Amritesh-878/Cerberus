@@ -45,6 +45,8 @@ SHA-256 so you can check a download.
 - **A shell when a chat ends.** After `/exit` the tab becomes a shell in the same folder.
   **Resume chat** in its menu brings the chat back.
 - **Move a chat to another of your accounts**, from the tab's right-click menu.
+- **A right panel for the tab on screen**: its account, folder and branch, the branch's changes
+  and open PR with **Create PR**, and the MCP servers and skills its `claude` would load.
 - **`cerberus open`** jumps to a tab from any terminal (below).
 
 More detail on each, and how it works: [`docs/guide.md`](docs/guide.md).
@@ -57,9 +59,10 @@ More detail on each, and how it works: [`docs/guide.md`](docs/guide.md).
 | New tab | Ctrl+Shift+T | Cmd+T |
 | Close tab | Ctrl+Shift+W | Cmd+W |
 | Next chat waiting on you | Ctrl+Shift+A | Cmd+Shift+A |
+| Right panel | Ctrl+Shift+B | Cmd+Shift+B |
 | Rename | F2 | F2 |
 
-They leave Claude Code's own keys alone (Ctrl+T, Ctrl+C, Ctrl+V, Alt+V, Shift+Tab). Paste an image
+They leave Claude Code's own keys alone (Ctrl+T, Ctrl+B, Ctrl+C, Ctrl+V, Alt+V, Shift+Tab). Paste an image
 into Claude Code with Alt+V on Windows, or Cmd+V on macOS.
 
 In a terminal on macOS, the editing keys of Terminal.app:
