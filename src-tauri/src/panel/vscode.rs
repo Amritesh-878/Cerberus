@@ -20,8 +20,15 @@ fn resolve(
     is_file: &dyn Fn(&Path) -> bool,
 ) -> Option<PathBuf> {
     if cfg!(windows) {
-        let shim = on_path?;
-        let exe = shim.parent()?.parent()?.join("Code.exe");
+        let found = on_path?;
+        // The install folder itself may be on PATH, and then `code` finds `Code.exe`.
+        if found
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("exe"))
+        {
+            return Some(found);
+        }
+        let exe = found.parent()?.parent()?.join("Code.exe");
         return is_file(&exe).then_some(exe);
     }
     if on_path.is_some() || !cfg!(target_os = "macos") {
@@ -50,13 +57,13 @@ pub fn open(code: &Path, folder: &Path) -> io::Result<()> {
         .stdout(Stdio::null())
         .stderr(Stdio::null());
     #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-
+    let mut child = {
         use windows_sys::Win32::System::Threading::{CREATE_NEW_PROCESS_GROUP, DETACHED_PROCESS};
 
-        command.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
-    }
+        // Outside the app's job, so an editor it started survives a crash of the app.
+        crate::job::spawn_outside_job(&mut command, DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP)?
+    };
+    #[cfg(not(windows))]
     let mut child = command.spawn()?;
     // Reaped on its own thread so the editor never waits on the app, nor lingers as a zombie on Unix.
     std::thread::spawn(move || {
@@ -82,9 +89,13 @@ mod tests {
 
         assert_eq!(
             resolve(Some(shim.clone()), None, &files(&[&shim, &exe])),
-            Some(exe)
+            Some(exe.clone())
         );
         assert_eq!(resolve(Some(shim.clone()), None, &files(&[&shim])), None);
+        assert_eq!(
+            resolve(Some(exe.clone()), None, &files(&[&exe])),
+            Some(exe.clone())
+        );
         assert_eq!(resolve(None, None, &files(&[])), None);
     }
 

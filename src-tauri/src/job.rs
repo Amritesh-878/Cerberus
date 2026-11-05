@@ -11,7 +11,8 @@ pub fn end_children_with_app() -> io::Result<()> {
 
     use windows_sys::Win32::Foundation::CloseHandle;
     use windows_sys::Win32::System::JobObjects::{
-        AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+        AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_BREAKAWAY_OK,
+        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
     };
     use windows_sys::Win32::System::Threading::GetCurrentProcess;
 
@@ -21,7 +22,9 @@ pub fn end_children_with_app() -> io::Result<()> {
         if job.is_null() {
             return Err(io::Error::last_os_error());
         }
-        let joined = set_limits(job, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE).and_then(|()| {
+        // Breakaway is allowed but only asked for by `spawn_outside_job`, so tab programs stay in.
+        let limits = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_BREAKAWAY_OK;
+        let joined = set_limits(job, limits).and_then(|()| {
             if AssignProcessToJobObject(job, GetCurrentProcess()) == 0 {
                 Err(io::Error::last_os_error())
             } else {
@@ -45,6 +48,28 @@ pub fn spare_children_on_exit() {
         && let Err(e) = set_limits(job as windows_sys::Win32::Foundation::HANDLE, 0)
     {
         eprintln!("programs started from tabs may close with the app: {e}");
+    }
+}
+
+/// Starts a program that should outlive a crash of the app, such as an editor, outside its job when Windows allows.
+#[cfg(windows)]
+pub fn spawn_outside_job(
+    command: &mut std::process::Command,
+    flags: u32,
+) -> io::Result<std::process::Child> {
+    use std::os::windows::process::CommandExt;
+
+    use windows_sys::Win32::Foundation::ERROR_ACCESS_DENIED;
+    use windows_sys::Win32::System::Threading::CREATE_BREAKAWAY_FROM_JOB;
+
+    // A job above ours that refuses breakaway denies it; the program then starts inside, as tab programs do.
+    let refused = i32::try_from(ERROR_ACCESS_DENIED).ok();
+    match command
+        .creation_flags(flags | CREATE_BREAKAWAY_FROM_JOB)
+        .spawn()
+    {
+        Err(e) if e.raw_os_error() == refused => command.creation_flags(flags).spawn(),
+        spawned => spawned,
     }
 }
 
@@ -107,10 +132,13 @@ mod tests {
             return;
         };
         end_children_with_app().unwrap();
-        let mut child = Command::new("cmd")
-            .args(["/c", "ping -n 120 127.0.0.1 >nul"])
-            .spawn()
-            .unwrap();
+        let mut command = Command::new("cmd");
+        command.args(["/c", "ping -n 120 127.0.0.1 >nul"]);
+        let mut child = if mode == "outside" {
+            spawn_outside_job(&mut command, 0).unwrap()
+        } else {
+            command.spawn().unwrap()
+        };
         println!("child-pid={}", child.id());
         if mode == "exit" {
             spare_children_on_exit();
@@ -168,6 +196,20 @@ mod tests {
             ended_within(child_pid, Duration::from_secs(10)),
             "the child outlived its killed parent"
         );
+    }
+
+    #[test]
+    fn a_program_started_outside_the_job_outlives_a_forced_kill() {
+        let (mut parent, child_pid) = start_parent("outside");
+
+        parent.kill().unwrap();
+        parent.wait().unwrap();
+        let survived = !ended_within(child_pid, Duration::from_secs(2));
+        let _ = Command::new("taskkill")
+            .args(["/F", "/T", "/PID", &child_pid.to_string()])
+            .output();
+
+        assert!(survived, "the child ended with its killed parent");
     }
 
     #[test]
