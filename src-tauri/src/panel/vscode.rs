@@ -56,14 +56,15 @@ pub fn open(code: &Path, folder: &Path) -> io::Result<()> {
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
+    // Inside the app's job like every program it starts: a crash ends it, a normal exit leaves it open.
     #[cfg(windows)]
-    let mut child = {
+    {
+        use std::os::windows::process::CommandExt;
+
         use windows_sys::Win32::System::Threading::{CREATE_NEW_PROCESS_GROUP, DETACHED_PROCESS};
 
-        // Outside the app's job, so an editor it started survives a crash of the app.
-        crate::job::spawn_outside_job(&mut command, DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP)?
-    };
-    #[cfg(not(windows))]
+        command.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
+    }
     let mut child = command.spawn()?;
     // Reaped on its own thread so the editor never waits on the app, nor lingers as a zombie on Unix.
     std::thread::spawn(move || {
