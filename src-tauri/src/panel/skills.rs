@@ -233,12 +233,7 @@ mod tests {
             skill(
                 &home.join("skills"),
                 name,
-                &format!(
-                    "---
-name: {name}
----
-"
-                ),
+                &format!("---\nname: {name}\n---\n"),
             );
         }
         let config = usage_config(
