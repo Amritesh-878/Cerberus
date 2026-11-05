@@ -28,14 +28,22 @@ struct Armed {
 pub enum Landed {
     /// In the target's inbox, and the tab showed it.
     Seen,
-    /// In the target's inbox, but not shown yet; typing it in too could send it twice.
+    /// Maybe in the target's inbox, not shown yet; typing it in too could send it twice.
     Unseen,
     /// Typed into the target's input box, waiting for Enter.
     Typed,
     Failed(String),
 }
 
-/// The inbox first; typed in only when nothing reached the inbox.
+/// What the target's helper did with an order.
+enum Reached {
+    Seen,
+    /// Written, or unanswered and so perhaps written.
+    Unseen,
+    NotWritten(String),
+}
+
+/// The inbox first; typed in only when the inbox surely didn't take it.
 pub fn land(
     core: &Core,
     route: (TabId, TabId),
@@ -45,9 +53,9 @@ pub fn land(
 ) -> Landed {
     let (from, to) = route;
     match deliver(core, from, to, from_name, body) {
-        Ok(true) => Landed::Seen,
-        Ok(false) => Landed::Unseen,
-        Err(why) => {
+        Reached::Seen => Landed::Seen,
+        Reached::Unseen => Landed::Unseen,
+        Reached::NotWritten(why) => {
             eprintln!("bridge: typing into tab {to} instead: {why}");
             match prefill_into(core, to, body, type_into) {
                 Ok(()) => Landed::Typed,
@@ -57,19 +65,23 @@ pub fn land(
     }
 }
 
-/// Asks the target's helper to write into its own inbox; `Ok` says whether the tab then showed it.
-fn deliver(
-    core: &Core,
-    from: TabId,
-    to: TabId,
-    from_name: &str,
-    body: &str,
-) -> Result<bool, String> {
-    let armed = arm(core, from, to, from_name, body)?;
-    let result = send_order(&armed.listen, &armed.order)
-        .map_err(|e| format!("could not reach the target's helper: {e}"))
-        .and_then(|()| wait_written(&armed.written))
-        .map(|()| armed.seen.recv_timeout(DELIVERY_WAIT).is_ok());
+/// Asks the target's helper to write into its own inbox, then watches the tab for it.
+fn deliver(core: &Core, from: TabId, to: TabId, from_name: &str, body: &str) -> Reached {
+    let armed = match arm(core, from, to, from_name, body) {
+        Ok(armed) => armed,
+        Err(why) => return Reached::NotWritten(why),
+    };
+    let result = match send_order(&armed.listen, &armed.order) {
+        Err(e) => Reached::NotWritten(format!("could not reach the target's helper: {e}")),
+        Ok(()) => match armed.written.recv_timeout(DELIVERY_WAIT) {
+            Ok(Written::Yes) => seen_within(&armed.seen, DELIVERY_WAIT),
+            Ok(Written::No { reason }) => Reached::NotWritten(reason),
+            // The helper writes before it answers, so silence may still mean the message landed.
+            Err(RecvTimeoutError::Timeout | RecvTimeoutError::Disconnected) => {
+                seen_within(&armed.seen, Duration::ZERO)
+            }
+        },
+    };
     let mut state = core.state();
     state.deliveries.remove(&armed.id);
     if let Some(target) = state.by_tab_mut(to) {
@@ -129,12 +141,11 @@ fn send_order(listen: &Mutex<link::Stream>, order: &Order) -> io::Result<()> {
     out.flush()
 }
 
-fn wait_written(written: &Receiver<Written>) -> Result<(), String> {
-    match written.recv_timeout(DELIVERY_WAIT) {
-        Ok(Written::Yes) => Ok(()),
-        Ok(Written::No { reason }) => Err(reason),
-        Err(RecvTimeoutError::Timeout) => Err("the target's helper did not answer".to_owned()),
-        Err(RecvTimeoutError::Disconnected) => Err("the target's helper went away".to_owned()),
+fn seen_within(seen: &Receiver<()>, wait: Duration) -> Reached {
+    if seen.recv_timeout(wait).is_ok() {
+        Reached::Seen
+    } else {
+        Reached::Unseen
     }
 }
 

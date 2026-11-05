@@ -367,14 +367,10 @@ impl Bridge {
         }
     }
 
-    /// The tab started or finished a turn; a turn that starts during a delivery shows it landed.
+    /// The tab started or finished a turn; not proof a delivery landed, since the user may have started it.
     pub fn working(&self, token: &str, busy: bool) {
         let Some(core) = &self.0 else { return };
-        let mut state = core.state();
-        if let Some(link) = state.links.get_mut(token) {
-            if busy && let Some((_, seen)) = &link.sighting {
-                let _ = seen.try_send(());
-            }
+        if let Some(link) = core.state().links.get_mut(token) {
             link.busy = busy;
         }
     }
@@ -388,6 +384,13 @@ impl Bridge {
         let core = self.0.as_ref().ok_or(BridgeError::Gone)?;
         let (to, body) = core.state().unseen.remove(&id).ok_or(BridgeError::Gone)?;
         prefill_into(core, to, &body, type_into).map_err(BridgeError::NotTyped)
+    }
+
+    /// The user closed the notice, so the text kept for typing it in goes.
+    pub fn discard(&self, id: u64) {
+        if let Some(core) = &self.0 {
+            core.state().unseen.remove(&id);
+        }
     }
 
     pub fn snapshot(&self) -> Snapshot {

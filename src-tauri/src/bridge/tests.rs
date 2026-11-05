@@ -15,7 +15,9 @@ use crate::bridge::check::prefill;
 #[cfg(windows)]
 use crate::bridge::inbox::{self, Letter};
 use crate::bridge::mcp::{self, Env};
-use crate::bridge::wire::{Ask, AskKind, Outcome, Reply, Written};
+use crate::bridge::wire::{Ask, AskKind, Outcome, Reply};
+#[cfg(windows)]
+use crate::bridge::wire::{Order, Written};
 use crate::bridge::{
     Bridge, Decided, Decision, Hooks, Label, Note, Snapshot, TabNote, Ticket, link, lock,
 };
@@ -684,41 +686,156 @@ fn a_cancel_that_beats_its_send_still_stops_it() {
     assert!(world.bridge.snapshot().pending.is_empty());
 }
 
+/// Takes over a tab's order line from its helper, so the test answers its orders by hand.
+#[cfg(windows)]
+fn hold_orders(world: &World, tab: TabId) -> link::Stream {
+    let core = world.bridge.0.as_ref().unwrap();
+    let listen_of = |state: &super::State| {
+        state
+            .by_tab(tab)
+            .and_then(|l| l.hello.as_ref())
+            .map(|h| Arc::as_ptr(&h.listen))
+    };
+    let before = listen_of(&core.state());
+    let target = &world.tabs[&tab];
+    let stream = link::connect(&core.name).unwrap().unwrap();
+    let ask = Ask {
+        token: target.ticket.token.clone(),
+        kind: AskKind::Listen {
+            messaging: true,
+            pipe: Some(target.socket.clone()),
+        },
+    };
+    writeln!(&stream, "{}", serde_json::to_string(&ask).unwrap()).unwrap();
+    assert_eq!(read_order(&stream), Order::Ready);
+    world.until(|state| listen_of(state) != before);
+    stream
+}
+
+/// One order line, read a byte at a time so nothing after it is taken.
+#[cfg(windows)]
+fn read_order(stream: &link::Stream) -> Order {
+    let mut line = Vec::new();
+    let mut byte = [0u8];
+    while byte[0] != b'\n' {
+        (&*stream).read_exact(&mut byte).unwrap();
+        line.push(byte[0]);
+    }
+    serde_json::from_slice(&line).unwrap()
+}
+
+/// Starts an approval of the one waiting message on its own thread, since it blocks until delivery ends.
+#[cfg(windows)]
+fn approve_later(
+    world: &World,
+    text: &str,
+    type_into: impl Fn(u32, &[u8]) -> io::Result<()> + Send + 'static,
+) -> thread::JoinHandle<Result<Decided, super::BridgeError>> {
+    let id = world.waiting();
+    let bridge = world.bridge.clone();
+    let text = text.to_owned();
+    thread::spawn(move || bridge.decide(id, Decision::Approve { text }, type_into))
+}
+
+// macOS always types messages in, so inbox delivery is Windows only.
+#[cfg(windows)]
 #[test]
 fn only_the_target_tab_can_answer_a_delivery() {
-    let world = World::new("2.1.317");
-    let (tx, rx) = mpsc::sync_channel(1);
-    world
-        .bridge
-        .0
-        .as_ref()
-        .unwrap()
-        .state()
-        .deliveries
-        .insert(9, (2, tx));
-    let no = || Written::No {
-        reason: "forged".to_owned(),
+    let mut world = World::new("2.1.317");
+    let orders = hold_orders(&world, 2);
+    world.helper(1).send_to_tab("2", "hello");
+    let deciding = approve_later(&world, "hello", no_typing);
+    let Order::Deliver { id, .. } = read_order(&orders) else {
+        panic!("no delivery order");
     };
 
+    let forged = Written::No {
+        reason: "forged".to_owned(),
+    };
     ask(
         &world.bridge,
         &world.tabs[&3].ticket.token,
         AskKind::Delivered {
-            id: 9,
-            written: no(),
+            id,
+            written: forged,
         },
     );
-    assert!(rx.try_recv().is_err(), "another tab's answer was taken");
     ask(
         &world.bridge,
         &world.tabs[&2].ticket.token,
         AskKind::Delivered {
-            id: 9,
+            id,
             written: Written::Yes,
         },
     );
+    world.bridge.output(&world.tabs[&2].ticket.token, ARRIVAL);
 
-    assert_eq!(rx.try_recv().unwrap(), Written::Yes);
+    let decided = deciding.join().expect("the forged answer was taken");
+    assert_eq!(decided.unwrap(), Decided::Delivered { from: 1, to: 2 });
+}
+
+// macOS always types messages in, so inbox delivery is Windows only.
+#[cfg(windows)]
+#[test]
+fn a_helper_that_never_answers_gets_no_second_copy() {
+    let mut world = World::new("2.1.317");
+    let orders = hold_orders(&world, 2);
+    world.helper(1).send_to_tab("2", "slow");
+    let deciding = approve_later(&world, "slow", no_typing);
+
+    assert!(matches!(read_order(&orders), Order::Deliver { .. }));
+
+    let decided = deciding.join().expect("typed in a second copy");
+    assert!(matches!(decided.unwrap(), Decided::Unconfirmed { .. }));
+    assert!(world.helper(1).result().0.contains("may still arrive"));
+}
+
+// macOS always types messages in, so inbox delivery is Windows only.
+#[cfg(windows)]
+#[test]
+fn a_new_turn_is_not_proof_a_message_landed_and_a_dismissed_one_is_forgotten() {
+    let mut world = World::new("2.1.317");
+    world.helper(1).send_to_tab("2", "busy?");
+    let id = world.waiting();
+    let deciding = approve_later(&world, "busy?", no_typing);
+    world.tabs[&2]
+        .inbox
+        .recv_timeout(WAIT)
+        .expect("nothing reached the inbox");
+
+    world.bridge.working(&world.tabs[&2].ticket.token, true);
+
+    assert_eq!(
+        deciding.join().unwrap().unwrap(),
+        Decided::Unconfirmed { id, from: 1, to: 2 }
+    );
+    world.bridge.discard(id);
+    assert!(matches!(
+        world.bridge.type_in(id, no_typing),
+        Err(super::BridgeError::Gone)
+    ));
+}
+
+#[test]
+fn a_restarted_helper_forgets_the_old_helpers_cancels() {
+    let world = World::new("2.1.317");
+    let tab = &world.tabs[&1];
+    ask(
+        &world.bridge,
+        &tab.ticket.token,
+        AskKind::Cancel {
+            call: "1".to_owned(),
+        },
+    );
+    world.until(|state| !state.early_cancels.is_empty());
+
+    let mut again = Helper::start(&tab.ticket, Some(&tab.socket), Some(&tab.dir));
+    world.until(|state| state.early_cancels.is_empty());
+    // A new MCP session numbers its calls from 1 again.
+    assert_eq!(again.send_to_tab("2", "after the restart"), 1);
+
+    world.waiting();
+    assert_eq!(world.bridge.snapshot().pending[0].text, "after the restart");
 }
 
 #[test]

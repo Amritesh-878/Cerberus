@@ -12,7 +12,7 @@ pub use unix::{Listener, Stream, connect, finish, name_for};
 #[cfg(windows)]
 pub use windows::{Listener, Stream, connect, finish, name_for};
 
-/// Random hex from the system's generator.
+/// From the OS generator, since tab tokens and pipe names must not be guessable.
 pub fn random_hex(bytes: usize) -> io::Result<String> {
     let mut buf = vec![0u8; bytes];
     getrandom::fill(&mut buf).map_err(io::Error::other)?;

@@ -64,6 +64,12 @@ pub fn bridge_type_in(
     })
 }
 
+/// The user closed an unconfirmed message's notice, so its kept text is dropped.
+#[tauri::command(async)]
+pub fn bridge_discard(bridge: State<'_, Bridge>, id: u64) {
+    bridge.discard(id);
+}
+
 #[tauri::command(async)]
 pub fn set_messages(accounts: State<'_, Accounts>, on: bool) -> Result<Profiles, AccountsError> {
     accounts.set_messages(on)

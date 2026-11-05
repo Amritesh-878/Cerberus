@@ -129,6 +129,8 @@ fn listening(
         });
         // A second hello is a restarted helper, whose earlier calls ended with it.
         if again {
+            // The new helper's call ids start over, so an old cancel could stop a new send.
+            state.early_cancels.retain(|(t, _)| *t != tab);
             state.queue.drop_from(tab)
         } else {
             Vec::new()
