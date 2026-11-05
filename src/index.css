@@ -1920,10 +1920,10 @@ button.card-row:hover {
   background: none;
   border: 0;
   border-radius: 6px;
-  opacity: 0;
+  opacity: 0.4;
 }
 
-/* Unstarred stars show on hover, so the list stays quiet. */
+/* Faint until the row is pointed at, so the list stays quiet but the star is still found. */
 .skill-row:hover .star,
 .star:focus-visible,
 .star[aria-pressed="true"] {
