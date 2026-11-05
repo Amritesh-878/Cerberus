@@ -16,19 +16,23 @@ function TabLine(props: { label: string; name: TabName }) {
   return (
     <div class="approval-tab">
       <span class="approval-role">{props.label}</span>
-      <Show
-        when={
-          // Wrapped, since account 0 is falsy and would hide its dot.
-          props.name.accountId === undefined
-            ? undefined
-            : { id: props.name.accountId }
-        }
-        fallback={<span class="dot" />}
-      >
-        {(account) => <AccountDot id={account().id} color={props.name.color} />}
-      </Show>
-      <span class="approval-account">{props.name.account}</span>
-      <span class="approval-place">{props.name.place}</span>
+      <span class="approval-name">
+        <Show
+          when={
+            // Wrapped, since account 0 is falsy and would hide its dot.
+            props.name.accountId === undefined
+              ? undefined
+              : { id: props.name.accountId }
+          }
+          fallback={<span class="dot" />}
+        >
+          {(account) => (
+            <AccountDot id={account().id} color={props.name.color} />
+          )}
+        </Show>
+        <span class="approval-account">{props.name.account}</span>{" "}
+        <span class="approval-place">{props.name.place}</span>
+      </span>
     </div>
   );
 }

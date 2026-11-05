@@ -87,7 +87,10 @@ test("the popup shows both tabs and the whole message", () => {
   const lines = [...root.querySelectorAll(".approval-tab")].map(
     (l) => l.textContent,
   );
-  expect(lines).toEqual(["Frompersonalalpha / planner", "Toworkbeta / coder"]);
+  expect(lines).toEqual([
+    "Frompersonal alpha / planner",
+    "Towork beta / coder",
+  ]);
   expect(textBox(root).value).toBe("what is 2+2?\nshow your work");
   expect(root.querySelector(".approval-count")).toBeNull();
   // Account 0 keeps its colour dot too.

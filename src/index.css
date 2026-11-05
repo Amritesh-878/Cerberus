@@ -1945,6 +1945,7 @@ button.card-row:focus-visible,
   max-height: calc(100vh - 68px);
   padding: 14px 16px 16px;
   overflow-y: auto;
+  scrollbar-width: none;
   background: #202020;
   border: 1px solid #3a3a3a;
   border-radius: 12px;
@@ -1975,27 +1976,35 @@ button.card-row:focus-visible,
 
 /* Names wrap rather than cut off, since telling two tabs apart is what the user approves. */
 .approval-tab {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px 8px;
-  align-items: center;
-  min-width: 0;
+  display: grid;
+  grid-template-columns: 36px 1fr;
+  gap: 8px;
+  align-items: baseline;
 }
 
 .approval-role {
-  width: 36px;
   color: var(--dim);
+}
+
+/* One run of text with a hanging indent the dot's width, so a wrapped name lines up under the account. */
+.approval-name {
+  min-width: 0;
+  padding-left: 15px;
+  text-indent: -15px;
+  overflow-wrap: anywhere;
+}
+
+.approval-name .dot {
+  margin-right: 8px;
+  vertical-align: 1px;
 }
 
 .approval-account {
   font-weight: 600;
-  overflow-wrap: anywhere;
 }
 
 .approval-place {
-  min-width: 0;
   color: var(--dim);
-  overflow-wrap: anywhere;
 }
 
 .approval-text {
@@ -2011,6 +2020,7 @@ button.card-row:focus-visible,
     monospace;
   color: var(--text);
   resize: vertical;
+  scrollbar-width: none;
   background: var(--bg);
   border: 1px solid var(--line);
   border-radius: 8px;
