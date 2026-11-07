@@ -12,7 +12,7 @@ const TIMEOUT: Duration = Duration::from_secs(15);
 const READY_TIMEOUT: Duration = Duration::from_secs(30);
 /// GitHub is asked about a repo at most this often, however many tabs or refreshes want it.
 pub const EVERY: Duration = Duration::from_secs(60);
-// Merged and closed history is capped; open PRs and drafts are asked for on their own, so none is ever cut off.
+// Each list is capped at 100, and open PRs and drafts are asked for on their own so old merged ones never push them out.
 const MOST_PRS: usize = 100;
 
 /// One PR as `gh pr list --json` gives it; other fields are ignored.
@@ -192,7 +192,7 @@ fn list_state(gh: &Path, folder: &Path, state: &str) -> Option<Vec<Pr>> {
     parse(&ran.stdout)
 }
 
-/// Every open PR and draft, and the newest merged and closed ones; `None` when `gh` is missing, signed out or offline.
+/// Up to 100 open PRs and drafts plus the newest 100 of any state, or `None` when `gh` is missing, signed out or offline.
 pub fn list(gh: &Path, folder: &Path) -> Option<Vec<Pr>> {
     let recent = list_state(gh, folder, "all")?;
     let open = list_state(gh, folder, "open")?;

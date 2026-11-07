@@ -104,7 +104,7 @@ folded cards, starred skills and dismissed PRs are kept in `profiles.json`.
   Enter. The code button beside it opens the folder in VS Code, whose Source Control view shows
   the diff; it shows only when VS Code's `code` command is on `PATH` (on macOS the app in
   Applications also counts). With the [GitHub CLI](https://cli.github.com) signed in, each repo's
-  PRs follow its row, newest first: every draft and open PR, and the newest 100 merged or closed,
+  PRs follow its row, newest first: up to 100 drafts and open PRs, however old, and the newest 100 of any state,
   five at a time with **Show more**. A PR's **⋯** menu has **Open on GitHub**, **Copy link**, **Dismiss** (hidden until the PR
   changes on GitHub) and, on a draft, **Ready for review**, which asks first and then runs
   `gh pr ready <number>`.
