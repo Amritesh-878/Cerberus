@@ -13,7 +13,7 @@ import {
   type Connectors,
   panelChanges,
   panelConnectors,
-  panelPr,
+  panelPrs,
   panelSkills,
   type PrRow,
   type Skill,
@@ -25,6 +25,23 @@ export interface Target {
   tab: number;
   folder: string | null;
   account: AccountId | null;
+  /** Extra folders, each read like the main one. */
+  dirs: readonly string[];
+}
+
+/** One folder's changes, or why they could not be read. */
+export interface FolderChanges {
+  folder: string;
+  changes: Changes | undefined;
+  error: string | undefined;
+}
+
+/** A repo's PRs, read through the first of its folders. */
+export interface RepoPrs {
+  root: string;
+  folder: string;
+  name: string;
+  prs: PrRow[];
 }
 
 /** `undefined` while loading. */
@@ -72,8 +89,11 @@ function slot<T>(current: () => string | undefined): Slot<T> {
 }
 
 export interface PanelFeed {
-  changes: () => Loaded<Changes>;
-  pr: () => Loaded<PrRow | null>;
+  /** The main folder first, then each extra folder. */
+  folders: () => Loaded<FolderChanges[]>;
+  prs: () => Loaded<RepoPrs[]>;
+  /** Reads the PR lists again, as after Ready for review; the core still asks GitHub once a minute. */
+  rereadPrs: () => void;
   connectors: () => Loaded<Connectors>;
   skills: () => Loaded<Skill[]>;
 }
@@ -85,28 +105,67 @@ export function createPanelFeed(
   /** Changes whenever a chat links to the bridge or leaves it, which is when Cerberus's own server comes or goes. */
   links: () => unknown = () => undefined,
 ): PanelFeed {
-  const keyOf = (t: Target) => JSON.stringify([t.tab, t.folder, t.account]);
+  const keyOf = (t: Target) =>
+    JSON.stringify([t.tab, t.folder, t.account, t.dirs]);
   // A memo, so a rename or any other change to the tab object reads nothing again.
   const current = createMemo(() => {
     const t = target();
     return t === undefined ? undefined : keyOf(t);
   });
-  const changes = slot<Changes>(current);
-  const pr = slot<PrRow | null>(current);
+  const folders = slot<FolderChanges[]>(current);
+  const prs = slot<RepoPrs[]>(current);
   const connectors = slot<Connectors>(current);
   const skills = slot<Skill[]>(current);
 
   // `live` turns false once the tab changes or the panel closes, so a late reply starts no more reads.
-  const readRepo = (key: string, folder: string, live: () => boolean) => {
-    void changes
-      .load(key, () => panelChanges(folder))
+  const readPrs = (key: string, found: readonly FolderChanges[]) => {
+    const repos = new Map<string, { folder: string; name: string }>();
+    for (const f of found) {
+      if (
+        f.changes?.kind === "repo" &&
+        f.changes.gh &&
+        !repos.has(f.changes.root)
+      ) {
+        repos.set(f.changes.root, { folder: f.folder, name: f.changes.name });
+      }
+    }
+    void prs.load(key, () =>
+      Promise.all(
+        [...repos].map(([root, repo]) =>
+          panelPrs(repo.folder).then(
+            (list): RepoPrs => ({ root, ...repo, prs: list }),
+            (): RepoPrs => ({ root, ...repo, prs: [] }),
+          ),
+        ),
+      ),
+    );
+  };
+  const readRepos = (
+    key: string,
+    paths: readonly string[],
+    live: () => boolean,
+  ) => {
+    void folders
+      .load(key, () =>
+        Promise.all(
+          paths.map((folder) =>
+            panelChanges(folder).then(
+              (changes): FolderChanges => ({
+                folder,
+                changes,
+                error: undefined,
+              }),
+              (error: unknown): FolderChanges => ({
+                folder,
+                changes: undefined,
+                error: String(error),
+              }),
+            ),
+          ),
+        ),
+      )
       .then((found) => {
-        if (!live()) return;
-        if (found?.kind === "repo" && found.branch !== null) {
-          void pr.load(key, () => panelPr(folder));
-        } else if (found !== undefined) {
-          void pr.load(key, () => Promise.resolve(null));
-        }
+        if (live() && found !== undefined) readPrs(key, found);
       });
   };
 
@@ -115,15 +174,16 @@ export function createPanelFeed(
       const t = untrack(target);
       if (key === undefined || t === undefined) return;
       const folder = t.folder;
+      const paths = folder === null ? [] : [folder, ...t.dirs];
       let live = true;
       onCleanup(() => {
         live = false;
       });
       if (folder === null) {
-        changes.clear();
-        pr.clear();
+        folders.clear();
+        prs.clear();
       } else {
-        readRepo(key, folder, () => live);
+        readRepos(key, paths, () => live);
       }
       void connectors.load(key, () =>
         panelConnectors(t.account, folder, t.tab),
@@ -132,7 +192,7 @@ export function createPanelFeed(
       if (folder === null) return;
       // Only git can change under a running chat often enough to poll; config and skills reload on a tab change.
       const timer = setInterval(() => {
-        if (!document.hidden) readRepo(key, folder, () => live);
+        if (!document.hidden) readRepos(key, paths, () => live);
       }, every);
       onCleanup(() => {
         clearInterval(timer);
@@ -157,8 +217,15 @@ export function createPanelFeed(
   );
 
   return {
-    changes: changes.get,
-    pr: pr.get,
+    folders: folders.get,
+    prs: prs.get,
+    rereadPrs: () => {
+      const key = untrack(current);
+      const found = untrack(folders.get);
+      if (key !== undefined && found !== undefined && "value" in found) {
+        readPrs(key, found.value);
+      }
+    },
     connectors: connectors.get,
     skills: skills.get,
   };

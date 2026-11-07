@@ -14,6 +14,8 @@ export interface SavedTab {
   program: string;
   cwd: string | null;
   account: AccountId | null;
+  /** Folders beside `cwd`, passed to Claude Code as `--add-dir` on each start; the core always sends it. */
+  dirs?: string[];
 }
 
 export interface SavedTree {
@@ -66,6 +68,7 @@ export function toSaved(tree: Tree): SavedTree {
             program: tab.launch.program,
             cwd: tab.launch.spec.cwd,
             account: tab.launch.account?.id ?? null,
+            dirs: tab.launch.spec.dirs ?? [],
           },
         ],
   );
@@ -97,6 +100,7 @@ function launchOf(
       args: choice?.args ?? [],
       cwd: saved.cwd,
       account: saved.account,
+      dirs: saved.dirs ?? [],
     },
     imagePasteKey: choice?.imagePasteKey ?? null,
     account,

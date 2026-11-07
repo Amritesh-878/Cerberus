@@ -18,8 +18,8 @@ afterEach(() => {
   clearMocks();
 });
 
-const A: Target = { tab: 1, folder: String.raw`C:\a`, account: 1 };
-const B: Target = { tab: 2, folder: String.raw`C:\b`, account: 2 };
+const A: Target = { tab: 1, folder: String.raw`C:\a`, account: 1, dirs: [] };
+const B: Target = { tab: 2, folder: String.raw`C:\b`, account: 2, dirs: [] };
 
 /** A core that records each read and can hold `panel_changes` replies to release them in any order. */
 function core(options: { hold?: boolean } = {}) {
@@ -33,6 +33,8 @@ function core(options: { hold?: boolean } = {}) {
         const reply = {
           kind: "repo",
           name: folder,
+          // Folders under C:\a share its repo, as a subfolder would.
+          root: folder.startsWith(String.raw`C:\a`) ? String.raw`C:\a` : folder,
           branch: "main",
           commit: null,
           base: null,
@@ -47,8 +49,8 @@ function core(options: { hold?: boolean } = {}) {
           }),
         );
       }
-      case "panel_pr":
-        return null;
+      case "panel_prs":
+        return [];
       case "panel_connectors":
         return { servers: [], unreadable: [] };
       case "panel_skills":
@@ -87,7 +89,7 @@ test("a feed reads every card once on start, then only git on each poll", async 
   expect(calls.sort()).toEqual([
     String.raw`panel_changes C:\a`,
     String.raw`panel_connectors C:\a`,
-    String.raw`panel_pr C:\a`,
+    String.raw`panel_prs C:\a`,
     String.raw`panel_skills C:\a`,
   ]);
 
@@ -96,7 +98,31 @@ test("a feed reads every card once on start, then only git on each poll", async 
 
   expect(calls.sort()).toEqual([
     String.raw`panel_changes C:\a`,
-    String.raw`panel_pr C:\a`,
+    String.raw`panel_prs C:\a`,
+  ]);
+});
+
+test("each extra folder is read, and a repo's PRs once however many of its folders", async () => {
+  const { calls } = core();
+  const { feed } = feedFor({
+    ...A,
+    dirs: [String.raw`C:\a\docs`, String.raw`C:\plans`],
+  });
+  await flush();
+
+  expect(calls.filter((c) => c.startsWith("panel_changes "))).toEqual([
+    String.raw`panel_changes C:\a`,
+    String.raw`panel_changes C:\a\docs`,
+    String.raw`panel_changes C:\plans`,
+  ]);
+  expect(calls.filter((c) => c.startsWith("panel_prs ")).sort()).toEqual([
+    String.raw`panel_prs C:\a`,
+    String.raw`panel_prs C:\plans`,
+  ]);
+  const prs = feed.prs();
+  expect(prs && "value" in prs ? prs.value.map((r) => r.root) : []).toEqual([
+    String.raw`C:\a`,
+    String.raw`C:\plans`,
   ]);
 });
 
@@ -134,7 +160,7 @@ test("no tab on screen reads nothing", async () => {
   await vi.advanceTimersByTimeAsync(POLL_MS);
 
   expect(calls).toEqual([]);
-  expect(feed.changes()).toBeUndefined();
+  expect(feed.folders()).toBeUndefined();
 });
 
 test("a hidden window skips the poll", async () => {
@@ -169,8 +195,10 @@ test("a late reply for the tab left behind never shows on the new one", async ()
   held[0]?.();
   await flush();
 
-  const shown = feed.changes();
-  expect(shown && "value" in shown ? shown.value : undefined).toMatchObject({
+  const shown = feed.folders();
+  expect(
+    shown && "value" in shown ? shown.value[0]?.changes : undefined,
+  ).toMatchObject({
     name: String.raw`C:\b`,
   });
 });

@@ -42,6 +42,8 @@ import {
   reported,
   startedTabs,
 } from "./board";
+import { applyEnvironment } from "./environment";
+import { EnvironmentDialog } from "./EnvironmentDialog";
 import { Home } from "./Home";
 import { AccountDot, MenuIcon, PanelIcon } from "./icons";
 import { shortcutFor } from "./keys";
@@ -617,6 +619,21 @@ export function App() {
     if (id !== undefined) typers.get(id)?.(text);
   };
 
+  // The tab whose Edit environment dialog is open.
+  const [editing, setEditing] = createSignal<TabId>();
+  const environment = {
+    tree,
+    setTree,
+    runOf,
+    setRun,
+    typeInto: (id: TabId, text: string) => {
+      if (tabById(id)?.launch.program === "claude" && isRunning(id)) {
+        typers.get(id)?.(text);
+      }
+    },
+    setAlert,
+  };
+
   const startFresh = () => {
     resetProfiles().then(loaded, fail);
   };
@@ -1052,7 +1069,30 @@ export function App() {
                 onCreatePr={createPr}
                 onType={typeIntoChat}
                 links={messaging.snapshot()}
+                onEditEnvironment={() => setEditing(shown())}
               />
+            </Show>
+            <Show
+              when={(() => {
+                const id = editing();
+                return id === undefined ? undefined : tabById(id);
+              })()}
+            >
+              {(tab) => (
+                <EnvironmentDialog
+                  tab={tab()}
+                  chatRunning={
+                    tab().launch.program === "claude" && isRunning(tab().id)
+                  }
+                  busy={markOf(board(), tab().id)?.kind === "working"}
+                  onSave={(change) =>
+                    applyEnvironment(environment, tab().id, change)
+                  }
+                  onClose={() => {
+                    setEditing(undefined);
+                  }}
+                />
+              )}
             </Show>
             <Show when={sheet()}>
               <ShortcutsSheet onClose={() => setSheet(false)} />

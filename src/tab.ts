@@ -40,6 +40,7 @@ export function tabFor(
       args: choice.args,
       cwd: options.cwd,
       account: account?.id ?? null,
+      dirs: [],
     },
     imagePasteKey: choice.imagePasteKey,
     account: account && { id: account.id, name: account.name },
