@@ -9,6 +9,7 @@ import { terminalFont } from "./font";
 import {
   PLATFORM,
   pasteInput,
+  type TabKind,
   type TerminalAction,
   terminalAction,
   terminalHandlesKey,
@@ -85,6 +86,7 @@ function copySelection(term: Terminal): void {
 export function TerminalView(props: {
   tab: number;
   spec: SpawnSpec;
+  kind: TabKind;
   imagePasteKey: string | null;
   input: string | null;
   active: boolean;
@@ -118,9 +120,11 @@ export function TerminalView(props: {
     term.open(element);
     const renderer = createRenderer(term);
     fit.fit();
+    // Read once and turned to a shell when the chat ends, so Shift+Enter is Enter again.
+    let kind = props.kind;
     term.attachCustomKeyEventHandler((event) => {
       const action =
-        event.type === "keydown" ? terminalAction(event) : undefined;
+        event.type === "keydown" ? terminalAction(event, kind) : undefined;
       if (!action) return terminalHandlesKey(event);
       event.preventDefault();
       run(term, action);
@@ -158,6 +162,7 @@ export function TerminalView(props: {
           exit: (code, ended) => {
             if (disposed) return;
             if (ended) {
+              kind = "shell";
               term.write(ENDED_LINE);
               props.onEnded();
               session = start(null);
@@ -182,6 +187,7 @@ export function TerminalView(props: {
       void current.resume.then((resume) => {
         if (disposed || resume === "new") return;
         if (resume === "ended") {
+          kind = "shell";
           imagePasteKey = null;
           props.onEnded();
           showNotice(ENDED, MISSING_NOTICE_MS);

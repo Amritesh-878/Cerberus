@@ -143,11 +143,20 @@ const MAC_TERMINAL_KEYS: readonly (readonly [
   ["Cmd+A", { kind: "selectAll" }, "Select all"],
 ];
 
-/** Only macOS remaps keys; Windows keys reach xterm unchanged. */
+/** What runs in a pane: Claude Code, or a shell, which a chat that ends becomes. */
+export type TabKind = "claude" | "shell";
+
+const NEWLINE_KEY = "Shift+Enter";
+// The CSI u form Ghostty and iTerm2 send: Claude Code reads it as a newline, where xterm's Enter would send.
+const CLAUDE_NEWLINE: TerminalAction = { kind: "send", bytes: "\x1b[13;2u" };
+
+/** Shift+Enter makes a newline in Claude Code; otherwise only macOS remaps keys. */
 export function terminalAction(
   chord: KeyChord,
+  kind: TabKind,
   platform: Platform = PLATFORM,
 ): TerminalAction | undefined {
+  if (kind === "claude" && matches(chord, NEWLINE_KEY)) return CLAUDE_NEWLINE;
   if (platform !== "mac") return undefined;
   return MAC_TERMINAL_KEYS.find(([keys]) => matches(chord, keys))?.[1];
 }
@@ -216,10 +225,14 @@ export function shortcutSheet(
       { does: "Rename the focused tab or project", keys: [RENAME_KEY] },
     ],
   };
-  if (platform !== "mac") return [app];
+  const claude: SheetSection = {
+    title: "Claude Code",
+    rows: [{ does: "New line in a message", keys: [NEWLINE_KEY] }],
+  };
+  if (platform !== "mac") return [app, claude];
   const terminal: SheetSection = {
     title: "Terminal",
     rows: MAC_TERMINAL_KEYS.map(([keys, , does]) => ({ does, keys: [keys] })),
   };
-  return [app, terminal];
+  return [app, claude, terminal];
 }

@@ -64,9 +64,10 @@ More detail on each, and how it works: [`docs/guide.md`](docs/guide.md).
 | Next chat waiting on you | Ctrl+Shift+A | Cmd+Shift+A |
 | Right panel | Ctrl+Shift+B | Cmd+Shift+B |
 | Rename | F2 | F2 |
+| New line in a Claude Code message | Shift+Enter | Shift+Enter |
 
 They leave Claude Code's own keys alone (Ctrl+T, Ctrl+B, Ctrl+C, Ctrl+V, Alt+V, Shift+Tab). Paste an image
-into Claude Code with Alt+V on Windows, or Cmd+V on macOS.
+into Claude Code with Alt+V on Windows, or Cmd+V on macOS. In a shell tab, Shift+Enter is Enter.
 
 In a terminal on macOS, the editing keys of Terminal.app:
 

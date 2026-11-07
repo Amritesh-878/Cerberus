@@ -237,14 +237,21 @@ describe("terminalAction on macOS", () => {
       "\x1b\x7f",
     ],
   ])("%s sends its bytes", (_name, key, bytes) => {
-    expect(terminalAction(key, "mac")).toEqual({ kind: "send", bytes });
+    expect(terminalAction(key, "shell", "mac")).toEqual({
+      kind: "send",
+      bytes,
+    });
   });
 
   test("Cmd+K clears the screen and scrollback, Cmd+A selects all", () => {
-    expect(terminalAction(chord("k", { metaKey: true }), "mac")).toEqual({
+    expect(
+      terminalAction(chord("k", { metaKey: true }), "shell", "mac"),
+    ).toEqual({
       kind: "clear",
     });
-    expect(terminalAction(chord("a", { metaKey: true }), "mac")).toEqual({
+    expect(
+      terminalAction(chord("a", { metaKey: true }), "shell", "mac"),
+    ).toEqual({
       kind: "selectAll",
     });
   });
@@ -276,7 +283,7 @@ describe("terminalAction on macOS", () => {
     ["Cmd+Shift+Left", chord("ArrowLeft", { metaKey: true, shiftKey: true })],
     ["Cmd+Option+Left", chord("ArrowLeft", { metaKey: true, altKey: true })],
   ])("leaves %s as it was", (_name, key) => {
-    expect(terminalAction(key, "mac")).toBeUndefined();
+    expect(terminalAction(key, "shell", "mac")).toBeUndefined();
   });
 
   test("Cmd keys the terminal does not remap still never reach xterm", () => {
@@ -299,7 +306,54 @@ test.each([
   ["Ctrl+A", chord("a", { ctrlKey: true })],
   ["Win+Left", chord("ArrowLeft", { metaKey: true })],
 ])("Windows leaves %s to xterm", (_name, key) => {
-  expect(terminalAction(key, "other")).toBeUndefined();
+  expect(terminalAction(key, "shell", "other")).toBeUndefined();
+});
+
+describe("Shift+Enter", () => {
+  const shiftEnter = chord("Enter", { shiftKey: true });
+  const newline = { kind: "send", bytes: "\x1b[13;2u" };
+
+  test.each<Platform>(["other", "mac"])(
+    "on %s makes a newline in a Claude Code tab",
+    (platform) => {
+      expect(terminalAction(shiftEnter, "claude", platform)).toEqual(newline);
+    },
+  );
+
+  test.each<Platform>(["other", "mac"])(
+    "on %s stays Enter in a shell",
+    (platform) => {
+      expect(terminalAction(shiftEnter, "shell", platform)).toBeUndefined();
+    },
+  );
+
+  test.each<[string, KeyChord, Platform]>([
+    ["Enter", chord("Enter"), "other"],
+    ["Enter", chord("Enter"), "mac"],
+    ["Alt+Enter", chord("Enter", { altKey: true }), "other"],
+    ["Option+Enter", chord("Enter", { altKey: true }), "mac"],
+    [
+      "Ctrl+Shift+Enter",
+      chord("Enter", { ctrlKey: true, shiftKey: true }),
+      "other",
+    ],
+    [
+      "Cmd+Shift+Enter",
+      chord("Enter", { metaKey: true, shiftKey: true }),
+      "mac",
+    ],
+  ])(
+    "leaves %s on %s to xterm in a Claude Code tab",
+    (_name, key, platform) => {
+      expect(terminalAction(key, "claude", platform)).toBeUndefined();
+    },
+  );
+
+  test("leaves the macOS editing keys working in a Claude Code tab", () => {
+    expect(
+      terminalAction(chord("ArrowLeft", { altKey: true }), "claude", "mac"),
+    ).toEqual({ kind: "send", bytes: "\x1bb" });
+  });
 });
 
 describe("isReloadKey", () => {
@@ -369,20 +423,36 @@ describe("the shortcuts sheet", () => {
           metaKey: mods.includes("Cmd"),
         });
         const known =
-          shortcutFor(pressed, platform) ?? terminalAction(pressed, platform);
+          shortcutFor(pressed, platform) ??
+          terminalAction(pressed, "claude", platform);
         expect(known, keys).toBeDefined();
       }
     },
   );
 
   test("on macOS it also lists the terminal's editing keys, and both alternates for switching tabs", () => {
-    const [tabs, terminal] = shortcutSheet("mac");
+    const [tabs, , terminal] = shortcutSheet("mac");
 
     expect(tabs?.rows.find((r) => r.does === "Next tab")?.keys).toEqual([
       "Cmd+Shift+]",
       "Ctrl+Tab",
     ]);
     expect(terminal?.rows.map((r) => r.does)).toContain("Clear the screen");
-    expect(shortcutSheet("other")).toHaveLength(1);
+    expect(shortcutSheet("other").map((s) => s.title)).toEqual([
+      "Tabs",
+      "Claude Code",
+    ]);
   });
+
+  test.each<Platform>(["other", "mac"])(
+    "on %s it lists Shift+Enter for a newline in Claude Code",
+    (platform) => {
+      const claude = shortcutSheet(platform).find(
+        (s) => s.title === "Claude Code",
+      );
+      expect(claude?.rows).toEqual([
+        { does: "New line in a message", keys: ["Shift+Enter"] },
+      ]);
+    },
+  );
 });

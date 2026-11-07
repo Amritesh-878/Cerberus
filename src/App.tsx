@@ -947,6 +947,11 @@ export function App() {
                             <TerminalView
                               tab={id}
                               spec={tab().launch.spec}
+                              kind={
+                                tab().launch.program === "claude"
+                                  ? "claude"
+                                  : "shell"
+                              }
                               imagePasteKey={tab().launch.imagePasteKey}
                               input={tab().launch.input}
                               active={shown() === id || split.has(id)}
