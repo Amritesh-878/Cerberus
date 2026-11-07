@@ -28,6 +28,8 @@ export function tabDrag() {
       swallowClick = false;
       if (event.button !== 0 || start !== undefined) return;
       start = { pointer: event.pointerId, x: event.clientX, y: event.clientY };
+      // Captured at once, so a quick flick that leaves the row in one frame still drags.
+      event.currentTarget.setPointerCapture(event.pointerId);
     },
     onPointerMove: (event: Press, events: TabDragEvents | undefined) => {
       if (event.pointerId !== start?.pointer) return;
@@ -37,8 +39,6 @@ export function tabDrag() {
           DRAG_START_PX;
         if (!far || !events) return;
         dragging = true;
-        // Captured, so the drag keeps going over the terminal's canvas.
-        event.currentTarget.setPointerCapture(event.pointerId);
       }
       events?.move(event.clientX, event.clientY);
     },
