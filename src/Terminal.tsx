@@ -120,7 +120,7 @@ export function TerminalView(props: {
     term.open(element);
     const renderer = createRenderer(term);
     fit.fit();
-    // Read once and turned to a shell when the chat ends, so Shift+Enter is Enter again.
+    // Turns to "shell" when the chat ends, so Shift+Enter is plain Enter again.
     let kind = props.kind;
     term.attachCustomKeyEventHandler((event) => {
       const action =

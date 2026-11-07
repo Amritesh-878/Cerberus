@@ -143,11 +143,10 @@ const MAC_TERMINAL_KEYS: readonly (readonly [
   ["Cmd+A", { kind: "selectAll" }, "Select all"],
 ];
 
-/** What runs in a pane: Claude Code, or a shell, which a chat that ends becomes. */
 export type TabKind = "claude" | "shell";
 
 const NEWLINE_KEY = "Shift+Enter";
-// The CSI u form Ghostty and iTerm2 send: Claude Code reads it as a newline, where xterm's Enter would send.
+// Claude Code reads this CSI u form as a newline, while xterm's plain Enter would send the message.
 const CLAUDE_NEWLINE: TerminalAction = { kind: "send", bytes: "\x1b[13;2u" };
 
 /** Shift+Enter makes a newline in Claude Code; otherwise only macOS remaps keys. */
