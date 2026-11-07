@@ -45,8 +45,10 @@ SHA-256 so you can check a download.
 - **A shell when a chat ends.** After `/exit` the tab becomes a shell in the same folder.
   **Resume chat** in its menu brings the chat back.
 - **Move a chat to another of your accounts**, from the tab's right-click menu.
-- **A right panel for the tab on screen**: its account, folder and branch, the branch's changes
-  and open PR with **Create PR** and **Open in VS Code**, its skills (most used first, starred ones
+- **A right panel for the tab on screen**: its account, folders and branch, each repo's changes
+  and every PR (open, draft, merged; ready a draft from its menu) with **Create PR** and **Open in
+  VS Code**, an **Edit environment** dialog for the tab's name, extra folders (`--add-dir`), main
+  folder and variables, its skills (most used first, starred ones
   on top, shift-click to type one in; plugin and claude.ai skills included) and the MCP servers
   its `claude` would load, plugin servers included.
 - **Messages between accounts.** A chat can message a chat on another of your accounts. Each
