@@ -1,6 +1,7 @@
 import { createSignal, Show } from "solid-js";
 
 import { type Profiles, setMessages } from "./accounts";
+import { SettingSwitch } from "./SettingSwitch";
 
 /** The "Messages between accounts" switch; it applies to Claude tabs started after a change. */
 export function MessagesSetting(props: {
@@ -31,22 +32,17 @@ export function MessagesSetting(props: {
   };
 
   return (
-    <div class="alerts-setting messages-setting">
-      <label>
-        <input
-          type="checkbox"
-          checked={choice() ?? props.profiles.messages}
-          onChange={(event) => {
-            save(event.currentTarget.checked);
-          }}
-        />
-        Messages between accounts: a Claude tab can send a message to a Claude
-        tab on another account, and each one waits for you to approve, edit or
-        reject it. It applies to Claude tabs started after a change.
-      </label>
+    <SettingSwitch
+      class="messages-setting"
+      name="Messages between accounts"
+      description="A Claude tab can message one on another account; you approve, edit or reject each message."
+      newTabsOnly
+      checked={choice() ?? props.profiles.messages}
+      onChange={save}
+    >
       <Show when={error()}>
         <p class="error">Messages setting not saved: {error()}</p>
       </Show>
-    </div>
+    </SettingSwitch>
   );
 }

@@ -1531,23 +1531,40 @@ kbd {
   gap: 6px;
 }
 
-.alerts-setting {
+.setting-switch {
   max-width: 480px;
   font-size: 13px;
 }
 
-.alerts-setting label {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
+/* The checkbox in its own column, so wrapped lines stay under the text. */
+.setting-switch label {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 8px;
+  align-items: start;
+  padding: 4px 0;
+  cursor: pointer;
 }
 
-.alerts-setting input {
+.setting-switch input {
+  margin: 2px 0 0;
+  cursor: pointer;
   accent-color: var(--accent);
 }
 
 .step-nav {
   display: flex;
+.setting-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.setting-description {
+  font-size: 12px;
+  color: var(--dim);
+}
+
   gap: 10px;
   align-items: center;
   margin-top: 20px;
