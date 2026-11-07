@@ -32,10 +32,15 @@ function PrMenu(props: {
   let menu: HTMLDivElement | undefined;
   onMount(() => {
     const onDown = (event: PointerEvent) => {
+      // This row's own ⋯ toggles the menu on its click, so its press is not an outside click.
+      const trigger = menu?.parentElement?.querySelector(
+        '[aria-haspopup="menu"]',
+      );
       if (
         menu &&
         event.target instanceof Node &&
-        !menu.contains(event.target)
+        !menu.contains(event.target) &&
+        !trigger?.contains(event.target)
       ) {
         props.onClose();
       }

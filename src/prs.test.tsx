@@ -319,3 +319,29 @@ test("a main folder that cannot be read leaves the other repos and their PRs", a
   expect(text).toContain("plans");
   expect(prTitles(root)).toEqual(["Change 4"]);
 });
+
+test("the ⋯ button closes its own menu, and another row's opens in its place", async () => {
+  const core = prsCore();
+  const root = await renderApp(core.profiles, core.core);
+  await open(root, "planner");
+  // A real press sends pointerdown before click, which the outside-click check sees.
+  const press = (number: number) => {
+    const trigger = button(prRow(root, number), `More for #${String(number)}`);
+    trigger.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    trigger.click();
+  };
+
+  press(12);
+  await settle();
+  expect(prRow(root, 12).querySelector(".pr-menu")).not.toBeNull();
+  press(12);
+  await settle();
+  expect(prRow(root, 12).querySelector(".pr-menu")).toBeNull();
+
+  press(12);
+  await settle();
+  press(11);
+  await settle();
+  expect(prRow(root, 12).querySelector(".pr-menu")).toBeNull();
+  expect(prRow(root, 11).querySelector(".pr-menu")).not.toBeNull();
+});
