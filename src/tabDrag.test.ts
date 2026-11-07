@@ -51,6 +51,28 @@ test("the press holds the pointer, so a quick flick off the row still drags", ()
   expect(captured.length).toBe(1);
 });
 
+test("a finger leaves the list to scroll and never drags a tab", () => {
+  const { button, captured } = rowButton();
+  const { seen, events } = recorder();
+  const drag = tabDrag();
+
+  drag.onPointerDown(
+    on(
+      new PointerEvent("pointerdown", {
+        clientX: 10,
+        clientY: 10,
+        button: 0,
+        pointerType: "touch",
+      }),
+      button,
+    ),
+  );
+  drag.onPointerMove(at("pointermove", button, 400), events);
+
+  expect(captured).toEqual([]);
+  expect(seen).toEqual([]);
+});
+
 test("a wobble under a few pixels is a click, not a drag", () => {
   const { button } = rowButton();
   const { seen, events } = recorder();

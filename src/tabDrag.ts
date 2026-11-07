@@ -26,6 +26,8 @@ export function tabDrag() {
   return {
     onPointerDown: (event: Press) => {
       swallowClick = false;
+      // A finger on the list scrolls it; dragging a tab in is for a mouse or pen.
+      if (event.pointerType === "touch") return;
       if (event.button !== 0 || start !== undefined) return;
       start = { pointer: event.pointerId, x: event.clientX, y: event.clientY };
       // Captured at once, so a quick flick that leaves the row in one frame still drags.
