@@ -150,48 +150,57 @@ export function PrList(props: {
   const [shown, setShown] = createSignal(PR_PAGE);
   const [menuFor, setMenuFor] = createSignal<number>();
   const visible = () => props.repo.prs.filter((pr) => !props.isDismissed(pr));
+  // Keyed by number, so a poll's fresh objects keep each row, and an open menu or confirm, in place.
+  const numbers = () =>
+    visible()
+      .slice(0, shown())
+      .map((pr) => pr.number);
   return (
     <>
-      <For each={visible().slice(0, shown())}>
-        {(pr) => (
-          <div class={`card-row pr-row ${pr.state}`}>
-            <span class="row-icon pr">
-              <PrIcon />
-            </span>
-            <span class="row-text">
-              <span class="row-main" title={pr.title}>
-                {pr.title}
-              </span>
-              <span class="row-detail">
-                {props.repo.name} #{pr.number}
-              </span>
-            </span>
-            <span class={`pr-state ${pr.state}`}>{STATE_TEXT[pr.state]}</span>
-            <button
-              type="button"
-              class="row-button icon"
-              aria-label={`More for #${String(pr.number)}`}
-              aria-haspopup="menu"
-              aria-expanded={menuFor() === pr.number}
-              onClick={() =>
-                setMenuFor((open) =>
-                  open === pr.number ? undefined : pr.number,
-                )
-              }
-            >
-              <MoreIcon />
-            </button>
-            <Show when={menuFor() === pr.number}>
-              <PrMenu
-                pr={pr}
-                folder={props.repo.folder}
-                actions={props.actions}
-                onClose={() => {
-                  setMenuFor(undefined);
-                }}
-              />
-            </Show>
-          </div>
+      <For each={numbers()}>
+        {(number) => (
+          <Show when={props.repo.prs.find((pr) => pr.number === number)}>
+            {(pr) => (
+              <div class={`card-row pr-row ${pr().state}`}>
+                <span class="row-icon pr">
+                  <PrIcon />
+                </span>
+                <span class="row-text">
+                  <span class="row-main" title={pr().title}>
+                    {pr().title}
+                  </span>
+                  <span class="row-detail">
+                    {props.repo.name} #{number}
+                  </span>
+                </span>
+                <span class={`pr-state ${pr().state}`}>
+                  {STATE_TEXT[pr().state]}
+                </span>
+                <button
+                  type="button"
+                  class="row-button icon"
+                  aria-label={`More for #${String(number)}`}
+                  aria-haspopup="menu"
+                  aria-expanded={menuFor() === number}
+                  onClick={() =>
+                    setMenuFor((open) => (open === number ? undefined : number))
+                  }
+                >
+                  <MoreIcon />
+                </button>
+                <Show when={menuFor() === number}>
+                  <PrMenu
+                    pr={pr()}
+                    folder={props.repo.folder}
+                    actions={props.actions}
+                    onClose={() => {
+                      setMenuFor(undefined);
+                    }}
+                  />
+                </Show>
+              </div>
+            )}
+          </Show>
         )}
       </For>
       <Show when={visible().length > shown()}>

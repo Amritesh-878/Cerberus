@@ -13,6 +13,7 @@ import {
   settle,
 } from "./harness";
 import type { Changes, PrRow } from "./panelData";
+import { POLL_MS } from "./panelFeed";
 import type { SavedTree } from "./saved";
 
 afterEach(cleanup);
@@ -280,4 +281,29 @@ test("Ready for review shows only on a draft and runs only after the confirm", a
     core.calls.filter((c) => c.cmd === "panel_prs").length,
   ).toBeGreaterThan(before);
   expect(button(root, "More for #12")).toBeTruthy();
+});
+
+test("a poll while the confirm is open keeps it open", async () => {
+  vi.useFakeTimers({ toFake: ["setInterval"] });
+  try {
+    const core = prsCore();
+    const root = await renderApp(core.profiles, core.core);
+    await open(root, "planner");
+    click(await menu(root, 12), "Ready for review…");
+    await settle();
+    const reads = core.calls.filter((c) => c.cmd === "panel_prs").length;
+
+    vi.advanceTimersByTime(POLL_MS);
+    await settle();
+    await settle();
+
+    expect(
+      core.calls.filter((c) => c.cmd === "panel_prs").length,
+    ).toBeGreaterThan(reads);
+    expect(prRow(root, 12).textContent).toContain(
+      "Mark #12 ready for review on GitHub?",
+    );
+  } finally {
+    vi.useRealTimers();
+  }
 });

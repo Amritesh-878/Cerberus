@@ -500,9 +500,11 @@ function SkillRow(props: {
   );
 }
 
+type RepoChanges = Extract<Changes, { kind: "repo" }>;
+
 function RepoRow(props: {
   folder: string;
-  repo: Extract<Changes, { kind: "repo" }>;
+  repo: RepoChanges;
   onCreatePr: (folder: string) => void;
   onOpenVsCode: (folder: string) => void;
 }) {
@@ -566,14 +568,17 @@ function ChangesBody(props: {
   const main = () => loadedValue(props.folders)?.[0];
   // Folders in one repo show its row once, under the first of them.
   const repos = () => {
-    const seen = new Set<string>();
-    return (loadedValue(props.folders) ?? []).flatMap((f) => {
+    const seen = new Map<string, { folder: string; repo: RepoChanges }>();
+    for (const f of loadedValue(props.folders) ?? []) {
       const changes = f.changes;
-      if (changes?.kind !== "repo" || seen.has(changes.root)) return [];
-      seen.add(changes.root);
-      return [{ folder: f.folder, repo: changes }];
-    });
+      if (changes?.kind === "repo" && !seen.has(changes.root)) {
+        seen.set(changes.root, { folder: f.folder, repo: changes });
+      }
+    }
+    return seen;
   };
+  // Keyed by root, so each poll's fresh objects keep the rows, and an open PR menu, in place.
+  const roots = () => [...repos().keys()];
   return (
     <Switch fallback={<Note>Reading…</Note>}>
       <Match when={props.folder === null}>
@@ -589,16 +594,20 @@ function ChangesBody(props: {
         <Show when={main()?.changes?.kind === "noGit"}>
           <Note>Git is not installed</Note>
         </Show>
-        <For each={repos()}>
-          {(found) => (
+        <For each={roots()}>
+          {(root) => (
             <>
-              <RepoRow
-                folder={found.folder}
-                repo={found.repo}
-                onCreatePr={props.onCreatePr}
-                onOpenVsCode={props.onOpenVsCode}
-              />
-              <Show when={props.prs.find((r) => r.root === found.repo.root)}>
+              <Show when={repos().get(root)}>
+                {(found) => (
+                  <RepoRow
+                    folder={found().folder}
+                    repo={found().repo}
+                    onCreatePr={props.onCreatePr}
+                    onOpenVsCode={props.onOpenVsCode}
+                  />
+                )}
+              </Show>
+              <Show when={props.prs.find((r) => r.root === root)}>
                 {(repoPrs) => (
                   <PrList
                     repo={repoPrs()}

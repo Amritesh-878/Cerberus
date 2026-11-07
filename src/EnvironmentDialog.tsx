@@ -124,6 +124,8 @@ export function EnvironmentDialog(props: {
     }
   };
   const save = () => {
+    // A variable typed but not yet added is saved too, rather than dropped without a word.
+    addVar();
     if (plan().restart && props.busy && !confirming()) {
       setConfirming(true);
       return;

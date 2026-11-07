@@ -254,6 +254,9 @@ test("variables are sent as edits, shown by name only, and a refusal changes not
   type(input("Variable value"), "secret-value");
   click(dialog(), "Add");
   click(dialog(), "Remove API_URL");
+  // Typed but not added: Save takes it too.
+  type(input("Variable name"), "MODE");
+  type(input("Variable value"), "fast");
   await settle();
   const before = env.saves.length;
   click(dialog(), "Save");
@@ -263,6 +266,7 @@ test("variables are sent as edits, shown by name only, and a refusal changes not
   expect(field(sent?.args, "edits")).toEqual([
     { name: "API_URL", value: null },
     { name: "CLAUDE_CONFIG_DIR", value: "secret-value" },
+    { name: "MODE", value: "fast" },
   ]);
   expect(dialog().textContent).toContain("set by Cerberus");
   expect(env.saves.length).toBe(before);
