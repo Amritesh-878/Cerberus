@@ -13,7 +13,7 @@ use crate::pty::Exit;
 pub use crate::sessions::watch::{TabState, Watched, watch};
 
 // Claude Code shortens a longer slug and appends a hash of the full path.
-const SLUG_MAX: usize = 200;
+pub const SLUG_MAX: usize = 200;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Status {
@@ -107,6 +107,22 @@ pub fn resume_args(args: &[String], session_id: &str) -> Vec<String> {
     let mut resumed = args.to_vec();
     resumed.extend(["--resume".to_owned(), session_id.to_owned()]);
     resumed
+}
+
+/// The tab's extra folders as `--add-dir=<folder>`; a folder that is gone or not absolute is left out so the chat still starts.
+pub fn add_dir_args(args: &[String], dirs: &[String], cwd: &str) -> Vec<String> {
+    let mut with = args.to_vec();
+    let mut seen = vec![cwd];
+    for dir in dirs {
+        if seen.contains(&dir.as_str()) || !Path::new(dir).is_absolute() || !Path::new(dir).is_dir()
+        {
+            continue;
+        }
+        seen.push(dir);
+        // The `=` form, since `--add-dir` takes several values and would swallow what follows.
+        with.push(format!("--add-dir={dir}"));
+    }
+    with
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -351,5 +367,37 @@ mod tests {
         assert!(is_claude("/opt/homebrew/bin/claude"));
         assert!(!is_claude("/bin/zsh"));
         assert!(!is_claude("/usr/local/bin/claude-helper"));
+    }
+
+    #[test]
+    fn extra_folders_follow_the_arguments_once_each_and_missing_ones_are_left_out() {
+        let dir = TestDir::new();
+        let plans = dir.path().join("plans");
+        let docs = dir.path().join("my docs");
+        fs::create_dir_all(&plans).unwrap();
+        fs::create_dir_all(&docs).unwrap();
+        let text = |p: &Path| p.to_string_lossy().into_owned();
+        let cwd = text(dir.path());
+        let dirs = [
+            text(&plans),
+            text(&docs),
+            text(&plans),
+            cwd.clone(),
+            text(&dir.path().join("gone")),
+            "relative".to_owned(),
+        ];
+        let resumed = resume_args(&[], SESSION);
+
+        let args = add_dir_args(&resumed, &dirs, &cwd);
+
+        assert_eq!(
+            args,
+            [
+                "--resume".to_owned(),
+                SESSION.to_owned(),
+                format!("--add-dir={}", text(&plans)),
+                format!("--add-dir={}", text(&docs)),
+            ]
+        );
     }
 }

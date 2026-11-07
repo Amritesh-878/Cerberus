@@ -2,7 +2,7 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use crate::sessions::{is_session_id, parse_session_file, transcript};
+use crate::sessions::{SLUG_MAX, is_session_id, parse_session_file, slug, transcript};
 
 // A copy lands under this suffix first, so a half copy is never mistaken for a chat.
 const IN_PROGRESS: &str = "cerberus-copy";
@@ -14,6 +14,10 @@ pub enum CarryError {
     Missing,
     #[error("the other account has this chat open right now, so nothing was copied")]
     OpenOnTarget,
+    #[error("another tab or window has this chat open, so it stays where it is")]
+    OpenElsewhere,
+    #[error("the new folder's path is too long to carry the chat to")]
+    LongFolder,
     #[error("could not copy the chat: {0}")]
     Io(#[from] io::Error),
     #[error(
@@ -42,13 +46,30 @@ pub fn copy_chat(
         copy: &mut |source, target| fs::copy(source, target).map(|_| ()),
         rename: &mut |source, target| fs::rename(source, target),
     };
-    copy_chat_with(from, to, cwd, id, is_running, ops)
+    copy_chat_with(from, to, cwd, None, id, is_running, ops)
 }
 
+/// Copies a chat to another folder's project on the same account, so `--resume` finds it there.
+pub fn copy_to_folder(
+    config: &Path,
+    from_cwd: &str,
+    to_cwd: &str,
+    id: &str,
+    is_running: &dyn Fn(u32) -> bool,
+) -> Result<(), CarryError> {
+    let ops = Ops {
+        copy: &mut |source, target| fs::copy(source, target).map(|_| ()),
+        rename: &mut |source, target| fs::rename(source, target),
+    };
+    copy_chat_with(config, config, from_cwd, Some(to_cwd), id, is_running, ops)
+}
+
+/// `to_cwd` names another folder's project; `None` keeps the chat's own project.
 fn copy_chat_with(
     from: &Path,
     to: &Path,
     cwd: &str,
+    to_cwd: Option<&str>,
     id: &str,
     is_running: &dyn Fn(u32) -> bool,
     ops: Ops<'_>,
@@ -58,12 +79,22 @@ fn copy_chat_with(
     }
     let source = transcript(from, cwd, id).ok_or(CarryError::Missing)?;
     // The same name as the source's, so a long cwd's hashed folder matches without recomputing the hash.
-    let project = source
-        .parent()
-        .and_then(Path::file_name)
-        .ok_or(CarryError::Missing)?;
+    let project = match to_cwd {
+        None => source
+            .parent()
+            .and_then(Path::file_name)
+            .ok_or(CarryError::Missing)?
+            .to_owned(),
+        // Claude Code hashes a longer path into its folder name, which Cerberus cannot recompute.
+        Some(to_cwd) if slug(to_cwd).len() > SLUG_MAX => return Err(CarryError::LongFolder),
+        Some(to_cwd) => slug(to_cwd).into(),
+    };
     if open_in(to, id, is_running)? {
-        return Err(CarryError::OpenOnTarget);
+        return Err(if to_cwd.is_some() {
+            CarryError::OpenElsewhere
+        } else {
+            CarryError::OpenOnTarget
+        });
     }
     let target_dir = to.join("projects").join(project);
     fs::create_dir_all(&target_dir)?;
@@ -230,7 +261,6 @@ mod tests {
 
     use super::*;
     use crate::accounts::testdir::TestDir;
-    use crate::sessions::slug;
 
     const ID: &str = "0f6c3a52-7d1e-4b8a-9c2f-5e4d3b2a1f00";
     const CWD: &str = r"C:\work\app";
@@ -413,6 +443,7 @@ mod tests {
             &dir.path().join("personal"),
             &dir.path().join("work"),
             CWD,
+            None,
             ID,
             &|_| false,
             Ops {
@@ -449,6 +480,7 @@ mod tests {
             &dir.path().join("personal"),
             &dir.path().join("work"),
             CWD,
+            None,
             ID,
             &|_| false,
             Ops {
@@ -546,5 +578,46 @@ mod tests {
                 .join(format!("{ID}.jsonl"))
                 .is_file()
         );
+    }
+
+    #[test]
+    fn a_chat_is_copied_to_another_folders_project_on_the_same_account() {
+        let dir = TestDir::new();
+        chat_in(&dir, "personal", CWD);
+        let config = dir.path().join("personal");
+        let new_cwd = r"C:\work\plans";
+
+        copy_to_folder(&config, CWD, new_cwd, ID, &|_| false).unwrap();
+
+        assert!(transcript(&config, new_cwd, ID).is_some());
+        assert!(
+            transcript(&config, CWD, ID).is_some(),
+            "the old folder lost its chat"
+        );
+        let moved = config.join("projects").join(slug(new_cwd)).join(ID);
+        assert!(moved.join("subagents").join("agent-1.jsonl").is_file());
+    }
+
+    #[test]
+    fn a_chat_open_elsewhere_or_a_too_long_folder_is_not_copied() {
+        let dir = TestDir::new();
+        chat_in(&dir, "personal", CWD);
+        let config = dir.path().join("personal");
+        let long = format!(r"C:\{}", "a".repeat(SLUG_MAX));
+
+        assert!(matches!(
+            copy_to_folder(&config, CWD, &long, ID, &|_| false),
+            Err(CarryError::LongFolder)
+        ));
+        fs::create_dir_all(config.join("sessions")).unwrap();
+        fs::write(
+            config.join("sessions").join("4242.json"),
+            format!(r#"{{"pid":4242,"sessionId":"{ID}"}}"#),
+        )
+        .unwrap();
+        assert!(matches!(
+            copy_to_folder(&config, CWD, r"C:\work\plans", ID, &|pid| pid == 4242),
+            Err(CarryError::OpenElsewhere)
+        ));
     }
 }

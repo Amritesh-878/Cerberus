@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize, Serializer};
 use crate::programs::Finder;
 use crate::pty::coalesce::Batching;
 use crate::pty::flow::FlowGate;
+use crate::saved::EnvVar;
 
 pub type SessionId = u32;
 
@@ -68,6 +69,12 @@ pub struct SpawnRequest {
     /// Set by the core for shell suggestions, never by the webview.
     #[serde(skip)]
     pub env: Vec<(&'static str, OsString)>,
+    /// Folders a Claude Code chat is also given; the core checks each before passing it on.
+    #[serde(default)]
+    pub dirs: Vec<String>,
+    /// The tab's own variables, set by the core from the saved tab; Cerberus's own are applied after them.
+    #[serde(skip)]
+    pub tab_env: Vec<EnvVar>,
 }
 
 struct Session {
@@ -253,6 +260,9 @@ fn command_for(request: &SpawnRequest) -> Result<CommandBuilder, PtyError> {
         command.cwd(cwd);
     }
     strip_inherited_session_vars(&mut command);
+    for var in &request.tab_env {
+        command.env(&var.name, &var.value);
+    }
     command.env("TERM", "xterm-256color");
     command.env("COLORTERM", "truecolor");
     #[cfg(target_os = "macos")]
@@ -392,6 +402,8 @@ mod tests {
             rows: 24,
             claude_config_dir: None,
             env: Vec::new(),
+            dirs: Vec::new(),
+            tab_env: Vec::new(),
         };
         let id = manager
             .spawn(
@@ -573,6 +585,8 @@ mod tests {
             rows: 24,
             claude_config_dir: None,
             env: Vec::new(),
+            dirs: Vec::new(),
+            tab_env: Vec::new(),
         };
 
         let result = manager.spawn(&request, |_| {}, |_| {});
@@ -591,6 +605,8 @@ mod tests {
             rows: 24,
             claude_config_dir: None,
             env: Vec::new(),
+            dirs: Vec::new(),
+            tab_env: Vec::new(),
         };
 
         let result = manager.spawn(&request, |_| {}, |_| {});
@@ -607,6 +623,8 @@ mod tests {
             rows: 24,
             claude_config_dir: claude_config_dir.map(PathBuf::from),
             env: Vec::new(),
+            dirs: Vec::new(),
+            tab_env: Vec::new(),
         })
         .unwrap()
     }
@@ -622,6 +640,40 @@ mod tests {
     }
 
     #[test]
+    fn a_tabs_own_variables_reach_the_program_under_cerberuss_own() {
+        let var = |name: &str, value: &str| EnvVar {
+            name: name.to_owned(),
+            value: value.to_owned(),
+        };
+        let command = command_for(&SpawnRequest {
+            program: SHELL.0.to_owned(),
+            args: Vec::new(),
+            cwd: None,
+            cols: 80,
+            rows: 24,
+            claude_config_dir: Some(PathBuf::from("/data/acc")),
+            env: Vec::new(),
+            dirs: Vec::new(),
+            // A managed name is refused when saved; this checks the order still protects it.
+            tab_env: vec![var("API_URL", "http://localhost:9"), var("TERM", "dumb")],
+        })
+        .unwrap();
+
+        assert_eq!(
+            command.get_env("API_URL"),
+            Some(std::ffi::OsStr::new("http://localhost:9"))
+        );
+        assert_eq!(
+            command.get_env("TERM"),
+            Some(std::ffi::OsStr::new("xterm-256color"))
+        );
+        assert_eq!(
+            command.get_env("CLAUDE_CONFIG_DIR"),
+            Some(std::ffi::OsStr::new("/data/acc"))
+        );
+    }
+
+    #[test]
     fn variables_the_core_adds_reach_the_program() {
         let command = command_for(&SpawnRequest {
             program: SHELL.0.to_owned(),
@@ -631,6 +683,8 @@ mod tests {
             rows: 24,
             claude_config_dir: None,
             env: vec![("ZDOTDIR", OsString::from("/data/shell/zsh"))],
+            dirs: Vec::new(),
+            tab_env: Vec::new(),
         })
         .unwrap();
 
