@@ -80,11 +80,16 @@ export function EnvironmentDialog(props: {
       .filter((n) => !(saved() ?? []).includes(n)),
   ];
 
+  // Held open while saving, so a pending folder move cannot be followed by a second one.
+  const close = () => {
+    if (!saving()) props.onClose();
+  };
+
   let sheet: HTMLDivElement | undefined;
   onMount(() => {
     const opener = document.activeElement;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") props.onClose();
+      if (event.key === "Escape") close();
       else if (event.key === "Tab" && sheet && keepInside(sheet, event)) {
         event.preventDefault();
       }
@@ -148,7 +153,7 @@ export function EnvironmentDialog(props: {
     <div
       class="sheet-backdrop"
       onClick={(event) => {
-        if (event.target === event.currentTarget) props.onClose();
+        if (event.target === event.currentTarget) close();
       }}
     >
       <div
@@ -167,9 +172,7 @@ export function EnvironmentDialog(props: {
             type="button"
             class="icon-button"
             aria-label="Close"
-            onClick={() => {
-              props.onClose();
-            }}
+            onClick={close}
           >
             <CloseIcon />
           </button>
@@ -316,13 +319,7 @@ export function EnvironmentDialog(props: {
             when={confirming()}
             fallback={
               <>
-                <button
-                  type="button"
-                  class="secondary"
-                  onClick={() => {
-                    props.onClose();
-                  }}
-                >
+                <button type="button" class="secondary" onClick={close}>
                   Cancel
                 </button>
                 <button type="button" disabled={saving()} onClick={save}>

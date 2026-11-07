@@ -69,7 +69,7 @@ const ALPHA_PRS = Array.from({ length: 12 }, (_, i) =>
   pr(12 - i, STATES[i % 4] ?? "open"),
 );
 
-function prsCore(panel: Partial<PanelPrefs> = {}) {
+function prsCore(panel: Partial<PanelPrefs> = {}, mainGone = false) {
   const pty = ptyCore();
   const calls: { cmd: string; args: unknown }[] = [];
   const saved: PanelPrefs[] = [];
@@ -104,11 +104,12 @@ function prsCore(panel: Partial<PanelPrefs> = {}) {
         };
         return profiles;
       },
-      ...record("panel_changes", (args) =>
-        field(args, "folder") === ALPHA
-          ? repo("alpha", ALPHA, "feature")
-          : repo("plans", PLANS, "main"),
-      ),
+      ...record("panel_changes", (args) => {
+        if (field(args, "folder") !== ALPHA)
+          return repo("plans", PLANS, "main");
+        if (mainGone) throw new Error("folder not found");
+        return repo("alpha", ALPHA, "feature");
+      }),
       ...record("panel_prs", (args) =>
         field(args, "folder") === ALPHA ? alphaPrs : [pr(4, "open", "plans")],
       ),
@@ -306,4 +307,15 @@ test("a poll while the confirm is open keeps it open", async () => {
   } finally {
     vi.useRealTimers();
   }
+});
+
+test("a main folder that cannot be read leaves the other repos and their PRs", async () => {
+  const core = prsCore({}, true);
+  const root = await renderApp(core.profiles, core.core);
+  await open(root, "planner");
+
+  const text = changesCard(root).textContent;
+  expect(text).toMatch(/alpha: .*folder not found/);
+  expect(text).toContain("plans");
+  expect(prTitles(root)).toEqual(["Change 4"]);
 });

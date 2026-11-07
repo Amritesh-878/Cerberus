@@ -55,7 +55,13 @@ const PROFILES: Profiles = {
 };
 
 /** A core whose pickers answer `picks` in turn and whose environment calls are recorded. */
-function envCore(picks: string[], options: { refuseEnv?: string } = {}) {
+function envCore(
+  picks: string[],
+  options: {
+    refuseEnv?: string;
+    holdMove?: (release: () => void) => void;
+  } = {},
+) {
   const pty = ptyCore();
   const writes: string[] = [];
   const saves: SavedTree[] = [];
@@ -89,7 +95,15 @@ function envCore(picks: string[], options: { refuseEnv?: string } = {}) {
         if (options.refuseEnv) throw new Error(options.refuseEnv);
         return field(args, "edits");
       }),
-      ...record("tab_move_folder", () => null),
+      ...record("tab_move_folder", () =>
+        options.holdMove
+          ? new Promise<null>((resolve) => {
+              options.holdMove?.(() => {
+                resolve(null);
+              });
+            })
+          : null,
+      ),
     },
   };
 }
@@ -285,4 +299,32 @@ test("the folder plan and the typed command", () => {
     planFolders({ cwd: ALPHA, dirs: [] }, { cwd: BETA, dirs: [] }).restart,
   ).toBe(true);
   expect(addDirCommand("C:\\a\r\nb\u001b")).toBe("/add-dir C:\\ab");
+});
+
+test("the dialog stays open while a folder move is pending, so no second move can start", async () => {
+  let release: (() => void) | undefined;
+  const env = envCore([BETA], {
+    holdMove: (go) => {
+      release = go;
+    },
+  });
+  const root = await renderApp(() => PROFILES, env.core);
+  await editEnvironment(root, "planner");
+  click(dialog(), "Change…");
+  await settle();
+  click(dialog(), "Save");
+  await settle();
+
+  window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+  click(dialog(), "Close");
+  await settle();
+  expect(document.querySelector(".env-dialog")).not.toBeNull();
+  expect(env.pty.spawned).toHaveLength(1);
+
+  release?.();
+  await settle();
+  await settle();
+  expect(document.querySelector(".env-dialog")).toBeNull();
+  expect(env.calls.filter((c) => c.cmd === "tab_move_folder")).toHaveLength(1);
+  expect(field(field(env.pty.spawned.at(-1), "request"), "cwd")).toBe(BETA);
 });

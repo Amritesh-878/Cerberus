@@ -12,7 +12,8 @@ const TIMEOUT: Duration = Duration::from_secs(15);
 const READY_TIMEOUT: Duration = Duration::from_secs(30);
 /// GitHub is asked about a repo at most this often, however many tabs or refreshes want it.
 pub const EVERY: Duration = Duration::from_secs(60);
-const MOST_PRS: usize = 30;
+// Merged and closed history is capped; open PRs and drafts are asked for on their own, so none is ever cut off.
+const MOST_PRS: usize = 100;
 
 /// One PR as `gh pr list --json` gives it; other fields are ignored.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -76,6 +77,8 @@ fn repo_of(url: &str) -> Option<String> {
 struct Asked {
     at: Instant,
     prs: Vec<Pr>,
+    /// PRs made ready here and when, so a list asked for before that cannot show them as drafts again.
+    readied: Vec<(u64, Instant)>,
 }
 
 /// The last list per repo, so `gh` runs once a minute per repo at most.
@@ -102,6 +105,7 @@ impl PrCache {
                 .or_insert(Asked {
                     at: now,
                     prs: Vec::new(),
+                    readied: Vec::new(),
                 })
                 .at = now;
         }
@@ -112,10 +116,21 @@ impl PrCache {
         let Some(last) = repos.get_mut(root) else {
             return asked.unwrap_or_default();
         };
-        if let Some(prs) = asked
+        if let Some(mut prs) = asked
             && last.at == now
         {
+            for pr in &mut prs {
+                if last
+                    .readied
+                    .iter()
+                    .any(|&(number, at)| number == pr.number && at > now)
+                {
+                    pr.is_draft = false;
+                }
+            }
             last.prs = prs;
+            // A list asked for after a Ready already shows it.
+            last.readied.retain(|&(_, at)| at > now);
         }
         last.prs.clone()
     }
@@ -140,8 +155,17 @@ impl PrCache {
     }
 
     /// Shows the PR as open at once, without asking GitHub again before the minute is up.
-    pub fn made_ready(&self, root: &Path, number: u64) {
-        self.find(root, number, |pr| pr.is_draft = false);
+    pub fn made_ready(&self, root: &Path, number: u64, at: Instant) {
+        let Ok(mut repos) = self.repos.lock() else {
+            return;
+        };
+        let Some(last) = repos.get_mut(root) else {
+            return;
+        };
+        last.readied.push((number, at));
+        if let Some(pr) = last.prs.iter_mut().find(|pr| pr.number == number) {
+            pr.is_draft = false;
+        }
     }
 }
 
@@ -155,18 +179,36 @@ fn gh_command(gh: &Path, folder: &Path) -> Command {
     command
 }
 
-/// The repo's PRs in every state; `None` when `gh` is missing, signed out or offline.
-pub fn list(gh: &Path, folder: &Path) -> Option<Vec<Pr>> {
+fn list_state(gh: &Path, folder: &Path, state: &str) -> Option<Vec<Pr>> {
     let mut command = gh_command(gh, folder);
     command.args([
         "pr",
         "list",
-        "--state=all",
+        &format!("--state={state}"),
         "--json=number,title,url,state,isDraft,updatedAt",
         &format!("--limit={MOST_PRS}"),
     ]);
     let ran = run(command, TIMEOUT).ok().filter(|ran| ran.success)?;
     parse(&ran.stdout)
+}
+
+/// Every open PR and draft, and the newest merged and closed ones; `None` when `gh` is missing, signed out or offline.
+pub fn list(gh: &Path, folder: &Path) -> Option<Vec<Pr>> {
+    let recent = list_state(gh, folder, "all")?;
+    let open = list_state(gh, folder, "open")?;
+    Some(merged(recent, open))
+}
+
+/// Both lists as one, newest first, each PR once.
+fn merged(recent: Vec<Pr>, open: Vec<Pr>) -> Vec<Pr> {
+    let mut all = recent;
+    for pr in open {
+        if !all.iter().any(|known| known.number == pr.number) {
+            all.push(pr);
+        }
+    }
+    all.sort_by_key(|pr| std::cmp::Reverse(pr.number));
+    all
 }
 
 /// Marks a draft ready for review; the number is one argument, never part of a command line.
@@ -300,7 +342,7 @@ mod tests {
         assert!(!cache.is_draft(repo, 6));
         assert!(!cache.is_draft(repo, 5));
         assert!(!cache.is_draft(repo, 99));
-        cache.made_ready(repo, 7);
+        cache.made_ready(repo, 7, now);
         let row = &rows(&cache.get(repo, now + Duration::from_secs(1), || None))[0];
         assert_eq!(row.state, PrState::Open);
     }
@@ -309,5 +351,35 @@ mod tests {
     fn a_missing_gh_is_no_list_and_no_ready() {
         assert_eq!(list(Path::new("/no/such/gh"), Path::new(".")), None);
         assert!(!ready(Path::new("/no/such/gh"), Path::new("."), 1));
+    }
+
+    #[test]
+    fn a_list_asked_for_before_a_ready_cannot_show_it_as_a_draft_again() {
+        let cache = PrCache::default();
+        let repo = Path::new("/r/one");
+        let start = Instant::now();
+        cache.get(repo, start, || Some(vec![pr(7, "OPEN", true)]));
+        let asked = start + EVERY;
+
+        // The next list is asked for, then Ready lands before that stale answer does.
+        let shown = cache.get(repo, asked, || {
+            cache.made_ready(repo, 7, asked + Duration::from_secs(1));
+            Some(vec![pr(7, "OPEN", true)])
+        });
+
+        assert!(!shown[0].is_draft);
+        assert!(!cache.is_draft(repo, 7));
+        // A list asked for after the Ready is trusted as it is.
+        let later = cache.get(repo, asked + EVERY, || Some(vec![pr(7, "OPEN", true)]));
+        assert!(later[0].is_draft);
+    }
+    #[test]
+    fn an_old_open_pr_beyond_the_recent_list_is_still_listed_once() {
+        let recent = vec![pr(90, "MERGED", false), pr(80, "OPEN", false)];
+        let open = vec![pr(80, "OPEN", false), pr(3, "OPEN", true)];
+
+        let numbers: Vec<_> = merged(recent, open).iter().map(|p| p.number).collect();
+
+        assert_eq!(numbers, [90, 80, 3]);
     }
 }

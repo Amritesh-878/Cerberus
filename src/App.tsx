@@ -42,7 +42,7 @@ import {
   reported,
   startedTabs,
 } from "./board";
-import { applyEnvironment } from "./environment";
+import { applyEnvironment, type EnvironmentChange } from "./environment";
 import { EnvironmentDialog } from "./EnvironmentDialog";
 import { Home } from "./Home";
 import { AccountDot, MenuIcon, PanelIcon } from "./icons";
@@ -619,8 +619,19 @@ export function App() {
     if (id !== undefined) typers.get(id)?.(text);
   };
 
-  // The tab whose Edit environment dialog is open.
+  // The tab whose Edit environment dialog is open, and the tabs whose change is still being applied.
   const [editing, setEditing] = createSignal<TabId>();
+  const [applying, setApplying] = createSignal<ReadonlySet<TabId>>(new Set());
+  const saveEnvironment = (id: TabId, change: EnvironmentChange) => {
+    setApplying((all) => new Set(all).add(id));
+    return applyEnvironment(environment, id, change).finally(() => {
+      setApplying((all) => {
+        const next = new Set(all);
+        next.delete(id);
+        return next;
+      });
+    });
+  };
   const environment = {
     tree,
     setTree,
@@ -1069,7 +1080,10 @@ export function App() {
                 onCreatePr={createPr}
                 onType={typeIntoChat}
                 links={messaging.snapshot()}
-                onEditEnvironment={() => setEditing(shown())}
+                onEditEnvironment={() => {
+                  const id = shown();
+                  if (id !== undefined && !applying().has(id)) setEditing(id);
+                }}
               />
             </Show>
             <Show
@@ -1085,9 +1099,7 @@ export function App() {
                     tab().launch.program === "claude" && isRunning(tab().id)
                   }
                   busy={markOf(board(), tab().id)?.kind === "working"}
-                  onSave={(change) =>
-                    applyEnvironment(environment, tab().id, change)
-                  }
+                  onSave={(change) => saveEnvironment(tab().id, change)}
                   onClose={() => {
                     setEditing(undefined);
                   }}

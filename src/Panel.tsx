@@ -584,10 +584,18 @@ function ChangesBody(props: {
       <Match when={props.folder === null}>
         <Note>No project folder</Note>
       </Match>
-      <Match when={loadedError(props.folders) ?? main()?.error}>
+      <Match when={loadedError(props.folders)}>
         {(error) => <Note>{error()}</Note>}
       </Match>
       <Match when={loadedValue(props.folders)}>
+        {/* Each folder's failure stays beside it, so the other repos still show. */}
+        <For each={(loadedValue(props.folders) ?? []).filter((f) => f.error)}>
+          {(failed) => (
+            <Note>
+              {folderName(failed.folder)}: {failed.error}
+            </Note>
+          )}
+        </For>
         <Show when={main()?.changes?.kind === "notRepo"}>
           <Note>Not a git repository</Note>
         </Show>

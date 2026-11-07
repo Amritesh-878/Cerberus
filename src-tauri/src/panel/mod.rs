@@ -173,7 +173,7 @@ pub fn panel_pr_ready(
     if !gh::ready(&gh, folder, number) {
         return Err(PanelError::NotReady(number));
     }
-    prs.made_ready(&root, number);
+    prs.made_ready(&root, number, Instant::now());
     Ok(())
 }
 
