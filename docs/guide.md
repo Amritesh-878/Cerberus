@@ -107,11 +107,12 @@ folded cards and starred skills are kept in `profiles.json`.
   from claude.ai (named `anthropic-skills:<skill>`, marked "claude.ai") and the skills of each
   enabled plugin (named `<plugin>:<skill>`, marked "plugin"), with each skill's description. The
   ones the account uses most come first (Claude Code's own count, from the account's
-  `.claude.json`; only skill names and counts are read from it). The star on a row pins it to the
+  `.claude.json`, from which only skill names and counts and the signed-in organization and account
+  ids are read). The star on a row pins it to the
   top for that account. **Shift-click** a skill (or Shift+Enter on it) to type `/<skill>` into the
   chat's input; nothing is sent until you press Enter, and shell tabs get nothing. Skills built
-  into Claude Code are not listed. If one config folder has been signed in to several claude.ai
-  organisations, the synced skills of all of them are listed.
+  into Claude Code are not listed. Synced skills come from the folder of the organization and
+  account signed in now, as Claude Code picks it; if that is unknown, every synced folder is listed.
 - **Connectors:** the MCP servers the tab's `claude` would load: the account's user servers, its
   servers for this folder, the project's `.mcp.json`, each enabled plugin's servers (named
   `<plugin>:<server>`), and Cerberus's own `cerberus` server when the tab's chat was started with

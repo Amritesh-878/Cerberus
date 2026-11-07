@@ -178,10 +178,10 @@ pub fn panel_skills(
     folder: Option<PathBuf>,
 ) -> Result<Vec<Skill>, PanelError> {
     let home = accounts.claude_home(account)?;
-    let usage = skills::usage(&account_config(&accounts, account)?);
+    let signed_in = skills::account(&account_config(&accounts, account)?);
     let folder = folder.as_deref().map(self::folder).transpose()?;
     let plugins = plugins::enabled(&home, folder).plugins;
-    Ok(skills::read(folder, &home, &plugins, &usage))
+    Ok(skills::read(folder, &home, &plugins, &signed_in))
 }
 
 #[cfg(test)]

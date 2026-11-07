@@ -41,25 +41,61 @@ struct Usage {
     count: u64,
 }
 
+// Only the two ids that name the synced folder, never the email, name or anything else of the signed-in account.
 #[derive(Deserialize)]
-struct UsageConfig {
-    #[serde(default, rename = "skillUsage")]
-    usage: BTreeMap<String, Usage>,
+struct SignedIn {
+    #[serde(rename = "organizationUuid")]
+    organization: Option<String>,
+    #[serde(rename = "accountUuid")]
+    account: Option<String>,
 }
 
-/// Each skill's use count from an account's `.claude.json`; empty when the file is missing or unreadable.
-pub fn usage(account_config: &Path) -> BTreeMap<String, u64> {
-    fs::read(account_config)
+#[derive(Deserialize)]
+struct AccountConfig {
+    #[serde(default, rename = "skillUsage")]
+    usage: BTreeMap<String, Usage>,
+    #[serde(rename = "oauthAccount")]
+    signed_in: Option<SignedIn>,
+}
+
+/// What the skills list needs from an account's `.claude.json`.
+#[derive(Debug, Default)]
+pub struct Account {
+    /// Each skill's use count.
+    pub usage: BTreeMap<String, u64>,
+    /// `<organization>_<account>`, the one synced folder Claude Code loads for this sign-in.
+    synced: Option<String>,
+}
+
+/// Empty when the file is missing or unreadable.
+pub fn account(account_config: &Path) -> Account {
+    let Some(config) = fs::read(account_config)
         .ok()
-        .and_then(|bytes| serde_json::from_slice::<UsageConfig>(&bytes).ok())
-        .map(|config| {
-            config
-                .usage
-                .into_iter()
-                .map(|(name, usage)| (name, usage.count))
-                .collect()
-        })
-        .unwrap_or_default()
+        .and_then(|bytes| serde_json::from_slice::<AccountConfig>(&bytes).ok())
+    else {
+        return Account::default();
+    };
+    let synced = config
+        .signed_in
+        .and_then(|s| Some(format!("{}_{}", s.organization?, s.account?)));
+    Account {
+        usage: config
+            .usage
+            .into_iter()
+            .map(|(name, usage)| (name, usage.count))
+            .collect(),
+        synced,
+    }
+}
+
+/// The signed-in account's synced folder, or every folder when that one is unknown or absent.
+fn synced_folders(synced: &Path, current: Option<&str>) -> Vec<std::path::PathBuf> {
+    // A folder name, never a path, so an odd id cannot point the read elsewhere.
+    let plain = current.filter(|c| !c.is_empty() && !c.contains(['/', '\\', '.']));
+    match plain.map(|c| synced.join(c)).filter(|f| f.is_dir()) {
+        Some(folder) => vec![folder],
+        None => folders(synced),
+    }
 }
 
 /// The project's skills, then the account's, its synced ones and its plugins', most used first, a name seen first hiding later ones.
@@ -67,7 +103,7 @@ pub fn read(
     folder: Option<&Path>,
     claude_home: &Path,
     plugins: &[Plugin],
-    usage: &BTreeMap<String, u64>,
+    account: &Account,
 ) -> Vec<Skill> {
     let mut skills = folder
         .map(|f| in_dir(&f.join(".claude").join("skills"), Scope::Project, ""))
@@ -81,8 +117,8 @@ pub fn read(
     };
     add(in_dir(&claude_home.join("skills"), Scope::Account, ""));
     if plugins::synced_skills_on(claude_home) {
-        // One folder per organization and account signed in here, all listed since which one is current is not read.
-        for org in folders(&claude_home.join("skills").join("synced")) {
+        let synced = claude_home.join("skills").join("synced");
+        for org in synced_folders(&synced, account.synced.as_deref()) {
             add(in_dir(&org, Scope::Synced, SYNCED_PREFIX));
         }
     }
@@ -91,7 +127,7 @@ pub fn read(
         add(in_dir(&plugin.root.join("skills"), Scope::Plugin, &prefix));
     }
     for skill in &mut skills {
-        skill.uses = usage.get(&skill.name).copied().unwrap_or(0);
+        skill.uses = account.usage.get(&skill.name).copied().unwrap_or(0);
     }
     skills.sort_by(|a, b| {
         b.uses
@@ -231,7 +267,7 @@ mod tests {
         skill(&account_skills, "bare", "No front matter here.\n");
         fs::create_dir_all(account_skills.join("empty")).unwrap();
 
-        let found = read(Some(&project), &home, &[], &BTreeMap::new());
+        let found = read(Some(&project), &home, &[], &Account::default());
 
         let listed: Vec<(&str, Option<&str>, Scope)> = found
             .iter()
@@ -284,7 +320,7 @@ mod tests {
             }"#,
         );
 
-        let found = read(None, &home, &[], &usage(&config));
+        let found = read(None, &home, &[], &account(&config));
 
         let listed: Vec<(&str, u64)> = found.iter().map(|s| (s.name.as_str(), s.uses)).collect();
         assert_eq!(
@@ -301,11 +337,11 @@ mod tests {
     fn usage_is_empty_without_a_readable_count() {
         let dir = TestDir::new();
 
-        assert!(usage(&dir.path().join("missing.json")).is_empty());
+        assert!(account(&dir.path().join("missing.json")).usage.is_empty());
         let broken = usage_config(&dir, r#"{ "skillUsage": { "x": "FAKE-SECRET" "#);
-        assert!(usage(&broken).is_empty());
+        assert!(account(&broken).usage.is_empty());
         let none = usage_config(&dir, r#"{ "skillUsage": { "x": { "lastUsedAt": 1 } } }"#);
-        assert_eq!(usage(&none), BTreeMap::from([("x".to_owned(), 0)]));
+        assert_eq!(account(&none).usage, BTreeMap::from([("x".to_owned(), 0)]));
     }
 
     fn synced_and_plugin_tree(dir: &TestDir) -> (std::path::PathBuf, Vec<Plugin>) {
@@ -354,7 +390,7 @@ mod tests {
                 "anthropic-skills:pdf": { "usageCount": 4, "lastUsedAt": 1762200000000 } } }"#,
         );
 
-        let found = read(None, &home, &plugins, &usage(&config));
+        let found = read(None, &home, &plugins, &account(&config));
 
         let listed: Vec<(&str, Scope, u64)> = found
             .iter()
@@ -380,6 +416,44 @@ mod tests {
     }
 
     #[test]
+    fn only_the_signed_in_accounts_synced_folder_is_read_and_nothing_else_of_it_shows() {
+        let dir = TestDir::new();
+        let (home, _) = synced_and_plugin_tree(&dir);
+        let signed_in = |org: &str| {
+            usage_config(
+                &dir,
+                &format!(
+                    r#"{{ "oauthAccount": {{ "organizationUuid": "{org}", "accountUuid": "acct-one",
+                        "emailAddress": "fake-account@example.com", "displayName": "FAKE-NAME",
+                        "accessToken": "sk-ant-FAKE-TOKEN-SECRET" }},
+                        "skillUsage": {{ "anthropic-skills:pdf": {{ "usageCount": 2 }} }} }}"#
+                ),
+            )
+        };
+
+        let config = signed_in("org-one");
+        let current = account(&config);
+        let found = read(None, &home, &[], &current);
+
+        let names: Vec<&str> = found.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(names, ["anthropic-skills:pdf"]);
+        let shown = format!(
+            "{}{found:?}{current:?}",
+            serde_json::to_string(&found).unwrap()
+        );
+        for secret in ["fake-account", "FAKE", "sk-ant"] {
+            assert!(!shown.contains(secret), "{secret} in {shown}");
+        }
+
+        let elsewhere = signed_in("org-gone");
+        let names: Vec<String> = read(None, &home, &[], &account(&elsewhere))
+            .into_iter()
+            .map(|s| s.name)
+            .collect();
+        assert_eq!(names, ["anthropic-skills:pdf", "anthropic-skills:sheets"]);
+    }
+
+    #[test]
     fn synced_skills_are_hidden_when_the_settings_turn_them_off() {
         let dir = TestDir::new();
         let (home, _) = synced_and_plugin_tree(&dir);
@@ -389,7 +463,7 @@ mod tests {
         )
         .unwrap();
 
-        assert!(read(None, &home, &[], &BTreeMap::new()).is_empty());
+        assert!(read(None, &home, &[], &Account::default()).is_empty());
     }
 
     #[test]
@@ -401,7 +475,7 @@ mod tests {
                 Some(&dir.path().join("none")),
                 &dir.path().join("none"),
                 &[],
-                &BTreeMap::new()
+                &Account::default()
             )
             .is_empty()
         );
