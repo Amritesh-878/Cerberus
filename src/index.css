@@ -1974,6 +1974,16 @@ button.card-row:focus-visible,
   color: var(--dim);
 }
 
+.card-note.faint {
+  margin-top: 6px;
+  color: var(--faint);
+}
+
+.row-tag {
+  margin-right: 6px;
+  color: var(--faint);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .card-title svg {
     transition: none;

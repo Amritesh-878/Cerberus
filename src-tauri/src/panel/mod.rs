@@ -1,6 +1,7 @@
 mod gh;
 mod git;
 mod mcp;
+mod plugins;
 mod reveal;
 mod skills;
 mod vscode;
@@ -12,7 +13,9 @@ use serde::{Serialize, Serializer};
 use tauri::State;
 
 use crate::accounts::{AccountId, Accounts, AccountsError};
+use crate::bridge::Bridge;
 use crate::programs::Finder;
+use crate::saved::TabId;
 
 pub use crate::panel::gh::PrCache;
 use crate::panel::gh::PrRow;
@@ -153,12 +156,19 @@ fn account_config(
 #[tauri::command(async)]
 pub fn panel_connectors(
     accounts: State<'_, Accounts>,
+    bridge: State<'_, Bridge>,
     account: Option<AccountId>,
     folder: Option<PathBuf>,
+    tab: Option<TabId>,
 ) -> Result<Connectors, PanelError> {
     let config = account_config(&accounts, account)?;
     let folder = folder.as_deref().map(self::folder).transpose()?;
-    Ok(mcp::read(&config, folder))
+    let plugins = plugins::enabled(&accounts.claude_home(account)?, folder);
+    // Whether this tab's running chat was given the server when it started, without reading the file it names.
+    let app_server = tab.is_some_and(|tab| bridge.linked(tab));
+    let mut found = mcp::read(&config, folder, &plugins.plugins, app_server);
+    found.unreadable.extend(plugins.unreadable);
+    Ok(found)
 }
 
 #[tauri::command(async)]
@@ -168,9 +178,10 @@ pub fn panel_skills(
     folder: Option<PathBuf>,
 ) -> Result<Vec<Skill>, PanelError> {
     let home = accounts.claude_home(account)?;
-    let usage = skills::usage(&account_config(&accounts, account)?);
+    let signed_in = skills::account(&account_config(&accounts, account)?);
     let folder = folder.as_deref().map(self::folder).transpose()?;
-    Ok(skills::read(folder, &home, &usage))
+    let plugins = plugins::enabled(&home, folder).plugins;
+    Ok(skills::read(folder, &home, &plugins, &signed_in))
 }
 
 #[cfg(test)]

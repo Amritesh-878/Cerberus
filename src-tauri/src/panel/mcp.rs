@@ -5,13 +5,21 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+use crate::panel::plugins::{self, Plugin};
+
+/// The server Cerberus adds to its chats for messages between accounts.
+pub const APP_SERVER: &str = "cerberus";
+
 /// Where a server is configured, which is also Claude Code's order of precedence, last wins.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Scope {
+    Plugin,
     User,
     Project,
     Local,
+    /// Cerberus's own server, given to its chats when messages between accounts are on.
+    App,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -28,12 +36,12 @@ pub struct Connector {
 pub struct Connectors {
     pub servers: Vec<Connector>,
     /// Files that exist but could not be read, named without their content.
-    pub unreadable: Vec<&'static str>,
+    pub unreadable: Vec<String>,
 }
 
 // Only names and `type` are deserialized; commands, args, URLs, headers and env hold tokens and are dropped unparsed.
 #[derive(Deserialize)]
-struct Server {
+pub(super) struct Server {
     #[serde(rename = "type")]
     kind: Option<String>,
 }
@@ -63,7 +71,7 @@ fn kind(server: &Server) -> &'static str {
 }
 
 /// `None` for a missing file; `Err` hides why, since a parse error can quote the file.
-fn parse<T: for<'de> Deserialize<'de>>(path: &Path) -> Option<Result<T, ()>> {
+pub(super) fn parse<T: for<'de> Deserialize<'de>>(path: &Path) -> Option<Result<T, ()>> {
     match fs::read(path) {
         Ok(bytes) => Some(serde_json::from_slice(&bytes).map_err(|_| ())),
         Err(e) if e.kind() == io::ErrorKind::NotFound => None,
@@ -71,12 +79,18 @@ fn parse<T: for<'de> Deserialize<'de>>(path: &Path) -> Option<Result<T, ()>> {
     }
 }
 
-/// The servers a `claude` started in `folder` with this account config would load.
-pub fn read(account_config: &Path, folder: Option<&Path>) -> Connectors {
+/// The servers a `claude` started in `folder` with this account config and these plugins would load.
+pub fn read(
+    account_config: &Path,
+    folder: Option<&Path>,
+    plugins: &[Plugin],
+    app_server: bool,
+) -> Connectors {
     let mut found = Connectors::default();
     let mut by_name: BTreeMap<String, Connector> = BTreeMap::new();
-    let mut add = |servers: BTreeMap<String, Server>, scope: Scope| {
+    let mut add = |servers: BTreeMap<String, Server>, scope: Scope, prefix: &str| {
         for (name, server) in servers {
+            let name = format!("{prefix}{name}");
             let connector = Connector {
                 kind: kind(&server),
                 name: name.clone(),
@@ -88,9 +102,17 @@ pub fn read(account_config: &Path, folder: Option<&Path>) -> Connectors {
             }
         }
     };
+    for plugin in plugins {
+        match plugins::servers(&plugin.root) {
+            Ok(servers) => add(servers, Scope::Plugin, &format!("{}:", plugin.name)),
+            Err(()) => found
+                .unreadable
+                .push(format!("the {} plugin's MCP servers", plugin.name)),
+        }
+    }
     match parse::<AccountConfig>(account_config) {
         Some(Ok(config)) => {
-            add(config.servers, Scope::User);
+            add(config.servers, Scope::User, "");
             let here = folder.and_then(|folder| {
                 config
                     .projects
@@ -98,25 +120,37 @@ pub fn read(account_config: &Path, folder: Option<&Path>) -> Connectors {
                     .find(|(key, _)| same_folder(key, folder))
             });
             if let Some((_, project)) = here {
-                add(project.servers, Scope::Local);
+                add(project.servers, Scope::Local, "");
             }
         }
-        Some(Err(())) => found.unreadable.push("the account's .claude.json"),
+        Some(Err(())) => found
+            .unreadable
+            .push("the account's .claude.json".to_owned()),
         None => {}
     }
     if let Some(folder) = folder {
         match parse::<Servers>(&folder.join(".mcp.json")) {
-            Some(Ok(project)) => add(project.servers, Scope::Project),
-            Some(Err(())) => found.unreadable.push(".mcp.json"),
+            Some(Ok(project)) => add(project.servers, Scope::Project, ""),
+            Some(Err(())) => found.unreadable.push(".mcp.json".to_owned()),
             None => {}
         }
+    }
+    if app_server {
+        let ours = Server {
+            kind: Some("stdio".to_owned()),
+        };
+        add(
+            BTreeMap::from([(APP_SERVER.to_owned(), ours)]),
+            Scope::App,
+            "",
+        );
     }
     found.servers = by_name.into_values().collect();
     found
 }
 
 // Claude Code keys projects by path with forward slashes; Windows paths compare without case.
-fn same_folder(key: &str, folder: &Path) -> bool {
+pub(super) fn same_folder(key: &str, folder: &Path) -> bool {
     let norm = |s: &str| {
         let s = s.replace('\\', "/");
         let s = s.trim_end_matches('/');
@@ -187,7 +221,7 @@ mod tests {
         let dir = TestDir::new();
         let (config, project) = fixture(&dir);
 
-        let found = read(&config, Some(&project));
+        let found = read(&config, Some(&project), &[], false);
 
         let listed: Vec<(&str, &str, Scope)> = found
             .servers
@@ -212,8 +246,8 @@ mod tests {
         let dir = TestDir::new();
         let (config, project) = fixture(&dir);
 
-        let shown = serde_json::to_string(&read(&config, Some(&project))).unwrap();
-        let debugged = format!("{:?}", read(&config, Some(&project)));
+        let shown = serde_json::to_string(&read(&config, Some(&project), &[], false)).unwrap();
+        let debugged = format!("{:?}", read(&config, Some(&project), &[], false));
 
         for secret in SECRETS {
             assert!(!shown.contains(secret), "{secret} in {shown}");
@@ -226,7 +260,7 @@ mod tests {
         let dir = TestDir::new();
         let (config, _) = fixture(&dir);
 
-        let names: Vec<String> = read(&config, None)
+        let names: Vec<String> = read(&config, None, &[], false)
             .servers
             .into_iter()
             .map(|c| c.name)
@@ -241,11 +275,14 @@ mod tests {
         let project = dir.path().join("proj");
         let config = dir.path().join(".claude.json");
 
-        assert_eq!(read(&config, Some(&project)), Connectors::default());
+        assert_eq!(
+            read(&config, Some(&project), &[], false),
+            Connectors::default()
+        );
 
         write(&config, r#"{ "mcpServers": { "x": "FAKE-CMD-SECRET" "#);
         write(&project.join(".mcp.json"), "FAKE-URL-SECRET");
-        let found = read(&config, Some(&project));
+        let found = read(&config, Some(&project), &[], false);
 
         assert!(found.servers.is_empty());
         assert_eq!(
@@ -271,5 +308,151 @@ mod tests {
             "/home/u/code/app2",
             Path::new("/home/u/code/app")
         ));
+    }
+
+    fn plugin(dir: &TestDir, name: &str) -> Plugin {
+        let root = dir.path().join("cache").join(name);
+        fs::create_dir_all(&root).unwrap();
+        Plugin {
+            name: name.to_owned(),
+            root,
+        }
+    }
+
+    fn plugins_fixture(dir: &TestDir) -> Vec<Plugin> {
+        let (wrapped, bare, inline, linked, bundle, broken) = (
+            plugin(dir, "wrapped"),
+            plugin(dir, "bare"),
+            plugin(dir, "inline"),
+            plugin(dir, "linked"),
+            plugin(dir, "bundle"),
+            plugin(dir, "broken"),
+        );
+        write(
+            &wrapped.root.join(".mcp.json"),
+            r#"{ "$schema": "x", "mcpServers": { "browser": { "command": "FAKE-CMD-SECRET",
+                 "env": { "KEY": "FAKE-ENV-SECRET" } } } }"#,
+        );
+        write(
+            &bare.root.join(".mcp.json"),
+            r#"{ "search": { "type": "http", "url": "https://x.test/?k=FAKE-URL-SECRET" } }"#,
+        );
+        write(
+            &inline.root.join(".claude-plugin").join("plugin.json"),
+            r#"{ "name": "inline", "author": { "email": "fake-account@example.com" },
+                 "mcpServers": { "docs": { "type": "sse", "headers": { "X": "FAKE-HEADER-SECRET" } } } }"#,
+        );
+        write(
+            &inline.root.join(".mcp.json"),
+            r#"{ "mcpServers": { "docs": { "type": "http" }, "extra": { "args": ["FAKE-ARG-SECRET"] } } }"#,
+        );
+        write(
+            &linked.root.join(".claude-plugin").join("plugin.json"),
+            r#"{ "mcpServers": "./servers/list.json" }"#,
+        );
+        write(
+            &linked.root.join("servers").join("list.json"),
+            r#"{ "mcpServers": { "tickets": { "type": "ws" } } }"#,
+        );
+        write(
+            &bundle.root.join(".claude-plugin").join("plugin.json"),
+            r#"{ "mcpServers": "../outside.json" }"#,
+        );
+        write(
+            &dir.path().join("cache").join("outside.json"),
+            r#"{ "leak": {} }"#,
+        );
+        write(&broken.root.join(".mcp.json"), "FAKE-CMD-SECRET");
+        let (listed, bad_manifest, bad_map) = (
+            plugin(dir, "listed"),
+            plugin(dir, "bad-manifest"),
+            plugin(dir, "bad-map"),
+        );
+        write(
+            &listed.root.join(".claude-plugin").join("plugin.json"),
+            r#"{ "mcpServers": ["./a.json", { "x": { "command": "FAKE-CMD-SECRET" } }] }"#,
+        );
+        write(
+            &bad_manifest.root.join(".claude-plugin").join("plugin.json"),
+            r#"{ "name": "FAKE-CMD-SECRET" "#,
+        );
+        write(
+            &bad_map.root.join(".claude-plugin").join("plugin.json"),
+            r#"{ "mcpServers": { "x": "FAKE-CMD-SECRET" } }"#,
+        );
+        vec![
+            wrapped,
+            bare,
+            inline,
+            linked,
+            bundle,
+            broken,
+            listed,
+            bad_manifest,
+            bad_map,
+        ]
+    }
+
+    #[test]
+    fn plugin_servers_are_named_after_their_plugin_and_cerberus_is_added_last() {
+        let dir = TestDir::new();
+        let (config, project) = fixture(&dir);
+        let plugins = plugins_fixture(&dir);
+
+        let found = read(&config, Some(&project), &plugins, true);
+
+        let listed: Vec<(&str, &str, Scope)> = found
+            .servers
+            .iter()
+            .filter(|c| c.scope == Scope::Plugin || c.scope == Scope::App)
+            .map(|c| (c.name.as_str(), c.kind, c.scope))
+            .collect();
+        assert_eq!(
+            listed,
+            [
+                ("bare:search", "http", Scope::Plugin),
+                ("cerberus", "stdio", Scope::App),
+                ("inline:docs", "sse", Scope::Plugin),
+                ("inline:extra", "stdio", Scope::Plugin),
+                ("linked:tickets", "ws", Scope::Plugin),
+                ("wrapped:browser", "stdio", Scope::Plugin),
+            ]
+        );
+        assert_eq!(
+            found.unreadable,
+            [
+                "the broken plugin's MCP servers",
+                "the bad-manifest plugin's MCP servers",
+                "the bad-map plugin's MCP servers",
+            ]
+        );
+        assert_eq!(found.servers.len(), 11);
+        let shown = format!("{}{found:?}", serde_json::to_string(&found).unwrap());
+        for secret in SECRETS.into_iter().chain(["leak"]) {
+            assert!(!shown.contains(secret), "{secret} in {shown}");
+        }
+    }
+
+    #[test]
+    fn cerberus_is_listed_only_when_messages_are_on_and_wins_over_a_server_of_its_name() {
+        let dir = TestDir::new();
+        let config = dir.path().join(".claude.json");
+        write(
+            &config,
+            r#"{ "mcpServers": { "cerberus": { "type": "http" } } }"#,
+        );
+
+        let on = read(&config, None, &[], true);
+        let off = read(&config, None, &[], false);
+
+        assert_eq!(
+            on.servers,
+            [Connector {
+                name: "cerberus".to_owned(),
+                kind: "stdio",
+                scope: Scope::App
+            }]
+        );
+        assert_eq!(off.servers[0].scope, Scope::User);
     }
 }

@@ -103,18 +103,33 @@ folded cards and starred skills are kept in `profiles.json`.
   the diff; it shows only when VS Code's `code` command is on `PATH` (on macOS the app in
   Applications also counts). With the [GitHub CLI](https://cli.github.com) signed in, the branch's
   open PR shows below; a click opens it in the browser.
-- **Skills:** the project's `.claude/skills` and the account's `skills` folder, with each skill's
-  description, the ones the account uses most first (Claude Code's own count, from the account's
-  `.claude.json`; only skill names and counts are read from it). The star on a row pins it to the
-  top for that account. **Shift-click** a skill (or Shift+Enter on it) to type `/<skill>` into the chat's input; nothing
-  is sent until you press Enter, and shell tabs get nothing. Plugin skills are not listed yet.
+- **Skills:** the project's `.claude/skills`, the account's `skills` folder, the skills synced
+  from claude.ai (named `anthropic-skills:<skill>`, marked "claude.ai") and the skills of each
+  enabled plugin (named `<plugin>:<skill>`, marked "plugin"), with each skill's description. The
+  ones the account uses most come first (Claude Code's own count, from the account's
+  `.claude.json`, from which only skill names and counts and the signed-in organization and account
+  ids are read). The star on a row pins it to the
+  top for that account. **Shift-click** a skill (or Shift+Enter on it) to type `/<skill>` into the
+  chat's input; nothing is sent until you press Enter, and shell tabs get nothing. Skills built
+  into Claude Code are not listed. Synced skills come from the folder of the organization and
+  account signed in now, as Claude Code picks it; if that is unknown, every synced folder is listed.
 - **Connectors:** the MCP servers the tab's `claude` would load: the account's user servers, its
-  servers for this folder, and the project's `.mcp.json`. Only names and kinds are read, never
-  commands, URLs, headers or env values. "Configured" means set up, not checked to be running.
-  The card starts folded; open it once and it stays open.
+  servers for this folder, the project's `.mcp.json`, each enabled plugin's servers (named
+  `<plugin>:<server>`), and Cerberus's own `cerberus` server when the tab's chat was started with
+  messages between accounts on.
+  Only names and kinds are read, never commands, URLs, headers or env values. "Configured" means
+  set up, not checked to be running. Connectors added on claude.ai (Gmail, Drive and the like)
+  live there and are not listed. The card starts folded; open it once and it stays open.
+
+A plugin counts as enabled the way Claude Code decides it: installed for every folder or for this
+one (`plugins/installed_plugins.json` in the config folder), and not switched off in
+`enabledPlugins` in the user, project or local settings, the later file winning. From those files
+only the plugin switches, where each plugin is installed, and the `syncClaudeAiSkills` switch are
+read. Any of these files that exists but cannot be read is named at the end of Connectors.
 
 Nothing runs while the panel is closed. While it is open, git is read when it opens, on a tab
-change and every 10 seconds; GitHub is asked about a repo at most once a minute.
+change and every 10 seconds; GitHub is asked about a repo at most once a minute. Connectors are
+read again when a chat links to Cerberus for messages or leaves it.
 
 ## The session board and alerts
 

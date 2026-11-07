@@ -62,11 +62,16 @@ function core(options: { hold?: boolean } = {}) {
 
 function feedFor(initial: Target | undefined) {
   const [target, setTarget] = createSignal(initial);
+  const [links, setLinks] = createSignal(0);
   const feed = createRoot((stop) => {
     dispose = stop;
-    return createPanelFeed(target);
+    return createPanelFeed(target, POLL_MS, links);
   });
-  return { feed, setTarget };
+  return {
+    feed,
+    setTarget,
+    linkChanged: () => setLinks((n) => n + 1),
+  };
 }
 
 async function flush(): Promise<void> {
@@ -181,6 +186,18 @@ test("a tab on the same folder and account still reloads the folder's files", as
 
   expect(calls.filter((c) => c.startsWith("panel_connectors"))).toHaveLength(1);
   expect(calls.filter((c) => c.startsWith("panel_skills"))).toHaveLength(1);
+});
+
+test("a chat linking or leaving the bridge reloads only the connectors", async () => {
+  const { calls } = core();
+  const { linkChanged } = feedFor(A);
+  await flush();
+
+  calls.length = 0;
+  linkChanged();
+  await flush();
+
+  expect(calls).toEqual([String.raw`panel_connectors C:\a`]);
 });
 
 test("a git reply that lands after the panel closes starts no PR read", async () => {

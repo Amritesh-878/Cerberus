@@ -591,6 +591,20 @@ fn a_helper_that_never_says_hello_turns_its_tab_off() {
 }
 
 #[test]
+fn a_tab_is_linked_from_its_start_until_its_program_ends() {
+    let (tx, _snapshots) = mpsc::channel();
+    let bridge = Bridge::start(TestHooks(Mutex::new(tx))).unwrap();
+
+    let ticket = bridge.register(5, Path::new("acc-a")).unwrap();
+
+    assert!(bridge.linked(5));
+    assert!(!bridge.linked(6));
+    bridge.closed(&ticket.token);
+    assert!(!bridge.linked(5));
+    assert!(!Bridge::off().linked(5));
+}
+
+#[test]
 fn a_wrong_token_gets_no_answer() {
     let (tx, _snapshots) = mpsc::channel();
     let bridge = Bridge::start(TestHooks(Mutex::new(tx))).unwrap();

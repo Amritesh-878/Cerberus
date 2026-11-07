@@ -82,6 +82,8 @@ export interface PanelFeed {
 export function createPanelFeed(
   target: () => Target | undefined,
   every = POLL_MS,
+  /** Changes whenever a chat links to the bridge or leaves it, which is when Cerberus's own server comes or goes. */
+  links: () => unknown = () => undefined,
 ): PanelFeed {
   const keyOf = (t: Target) => JSON.stringify([t.tab, t.folder, t.account]);
   // A memo, so a rename or any other change to the tab object reads nothing again.
@@ -123,7 +125,9 @@ export function createPanelFeed(
       } else {
         readRepo(key, folder, () => live);
       }
-      void connectors.load(key, () => panelConnectors(t.account, folder));
+      void connectors.load(key, () =>
+        panelConnectors(t.account, folder, t.tab),
+      );
       void skills.load(key, () => panelSkills(t.account, folder));
       if (folder === null) return;
       // Only git can change under a running chat often enough to poll; config and skills reload on a tab change.
@@ -134,6 +138,22 @@ export function createPanelFeed(
         clearInterval(timer);
       });
     }),
+  );
+
+  // The link is made inside the chat's start, which can finish after the tab-change read above.
+  createEffect(
+    on(
+      links,
+      () => {
+        const key = untrack(current);
+        const t = untrack(target);
+        if (key === undefined || t === undefined) return;
+        void connectors.load(key, () =>
+          panelConnectors(t.account, t.folder, t.tab),
+        );
+      },
+      { defer: true },
+    ),
   );
 
   return {
