@@ -500,7 +500,11 @@ export function App() {
   };
 
   const forgetProject = (id: ProjectId) => {
+    const gone = tree().tabs.filter((t) => t.projectId === id);
     const next = removeProject(tree(), id);
+    gone.forEach((t) => {
+      split.forget(t.id);
+    });
     const current = active();
     setTree(next);
     if (current !== undefined && !next.tabs.some((t) => t.id === current)) {

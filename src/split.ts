@@ -14,7 +14,7 @@ export function nextPair(
   return [from, to];
 }
 
-/** Whether a tab dropped at (x, y) splits with the shown one: anywhere on the right half of the chat area. */
+/** Whether a tab dropped at (x, y) lands on the right half of the chat area, where it splits with the shown one. */
 export function dropsToSplit(
   x: number,
   y: number,

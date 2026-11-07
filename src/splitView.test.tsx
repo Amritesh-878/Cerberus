@@ -129,6 +129,47 @@ test("the shown tab dragged onto itself does nothing", async () => {
   expect(root.querySelector(".split-bar")).toBeNull();
 });
 
+test("removing the project of one half ends the split, so no half comes back blank", async () => {
+  const root = await renderApp(() => SAVED, {
+    ...core().core,
+    tree_load: () => ({
+      tree: {
+        projects: [
+          ...TREE.projects,
+          { id: 2, name: "beta", folder: String.raw`C:\code\p2` },
+        ],
+        tabs: [
+          ...TREE.tabs,
+          {
+            id: 8,
+            projectId: 2,
+            parentId: null,
+            title: "other",
+            program: "claude",
+            cwd: null,
+            account: 1,
+          },
+        ],
+        nextId: 9,
+      },
+      notice: null,
+    }),
+  });
+  await open(root, "planner");
+  layOut(root);
+  await dragTo(root, "other", 800, 300);
+  await open(root, "shell");
+
+  click(root, "Remove beta");
+  await settle();
+  click(root, "Remove");
+  await settle();
+  await open(root, "planner");
+
+  expect(root.querySelector(".split-bar")).toBeNull();
+  expect(views(root).filter((v) => v.includes("split"))).toEqual([]);
+});
+
 test("the divider moves, resets to half on a double-click, and is saved", async () => {
   const shares: unknown[] = [];
   const app = core({
