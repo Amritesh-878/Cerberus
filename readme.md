@@ -47,7 +47,8 @@ SHA-256 so you can check a download.
 - **Move a chat to another of your accounts**, from the tab's right-click menu.
 - **A right panel for the tab on screen**: its account, folder and branch, the branch's changes
   and open PR with **Create PR** and **Open in VS Code**, its skills (most used first, starred ones
-  on top, shift-click to type one in) and the MCP servers its `claude` would load.
+  on top, shift-click to type one in; plugin and claude.ai skills included) and the MCP servers
+  its `claude` would load, plugin servers included.
 - **Messages between accounts.** A chat can message a chat on another of your accounts. Each
   message waits in a popup for you to approve, edit or reject, and both chats then show side by side.
 - **`cerberus open`** jumps to a tab from any terminal (below).
