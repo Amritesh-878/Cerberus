@@ -2183,3 +2183,248 @@ button.card-row:focus-visible,
     border-left: none;
   }
 }
+
+/* Edit environment: the shown tab's name, folders and variables. */
+.card-action {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  margin-left: auto;
+  color: var(--dim);
+  cursor: pointer;
+  background: none;
+  border: 0;
+  border-radius: 5px;
+}
+
+.card-meta + .card-action {
+  margin-left: 0;
+}
+
+.card-action:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+
+.card-action:focus-visible {
+  outline: 2px solid var(--accent);
+}
+
+.env-dialog input {
+  box-sizing: border-box;
+  min-width: 0;
+  height: 30px;
+  padding: 0 8px;
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid #333;
+  border-radius: 6px;
+}
+
+.env-dialog input:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.env-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.env-field input {
+  font-size: 13px;
+}
+
+.env-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-height: 30px;
+  min-width: 0;
+  color: var(--dim);
+}
+
+.env-name {
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.env-tag {
+  padding: 0 6px;
+  font-size: 11px;
+  color: var(--dim);
+  border: 1px solid #333;
+  border-radius: 4px;
+}
+
+.env-branch {
+  display: flex;
+  flex: none;
+  gap: 4px;
+  align-items: center;
+  font-size: 12px;
+}
+
+.env-hidden {
+  font-size: 12px;
+  color: var(--faint);
+}
+
+.env-dialog .secondary.small {
+  width: auto;
+  height: 28px;
+  padding: 0 10px;
+  margin-top: 0;
+  font-size: 12px;
+}
+
+.env-dialog section > .secondary.small {
+  margin-top: 6px;
+}
+
+.env-add {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.env-note {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.env-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+  margin-top: 18px;
+}
+
+.env-actions button {
+  width: auto;
+  height: 30px;
+  padding: 0 14px;
+  margin: 0;
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.env-actions button:not(.secondary) {
+  font-weight: 600;
+  color: var(--bg);
+  background: var(--accent);
+  border: 0;
+}
+
+.env-actions button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.env-confirm {
+  flex: 1 1 100%;
+  font-size: 12px;
+  color: var(--text);
+}
+
+/* Every PR of the tab's repos, under each repo row. */
+.pr-row {
+  position: relative;
+}
+
+.pr-row.merged .row-icon.pr {
+  color: #8e7cc3;
+}
+
+.pr-row.draft .row-icon.pr,
+.pr-row.closed .row-icon.pr {
+  color: var(--faint);
+}
+
+.pr-row.open .row-icon.pr {
+  color: var(--added);
+}
+
+.pr-state {
+  flex: none;
+  font-size: 11px;
+  color: var(--dim);
+}
+
+.pr-state.open {
+  color: var(--added);
+}
+
+.pr-state.merged {
+  color: #b58ad6;
+}
+
+.pr-menu {
+  position: absolute;
+  top: calc(100% - 2px);
+  right: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+  max-width: 240px;
+  padding: 4px;
+  background: #242424;
+  border: 1px solid #353535;
+  border-radius: 8px;
+  box-shadow: 0 10px 28px rgb(0 0 0 / 45%);
+}
+
+.pr-menu button {
+  height: 28px;
+  padding: 0 8px;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  background: none;
+  border: 0;
+  border-radius: 5px;
+}
+
+.pr-menu button:hover,
+.pr-menu button:focus-visible {
+  background: var(--hover);
+  outline: none;
+}
+
+.pr-confirm {
+  margin: 4px 8px 6px;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.show-more {
+  align-self: flex-start;
+  height: 24px;
+  padding: 0 6px;
+  margin-left: 20px;
+  font-size: 12px;
+  color: var(--dim);
+  cursor: pointer;
+  background: none;
+  border: 0;
+  border-radius: 5px;
+}
+
+.show-more:hover {
+  color: var(--text);
+  background: var(--hover);
+}
