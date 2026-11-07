@@ -240,7 +240,18 @@ export function TabMenu(props: {
           }
         >
           {(account) => (
-            <div class="menu-confirm" role="alertdialog">
+            <div
+              class="menu-confirm"
+              role="alertdialog"
+              ref={(el) => {
+                // The picked item is gone, so focus moves here for Enter and Escape.
+                queueMicrotask(() => {
+                  el.querySelector<HTMLButtonElement>(
+                    "button:not(:disabled)",
+                  )?.focus();
+                });
+              }}
+            >
               <p>
                 {props.ended
                   ? `Close this tab's shell and continue the ended chat on ${account().name}?`

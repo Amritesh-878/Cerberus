@@ -335,6 +335,8 @@ test("an ended tab offers only its own saved chat, and asks first since its shel
   expect(root.querySelector(".menu-confirm")?.textContent).toContain(
     "Close this tab's shell and continue the ended chat on personal?",
   );
+  // The picked item is gone, so the keyboard lands on Continue.
+  expect(document.activeElement?.textContent).toBe("Continue");
   click(root.querySelector(".menu-confirm") ?? root, "Cancel");
   await settle();
 
