@@ -166,7 +166,9 @@ pub fn panel_connectors(
     let plugins = plugins::enabled(&accounts.claude_home(account)?, folder);
     // Whether this tab's running chat was given the server when it started, without reading the file it names.
     let app_server = tab.is_some_and(|tab| bridge.linked(tab));
-    Ok(mcp::read(&config, folder, &plugins, app_server))
+    let mut found = mcp::read(&config, folder, &plugins.plugins, app_server);
+    found.unreadable.extend(plugins.unreadable);
+    Ok(found)
 }
 
 #[tauri::command(async)]
@@ -178,7 +180,7 @@ pub fn panel_skills(
     let home = accounts.claude_home(account)?;
     let usage = skills::usage(&account_config(&accounts, account)?);
     let folder = folder.as_deref().map(self::folder).transpose()?;
-    let plugins = plugins::enabled(&home, folder);
+    let plugins = plugins::enabled(&home, folder).plugins;
     Ok(skills::read(folder, &home, &plugins, &usage))
 }
 

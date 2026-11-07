@@ -40,7 +40,7 @@ enum Flag {
 }
 
 // Only the plugin switches and the synced-skills switch are read, with env, hooks, permissions and the rest skipped unparsed.
-#[derive(Deserialize, Default)]
+#[derive(Deserialize)]
 struct Settings {
     #[serde(default, rename = "enabledPlugins")]
     enabled: BTreeMap<String, Flag>,
@@ -54,20 +54,42 @@ struct Manifest {
     default_enabled: Option<bool>,
 }
 
-fn settings(path: &Path) -> Settings {
-    parse(path).and_then(Result::ok).unwrap_or_default()
+/// The plugins that load, and the files that exist but could not be read, named without their content.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct Enabled {
+    pub plugins: Vec<Plugin>,
+    pub unreadable: Vec<String>,
 }
 
 /// User, project and local settings, in Claude Code's order, so a later file's switch wins.
-fn switches(claude_home: &Path, folder: Option<&Path>) -> BTreeMap<String, bool> {
-    let mut files = vec![claude_home.join("settings.json")];
+fn switches(
+    claude_home: &Path,
+    folder: Option<&Path>,
+    unreadable: &mut Vec<String>,
+) -> BTreeMap<String, bool> {
+    let mut files = vec![(
+        claude_home.join("settings.json"),
+        "the account's settings.json",
+    )];
     if let Some(folder) = folder {
-        files.push(folder.join(".claude").join("settings.json"));
-        files.push(folder.join(".claude").join("settings.local.json"));
+        let project = folder.join(".claude");
+        files.push((project.join("settings.json"), ".claude/settings.json"));
+        files.push((
+            project.join("settings.local.json"),
+            ".claude/settings.local.json",
+        ));
     }
     let mut on = BTreeMap::new();
-    for file in files {
-        for (id, flag) in settings(&file).enabled {
+    for (file, label) in files {
+        let settings = match parse::<Settings>(&file) {
+            None => continue,
+            Some(Err(())) => {
+                unreadable.push(label.to_owned());
+                continue;
+            }
+            Some(Ok(settings)) => settings,
+        };
+        for (id, flag) in settings.enabled {
             match flag {
                 Flag::On(value) => {
                     on.insert(id, value);
@@ -92,12 +114,26 @@ fn applies(install: &Install, folder: Option<&Path>) -> bool {
 }
 
 /// The plugins a `claude` started in `folder` under this config dir loads, by name.
-pub fn enabled(claude_home: &Path, folder: Option<&Path>) -> Vec<Plugin> {
+pub fn enabled(claude_home: &Path, folder: Option<&Path>) -> Enabled {
+    let mut unreadable = Vec::new();
+    let switches = switches(claude_home, folder, &mut unreadable);
     let path = claude_home.join("plugins").join("installed_plugins.json");
-    let Some(Ok(installed)) = parse::<Installed>(&path) else {
-        return Vec::new();
+    let installed = match parse::<Installed>(&path) {
+        None => {
+            return Enabled {
+                plugins: Vec::new(),
+                unreadable,
+            };
+        }
+        Some(Err(())) => {
+            unreadable.push("the account's installed_plugins.json".to_owned());
+            return Enabled {
+                plugins: Vec::new(),
+                unreadable,
+            };
+        }
+        Some(Ok(installed)) => installed,
     };
-    let switches = switches(claude_home, folder);
     let mut found: Vec<Plugin> = installed
         .plugins
         .into_iter()
@@ -117,13 +153,17 @@ pub fn enabled(claude_home: &Path, folder: Option<&Path>) -> Vec<Plugin> {
         .collect();
     found.sort_by(|a, b| a.name.cmp(&b.name));
     found.dedup_by(|a, b| a.name == b.name);
-    found
+    Enabled {
+        plugins: found,
+        unreadable,
+    }
 }
 
-/// Whether claude.ai's synced skills load, which the user's settings can turn off.
+/// Whether claude.ai's synced skills load, which the user's settings can turn off, a broken file being named in Connectors.
 pub fn synced_skills_on(claude_home: &Path) -> bool {
-    settings(&claude_home.join("settings.json"))
-        .sync_skills
+    parse::<Settings>(&claude_home.join("settings.json"))
+        .and_then(Result::ok)
+        .and_then(|s| s.sync_skills)
         .unwrap_or(true)
 }
 
@@ -259,8 +299,8 @@ mod tests {
         )
     }
 
-    fn names(plugins: &[Plugin]) -> Vec<&str> {
-        plugins.iter().map(|p| p.name.as_str()).collect()
+    fn names(enabled: &Enabled) -> Vec<&str> {
+        enabled.plugins.iter().map(|p| p.name.as_str()).collect()
     }
 
     #[test]
@@ -315,11 +355,12 @@ mod tests {
     }
 
     #[test]
-    fn missing_or_broken_files_load_no_plugins_and_synced_skills_stay_on() {
+    fn missing_files_load_no_plugins_and_broken_ones_are_named_without_their_text() {
         let dir = TestDir::new();
         let home = dir.path().join("acct");
+        let project = dir.path().join("proj");
 
-        assert!(enabled(&home, None).is_empty());
+        assert_eq!(enabled(&home, Some(&project)), Enabled::default());
         assert!(synced_skills_on(&home));
 
         write(
@@ -328,10 +369,37 @@ mod tests {
         );
         write(
             &home.join("settings.json"),
+            r#"{ "env": "FAKE-ENV-SECRET" "#,
+        );
+        write(
+            &project.join(".claude").join("settings.local.json"),
+            r#"{ "enabledPlugins": "FAKE-SECRET" }"#,
+        );
+
+        let found = enabled(&home, Some(&project));
+
+        assert!(found.plugins.is_empty());
+        assert_eq!(
+            found.unreadable,
+            [
+                "the account's settings.json",
+                ".claude/settings.local.json",
+                "the account's installed_plugins.json",
+            ]
+        );
+        assert!(!format!("{found:?}").contains("FAKE"));
+        assert!(synced_skills_on(&home));
+    }
+
+    #[test]
+    fn the_settings_can_turn_synced_skills_off() {
+        let dir = TestDir::new();
+        let home = dir.path().join("acct");
+        write(
+            &home.join("settings.json"),
             r#"{ "syncClaudeAiSkills": false }"#,
         );
 
-        assert!(enabled(&home, None).is_empty());
         assert!(!synced_skills_on(&home));
     }
 

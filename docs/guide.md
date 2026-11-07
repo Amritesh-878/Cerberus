@@ -124,7 +124,7 @@ A plugin counts as enabled the way Claude Code decides it: installed for every f
 one (`plugins/installed_plugins.json` in the config folder), and not switched off in
 `enabledPlugins` in the user, project or local settings, the later file winning. From those files
 only the plugin switches, where each plugin is installed, and the `syncClaudeAiSkills` switch are
-read.
+read. Any of these files that exists but cannot be read is named at the end of Connectors.
 
 Nothing runs while the panel is closed. While it is open, git is read when it opens, on a tab
 change and every 10 seconds; GitHub is asked about a repo at most once a minute. Connectors are
