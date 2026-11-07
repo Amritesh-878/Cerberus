@@ -35,7 +35,7 @@ export function MessagesSetting(props: {
     <SettingSwitch
       class="messages-setting"
       name="Messages between accounts"
-      description="A Claude tab can message one on another account; you approve, edit or reject each message."
+      description="A Claude tab can message one on another account, once you approve it."
       newTabsOnly
       checked={choice() ?? props.profiles.messages}
       onChange={save}
