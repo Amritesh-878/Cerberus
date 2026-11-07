@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::io;
 use std::path::{Component, Path, PathBuf};
 
 use serde::Deserialize;
@@ -180,7 +181,10 @@ fn manifest_servers(root: &Path) -> Option<Result<BTreeMap<String, Server>, ()>>
         return Some(Ok(inline.servers));
     }
     if let Some(Ok(path)) = parse::<PathManifest>(&manifest) {
-        return plugin_file(&json_inside(root, &path.file)?);
+        return match json_inside(root, &path.file)? {
+            Ok(file) => plugin_file(&file),
+            Err(()) => Some(Err(())),
+        };
     }
     if let Some(Ok(_)) = parse::<ListManifest>(&manifest) {
         return None;
@@ -197,8 +201,17 @@ pub(super) fn servers(root: &Path) -> Result<BTreeMap<String, Server>, ()> {
     Ok(servers)
 }
 
+/// `None` for a missing file, `Err` for one that exists but cannot be resolved, as `parse` reports them.
+fn resolve(path: &Path) -> Option<Result<PathBuf, ()>> {
+    match path.canonicalize() {
+        Ok(path) => Some(Ok(path)),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => None,
+        Err(_) => Some(Err(())),
+    }
+}
+
 // A bundle or URL is not a JSON file, and Claude Code refuses a file outside the plugin's folder.
-fn json_inside(root: &Path, file: &str) -> Option<PathBuf> {
+fn json_inside(root: &Path, file: &str) -> Option<Result<PathBuf, ()>> {
     let relative = Path::new(file);
     let plain = relative
         .components()
@@ -208,10 +221,15 @@ fn json_inside(root: &Path, file: &str) -> Option<PathBuf> {
         return None;
     }
     // Resolved, so a link inside the plugin cannot point the read outside it.
-    let resolved = root.join(relative).canonicalize().ok()?;
-    resolved
-        .starts_with(root.canonicalize().ok()?)
-        .then_some(resolved)
+    let resolved = match resolve(&root.join(relative))? {
+        Ok(resolved) => resolved,
+        Err(()) => return Some(Err(())),
+    };
+    let root = match resolve(root)? {
+        Ok(root) => root,
+        Err(()) => return Some(Err(())),
+    };
+    resolved.starts_with(root).then_some(Ok(resolved))
 }
 
 #[cfg(test)]
@@ -343,5 +361,30 @@ mod tests {
             servers(&root).unwrap().into_keys().collect::<Vec<_>>(),
             ["ok"]
         );
+
+        write(&manifest, r#"{ "mcpServers": "./gone.json" }"#);
+        assert!(servers(&root).unwrap().is_empty());
+    }
+
+    // A folder the user cannot search is the portable way to make resolving fail other than by absence.
+    #[cfg(unix)]
+    #[test]
+    fn a_manifest_path_that_cannot_be_resolved_is_named_unreadable() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = TestDir::new();
+        let root = dir.path().join("plugin");
+        let locked = root.join("locked");
+        write(&locked.join("servers.json"), r#"{ "mcpServers": {} }"#);
+        write(
+            &root.join(".claude-plugin").join("plugin.json"),
+            r#"{ "mcpServers": "./locked/servers.json" }"#,
+        );
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).unwrap();
+
+        let found = servers(&root);
+
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(found.is_err());
     }
 }
