@@ -25,6 +25,8 @@ export interface Target {
   tab: number;
   folder: string | null;
   account: AccountId | null;
+  /** Whether a chat runs in the tab, so one that starts or ends reloads the servers it was given. */
+  chat: boolean;
 }
 
 /** `undefined` while loading. */
@@ -83,7 +85,8 @@ export function createPanelFeed(
   target: () => Target | undefined,
   every = POLL_MS,
 ): PanelFeed {
-  const keyOf = (t: Target) => JSON.stringify([t.tab, t.folder, t.account]);
+  const keyOf = (t: Target) =>
+    JSON.stringify([t.tab, t.folder, t.account, t.chat]);
   // A memo, so a rename or any other change to the tab object reads nothing again.
   const current = createMemo(() => {
     const t = target();

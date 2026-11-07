@@ -135,6 +135,7 @@ export function Panel(props: {
       tab: tab.id,
       folder: tab.launch.spec.cwd,
       account: tab.launch.account?.id ?? null,
+      chat: props.canType,
     };
   };
   const feed = createPanelFeed(target);
