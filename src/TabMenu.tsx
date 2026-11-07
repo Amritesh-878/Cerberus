@@ -41,6 +41,13 @@ export function menuAccount(
 
 const ITEMS = '[role="menuitem"]:not(:disabled)';
 
+/** An ended tab moves only its own saved chat, never one started by hand in its shell, and says so. */
+export function continueLabel(ended: boolean, account: string): string {
+  return ended
+    ? `Continue the ended chat on ${account}…`
+    : `Continue on ${account}…`;
+}
+
 /** Up, Down, Home and End walk the enabled items, wrapping at the ends as a native menu does. */
 function moveFocus(menu: HTMLElement, key: string): boolean {
   const items = [...menu.querySelectorAll<HTMLElement>(ITEMS)];
@@ -89,8 +96,9 @@ export function TabMenu(props: {
   });
   let box: HTMLDivElement | undefined;
 
+  // An ended tab's shell may be running a claude started by hand, which the move would close.
   const pick = (account: Account) => {
-    if (props.running) setConfirming(account);
+    if (props.running || props.ended) setConfirming(account);
     else props.onContinue(account);
   };
   // Kept inside the window, flipping above the click when there is no room below.
@@ -205,7 +213,7 @@ export function TabMenu(props: {
                       color={target.account.color}
                     />
                     <span class="menu-text">
-                      Continue on {target.account.name}…
+                      {continueLabel(props.ended, target.account.name)}
                     </span>
                     <Show when={!target.signedIn}>
                       <span class="menu-key">signed out</span>
@@ -233,7 +241,11 @@ export function TabMenu(props: {
         >
           {(account) => (
             <div class="menu-confirm" role="alertdialog">
-              <p>Close this chat and continue it on {account().name}?</p>
+              <p>
+                {props.ended
+                  ? `Close this tab's shell and continue the ended chat on ${account().name}?`
+                  : `Close this chat and continue it on ${account().name}?`}
+              </p>
               <div class="confirm-actions">
                 <button
                   type="button"

@@ -303,10 +303,42 @@ test.each([
   expect(showsShell(root)).toBe(true);
 
   await openMenu(root, "Claude Code · work");
-  click(root.querySelector(".tab-menu") ?? root, "Continue on personal…");
+  click(
+    root.querySelector(".tab-menu") ?? root,
+    "Continue the ended chat on personal…",
+  );
+  await settle();
+  click(root.querySelector(".menu-confirm") ?? root, "Continue");
   await settle();
 
   expect(showsShell(root)).toBe(stillEnded);
+});
+
+test("an ended tab offers only its own saved chat, and asks first since its shell may run a claude started by hand", async () => {
+  const app = core();
+  const root = await renderApp(() => SAVED, {
+    ...app.core,
+    tree_load: () => ({ tree: TREE, notice: null, ended: [2] }),
+  });
+
+  await openMenu(root, "Claude Code · work");
+  expect(menuItems(root)).toEqual([
+    "Resume chat",
+    "Continue the ended chat on personal…",
+    "Accounts",
+  ]);
+  click(
+    root.querySelector(".tab-menu") ?? root,
+    "Continue the ended chat on personal…",
+  );
+  await settle();
+  expect(root.querySelector(".menu-confirm")?.textContent).toContain(
+    "Close this tab's shell and continue the ended chat on personal?",
+  );
+  click(root.querySelector(".menu-confirm") ?? root, "Cancel");
+  await settle();
+
+  expect(app.continued).toEqual([]);
 });
 
 async function openPill(root: HTMLElement): Promise<void> {
