@@ -48,7 +48,7 @@ export function Approvals(props: {
   decide: (id: number, decision: Decision) => Promise<Decided>;
   typeIn: (id: number) => Promise<void>;
   discard: (id: number) => Promise<void>;
-  /** An approved message reached its tab or its input box, so both chats can be shown. */
+  /** An approved message reached its tab or its input box, so both chats show side by side. */
   onApproved: (from: number, to: number) => void;
 }) {
   const first = () => props.pending.at(0);
@@ -58,7 +58,7 @@ export function Approvals(props: {
   // What happened to a message that needs the user to read it, held after it leaves the queue.
   const [notice, setNotice] = createSignal<{
     text: string;
-    typeIn?: { id: number; where: string };
+    typeIn?: { id: number; where: string; from: number; to: number };
   }>();
   createEffect(
     on(
@@ -94,7 +94,12 @@ export function Approvals(props: {
           } else if (decided.how === "unconfirmed") {
             setNotice({
               text: `It went to the inbox of ${where}, but that tab hasn't shown it yet. It may still arrive.`,
-              typeIn: { id: decided.id, where },
+              typeIn: {
+                id: decided.id,
+                where,
+                from: decided.from,
+                to: decided.to,
+              },
             });
           } else if (decided.how === "failed") {
             setNotice({ text: `Not delivered: ${decided.reason}` });
@@ -110,13 +115,21 @@ export function Approvals(props: {
   };
 
   // Only on the user's click, since the inbox copy may still show and Enter would then send it twice.
-  const typeInstead = (id: number, where: string) => {
+  const typeInstead = (target: {
+    id: number;
+    where: string;
+    from: number;
+    to: number;
+  }) => {
+    const { id, where } = target;
     setBusy(true);
     setError(undefined);
     props
       .typeIn(id)
       .then(
         () => {
+          // Typed in counts as delivered, so it brings the split back if it was closed meanwhile.
+          props.onApproved(target.from, target.to);
           setNotice({
             text: `${waitsForEnter(where)} If the first copy shows up there too, clear the input box instead.`,
           });
@@ -211,7 +224,7 @@ export function Approvals(props: {
                   class="secondary"
                   disabled={busy()}
                   onClick={() => {
-                    typeInstead(target().id, target().where);
+                    typeInstead(target());
                   }}
                 >
                   Type it in instead

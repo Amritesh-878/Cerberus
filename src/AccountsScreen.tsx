@@ -15,6 +15,7 @@ import { PLATFORM } from "./keys";
 import { MessagesSetting } from "./MessagesSetting";
 import type { ProgramChoice } from "./pty";
 import type { Statuses } from "./statuses";
+import { SettingSwitch } from "./SettingSwitch";
 import { shellChoice, type Tab } from "./tab";
 
 export function AccountsScreen(props: {
@@ -54,19 +55,15 @@ export function AccountsScreen(props: {
         />
       </section>
       <h3>Alerts</h3>
-      <div class="alerts-setting">
-        <label>
-          <input
-            type="checkbox"
-            checked={props.alerts}
-            onChange={(event) => {
-              props.onAlerts(event.currentTarget.checked);
-            }}
-          />
-          Notify me when a chat in a tab I'm not looking at finishes, hits its
-          limit or ends
-        </label>
-      </div>
+      <SettingSwitch
+        class="alerts-setting"
+        name="Desktop alerts"
+        description="When a chat in a tab you're not looking at finishes, hits its limit or ends."
+        checked={props.alerts}
+        onChange={(on) => {
+          props.onAlerts(on);
+        }}
+      />
       <SuggestionsSetting
         profiles={props.profiles}
         onProfiles={props.onProfiles}
@@ -211,23 +208,18 @@ function SuggestionsSetting(props: {
   return (
     <>
       <h3>Shell tabs</h3>
-      <div class="alerts-setting suggestions-setting">
-        <label>
-          <input
-            type="checkbox"
-            checked={choice() ?? props.profiles.suggestions}
-            onChange={(event) => {
-              save(event.currentTarget.checked);
-            }}
-          />
-          Suggestions in shell tabs: a grey suggestion from your history as you
-          type, and the Right arrow accepts it. zsh and PowerShell 7 get it,
-          fish has its own, and it applies to shell tabs started after a change.
-        </label>
+      <SettingSwitch
+        class="suggestions-setting"
+        name="Suggestions from history"
+        description="Grey text from your history as you type, in zsh and PowerShell 7; Right arrow takes it."
+        newTabsOnly
+        checked={choice() ?? props.profiles.suggestions}
+        onChange={save}
+      >
         <Show when={error()}>
           <p class="error">Suggestions setting not saved: {error()}</p>
         </Show>
-      </div>
+      </SettingSwitch>
     </>
   );
 }

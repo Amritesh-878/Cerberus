@@ -1,7 +1,7 @@
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { afterEach, expect, test } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 
-import { PtySession } from "./pty";
+import { PtySession, settledResize, type Size } from "./pty";
 
 const SPEC = { program: "cmd.exe", args: [], cwd: null, account: 2 };
 const SIZE = { cols: 80, rows: 24 };
@@ -186,4 +186,51 @@ test("kill is not held back by a write the program is not reading", async () => 
     "pty_write",
     "pty_kill",
   ]);
+});
+
+test("a run of resizes reaches the program once, at the settled size", () => {
+  vi.useFakeTimers();
+  try {
+    const sent: Size[] = [];
+    const resizer = settledResize((size) => sent.push(size), 120);
+    resizer.started(SIZE);
+
+    for (let cols = 79; cols >= 60; cols -= 1) {
+      resizer.call({ cols, rows: 24 });
+      vi.advanceTimersByTime(30);
+    }
+    expect(sent).toEqual([]);
+    vi.advanceTimersByTime(120);
+    expect(sent).toEqual([{ cols: 60, rows: 24 }]);
+
+    // Dragged away and back: the program already has this size, so it is not told again.
+    resizer.call({ cols: 70, rows: 24 });
+    resizer.call({ cols: 60, rows: 24 });
+    vi.advanceTimersByTime(120);
+    expect(sent).toHaveLength(1);
+
+    resizer.call({ cols: 100, rows: 30 });
+    resizer.cancel();
+    vi.advanceTimersByTime(120);
+    expect(sent).toHaveLength(1);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("a restarted program's own start size is not sent again", () => {
+  vi.useFakeTimers();
+  try {
+    const sent: Size[] = [];
+    const resizer = settledResize((size) => sent.push(size), 120);
+    resizer.started(SIZE);
+
+    resizer.call({ cols: 100, rows: 30 });
+    resizer.started({ cols: 100, rows: 30 });
+    vi.advanceTimersByTime(120);
+
+    expect(sent).toEqual([]);
+  } finally {
+    vi.useRealTimers();
+  }
 });

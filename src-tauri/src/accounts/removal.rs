@@ -10,8 +10,9 @@ pub enum Removal {
     InUse {
         tabs: Vec<String>,
     },
+    // Boxed, since the profiles dwarf the other variant.
     Removed {
-        profiles: Profiles,
+        profiles: Box<Profiles>,
     },
 }
 
@@ -35,7 +36,9 @@ impl Accounts {
             }
         }
         let profiles = self.update(|p| p.remove(id))?;
-        Ok(Removal::Removed { profiles })
+        Ok(Removal::Removed {
+            profiles: Box::new(profiles),
+        })
     }
 }
 
