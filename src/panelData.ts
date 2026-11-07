@@ -30,7 +30,8 @@ export interface PrRow {
 export interface Connector {
   name: string;
   kind: "stdio" | "http" | "sse" | "ws" | "other";
-  scope: "user" | "project" | "local";
+  /** `app` is Cerberus's own server for messages between accounts; plugin servers are named `<plugin>:<server>`. */
+  scope: "plugin" | "user" | "project" | "local" | "app";
 }
 
 export interface Connectors {
@@ -42,7 +43,8 @@ export interface Connectors {
 export interface Skill {
   name: string;
   description: string | null;
-  scope: "project" | "account";
+  /** `synced` comes from claude.ai; plugin and synced skills are named `<plugin>:<skill>`. */
+  scope: "project" | "account" | "synced" | "plugin";
   /** How often the account has used it; the core lists the most used first. */
   uses: number;
 }
@@ -80,6 +82,18 @@ export function panelSkills(
   folder: string | null,
 ): Promise<Skill[]> {
   return invoke<Skill[]>("panel_skills", { account, folder });
+}
+
+/** How a connector's origin is shown: Cerberus's own server by the app's name. */
+export function connectorScope(scope: Connector["scope"]): string {
+  return scope === "app" ? "Cerberus" : scope;
+}
+
+/** The mark a skill row shows for where it comes from; the project's and the account's own get none. */
+export function skillSource(scope: Skill["scope"]): string | null {
+  if (scope === "plugin") return "plugin";
+  if (scope === "synced") return "claude.ai";
+  return null;
 }
 
 /** The command Create PR types into a new shell tab, for the user to send. */

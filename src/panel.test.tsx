@@ -478,3 +478,46 @@ test("Open in VS Code asks the core for the folder, and hides without VS Code", 
   expect(card(again, "Changes").textContent).toContain("+736");
   expect(() => button(card(again, "Changes"), "Open in VS Code")).toThrow();
 });
+
+test("plugin and claude.ai skills are marked, and Connectors names Cerberus's own server and the claude.ai gap", async () => {
+  const core = panelCore(withPanel({ open: true, expanded: ["connectors"] }));
+  const root = await renderApp(core.profiles, {
+    ...core.core,
+    panel_skills: () => [
+      {
+        name: "tools:audit",
+        description: "Check a page",
+        scope: "plugin",
+        uses: 3,
+      },
+      {
+        name: "anthropic-skills:pdf",
+        description: null,
+        scope: "synced",
+        uses: 1,
+      },
+      ...SKILLS.slice(0, 1),
+    ],
+    panel_connectors: () => ({
+      servers: [
+        { name: "cerberus", kind: "stdio", scope: "app" },
+        { name: "tools:browser", kind: "stdio", scope: "plugin" },
+      ],
+      unreadable: [],
+    }),
+  });
+  await open(root, "planner");
+
+  const detail = (name: string) =>
+    skillRow(root, name).querySelector(".row-detail")?.textContent;
+  expect(detail("tools:audit")).toBe("pluginCheck a page");
+  expect(detail("anthropic-skills:pdf")).toBe("claude.ai");
+  expect(detail("verify")).toBe("Run the gate");
+  const connectors = card(root, "Connectors").textContent;
+  expect(connectors).toContain("cerberusstdio · Cerberus");
+  expect(connectors).toContain("tools:browserstdio · plugin");
+  expect(connectors).toContain("2 configured");
+  expect(connectors).toContain(
+    "Connectors added on claude.ai are not listed here",
+  );
+});

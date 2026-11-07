@@ -20,12 +20,14 @@ import {
 } from "./icons";
 import {
   type Changes,
+  connectorScope,
   favouritesFirst,
   openFolder,
   openPr,
   openVsCode,
   type Skill,
   skillCommand,
+  skillSource,
 } from "./panelData";
 import { createPanelFeed, type Loaded, type Target } from "./panelFeed";
 import type { PanelState } from "./panelPrefs";
@@ -299,13 +301,16 @@ export function Panel(props: {
                       <Row
                         icon={<PlugIcon />}
                         text={server.name}
-                        meta={`${server.kind} · ${server.scope}`}
+                        meta={`${server.kind} · ${connectorScope(server.scope)}`}
                       />
                     )}
                   </For>
                   <For each={found().unreadable}>
                     {(file) => <Note>Could not read {file}</Note>}
                   </For>
+                  <p class="card-note faint">
+                    Connectors added on claude.ai are not listed here
+                  </p>
                 </>
               )}
             </Show>
@@ -374,8 +379,18 @@ function SkillRow(props: {
         </span>
         <span class="row-text">
           <span class="row-main">{props.skill.name}</span>
-          <Show when={props.skill.description}>
-            <span class="row-detail">{props.skill.description}</span>
+          <Show
+            when={
+              skillSource(props.skill.scope) !== null ||
+              props.skill.description !== null
+            }
+          >
+            <span class="row-detail">
+              <Show when={skillSource(props.skill.scope)}>
+                {(source) => <span class="row-tag">{source()}</span>}
+              </Show>
+              {props.skill.description}
+            </span>
           </Show>
         </span>
       </button>
