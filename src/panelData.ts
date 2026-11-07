@@ -30,7 +30,7 @@ export interface PrRow {
 export interface Connector {
   name: string;
   kind: "stdio" | "http" | "sse" | "ws" | "other";
-  /** `app` is Cerberus's own server for messages between accounts; plugin servers are named `<plugin>:<server>`. */
+  /** `app` is Cerberus's own server for messages between accounts, and plugin servers are named `<plugin>:<server>`. */
   scope: "plugin" | "user" | "project" | "local" | "app";
 }
 
@@ -43,7 +43,7 @@ export interface Connectors {
 export interface Skill {
   name: string;
   description: string | null;
-  /** `synced` comes from claude.ai; plugin and synced skills are named `<plugin>:<skill>`. */
+  /** `synced` comes from claude.ai, and plugin and synced skills are named `<plugin>:<skill>`. */
   scope: "project" | "account" | "synced" | "plugin";
   /** How often the account has used it; the core lists the most used first. */
   uses: number;
@@ -70,11 +70,13 @@ export function openVsCode(folder: string): Promise<void> {
   return invoke("panel_open_vscode", { folder });
 }
 
+/** `tab` lets the core say whether that tab's running chat was given Cerberus's own server. */
 export function panelConnectors(
   account: AccountId | null,
   folder: string | null,
+  tab: number,
 ): Promise<Connectors> {
-  return invoke<Connectors>("panel_connectors", { account, folder });
+  return invoke<Connectors>("panel_connectors", { account, folder, tab });
 }
 
 export function panelSkills(
@@ -84,12 +86,12 @@ export function panelSkills(
   return invoke<Skill[]>("panel_skills", { account, folder });
 }
 
-/** How a connector's origin is shown: Cerberus's own server by the app's name. */
+/** How a connector's origin is shown, with Cerberus's own server under the app's name. */
 export function connectorScope(scope: Connector["scope"]): string {
   return scope === "app" ? "Cerberus" : scope;
 }
 
-/** The mark a skill row shows for where it comes from; the project's and the account's own get none. */
+/** The mark a skill row shows for where it comes from, with none for the project's and the account's own. */
 export function skillSource(scope: Skill["scope"]): string | null {
   if (scope === "plugin") return "plugin";
   if (scope === "synced") return "claude.ai";

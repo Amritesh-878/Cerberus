@@ -13,7 +13,7 @@ pub struct Plugin {
     pub root: PathBuf,
 }
 
-// Only where each install sits and for which folder; versions, commit hashes and dates are skipped.
+// Only where each install sits and for which folder, with versions, commit hashes and dates skipped.
 #[derive(Deserialize)]
 struct Install {
     #[serde(rename = "installPath")]
@@ -29,7 +29,7 @@ struct Installed {
     plugins: BTreeMap<String, Vec<Install>>,
 }
 
-/// An `enabledPlugins` value: `true`, `false`, or a list of version constraints, which enables it.
+/// An `enabledPlugins` value of `true`, `false`, or a list of version constraints, which enables it.
 #[derive(Deserialize)]
 #[serde(untagged)]
 enum Flag {
@@ -38,7 +38,7 @@ enum Flag {
     Invalid(IgnoredAny),
 }
 
-// Only the plugin switches and the synced-skills switch; env, hooks, permissions and the rest are skipped unparsed.
+// Only the plugin switches and the synced-skills switch are read, with env, hooks, permissions and the rest skipped unparsed.
 #[derive(Deserialize, Default)]
 struct Settings {
     #[serde(default, rename = "enabledPlugins")]
@@ -57,7 +57,7 @@ fn settings(path: &Path) -> Settings {
     parse(path).and_then(Result::ok).unwrap_or_default()
 }
 
-/// User, project and local settings, in Claude Code's order: a later file's switch wins.
+/// User, project and local settings, in Claude Code's order, so a later file's switch wins.
 fn switches(claude_home: &Path, folder: Option<&Path>) -> BTreeMap<String, bool> {
     let mut files = vec![claude_home.join("settings.json")];
     if let Some(folder) = folder {
@@ -119,7 +119,7 @@ pub fn enabled(claude_home: &Path, folder: Option<&Path>) -> Vec<Plugin> {
     found
 }
 
-/// Whether claude.ai's synced skills load; the user's settings can turn them off.
+/// Whether claude.ai's synced skills load, which the user's settings can turn off.
 pub fn synced_skills_on(claude_home: &Path) -> bool {
     settings(&claude_home.join("settings.json"))
         .sync_skills
@@ -143,7 +143,13 @@ fn plugin_file(path: &Path) -> Option<Result<BTreeMap<String, Server>, ()>> {
     })
 }
 
-// A manifest's `mcpServers` is a map of servers or the path of a file inside the plugin; each form is tried alone.
+// A manifest's `mcpServers` is a map of servers, a file path or a list, each tried alone so none is buffered.
+#[derive(Deserialize)]
+struct ManifestServers {
+    #[serde(rename = "mcpServers")]
+    servers: Option<IgnoredAny>,
+}
+
 #[derive(Deserialize)]
 struct InlineManifest {
     #[serde(rename = "mcpServers")]
@@ -156,20 +162,38 @@ struct PathManifest {
     file: String,
 }
 
+#[derive(Deserialize)]
+struct ListManifest {
+    #[serde(rename = "mcpServers")]
+    _list: Vec<IgnoredAny>,
+}
+
+/// The manifest's own servers, an error for a broken manifest or `mcpServers`, and nothing for a list or bundle.
+fn manifest_servers(root: &Path) -> Option<Result<BTreeMap<String, Server>, ()>> {
+    let manifest = root.join(".claude-plugin").join("plugin.json");
+    match parse::<ManifestServers>(&manifest)? {
+        Err(()) => return Some(Err(())),
+        Ok(ManifestServers { servers: None }) => return None,
+        Ok(_) => {}
+    }
+    if let Some(Ok(inline)) = parse::<InlineManifest>(&manifest) {
+        return Some(Ok(inline.servers));
+    }
+    if let Some(Ok(path)) = parse::<PathManifest>(&manifest) {
+        return plugin_file(&json_inside(root, &path.file)?);
+    }
+    if let Some(Ok(_)) = parse::<ListManifest>(&manifest) {
+        return None;
+    }
+    Some(Err(()))
+}
+
 /// A plugin's servers from its `.mcp.json` and then its manifest, as Claude Code merges them.
 pub(super) fn servers(root: &Path) -> Result<BTreeMap<String, Server>, ()> {
     let mut servers = plugin_file(&root.join(".mcp.json"))
         .transpose()?
         .unwrap_or_default();
-    let manifest = root.join(".claude-plugin").join("plugin.json");
-    let more = match parse::<InlineManifest>(&manifest) {
-        Some(Ok(inline)) => Some(Ok(inline.servers)),
-        _ => parse::<PathManifest>(&manifest)
-            .and_then(Result::ok)
-            .and_then(|m| json_inside(root, &m.file))
-            .and_then(|file| plugin_file(&file)),
-    };
-    servers.extend(more.transpose()?.unwrap_or_default());
+    servers.extend(manifest_servers(root).transpose()?.unwrap_or_default());
     Ok(servers)
 }
 

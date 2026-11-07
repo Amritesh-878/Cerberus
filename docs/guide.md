@@ -114,7 +114,8 @@ folded cards and starred skills are kept in `profiles.json`.
   organisations, the synced skills of all of them are listed.
 - **Connectors:** the MCP servers the tab's `claude` would load: the account's user servers, its
   servers for this folder, the project's `.mcp.json`, each enabled plugin's servers (named
-  `<plugin>:<server>`), and, with messages between accounts on, Cerberus's own `cerberus` server.
+  `<plugin>:<server>`), and Cerberus's own `cerberus` server when the tab's chat was started with
+  messages between accounts on.
   Only names and kinds are read, never commands, URLs, headers or env values. "Configured" means
   set up, not checked to be running. Connectors added on claude.ai (Gmail, Drive and the like)
   live there and are not listed. The card starts folded; open it once and it stays open.

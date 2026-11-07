@@ -62,7 +62,7 @@ pub fn usage(account_config: &Path) -> BTreeMap<String, u64> {
         .unwrap_or_default()
 }
 
-/// The project's skills, then the account's, its synced ones and its plugins', most used first; a name seen first hides later ones.
+/// The project's skills, then the account's, its synced ones and its plugins', most used first, a name seen first hiding later ones.
 pub fn read(
     folder: Option<&Path>,
     claude_home: &Path,
@@ -81,7 +81,7 @@ pub fn read(
     };
     add(in_dir(&claude_home.join("skills"), Scope::Account, ""));
     if plugins::synced_skills_on(claude_home) {
-        // One folder per organization and account signed in here; which one is current is not read.
+        // One folder per organization and account signed in here, all listed since which one is current is not read.
         for org in folders(&claude_home.join("skills").join("synced")) {
             add(in_dir(&org, Scope::Synced, SYNCED_PREFIX));
         }

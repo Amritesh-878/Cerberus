@@ -363,7 +363,34 @@ mod tests {
             r#"{ "leak": {} }"#,
         );
         write(&broken.root.join(".mcp.json"), "FAKE-CMD-SECRET");
-        vec![wrapped, bare, inline, linked, bundle, broken]
+        let (listed, bad_manifest, bad_map) = (
+            plugin(dir, "listed"),
+            plugin(dir, "bad-manifest"),
+            plugin(dir, "bad-map"),
+        );
+        write(
+            &listed.root.join(".claude-plugin").join("plugin.json"),
+            r#"{ "mcpServers": ["./a.json", { "x": { "command": "FAKE-CMD-SECRET" } }] }"#,
+        );
+        write(
+            &bad_manifest.root.join(".claude-plugin").join("plugin.json"),
+            r#"{ "name": "FAKE-CMD-SECRET" "#,
+        );
+        write(
+            &bad_map.root.join(".claude-plugin").join("plugin.json"),
+            r#"{ "mcpServers": { "x": "FAKE-CMD-SECRET" } }"#,
+        );
+        vec![
+            wrapped,
+            bare,
+            inline,
+            linked,
+            bundle,
+            broken,
+            listed,
+            bad_manifest,
+            bad_map,
+        ]
     }
 
     #[test]
@@ -391,7 +418,14 @@ mod tests {
                 ("wrapped:browser", "stdio", Scope::Plugin),
             ]
         );
-        assert_eq!(found.unreadable, ["the broken plugin's MCP servers"]);
+        assert_eq!(
+            found.unreadable,
+            [
+                "the broken plugin's MCP servers",
+                "the bad-manifest plugin's MCP servers",
+                "the bad-map plugin's MCP servers",
+            ]
+        );
         assert_eq!(found.servers.len(), 11);
         let shown = format!("{}{found:?}", serde_json::to_string(&found).unwrap());
         for secret in SECRETS.into_iter().chain(["leak"]) {

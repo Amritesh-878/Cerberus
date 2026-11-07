@@ -13,8 +13,9 @@ use serde::{Serialize, Serializer};
 use tauri::State;
 
 use crate::accounts::{AccountId, Accounts, AccountsError};
-use crate::bridge::spawn::Messages;
+use crate::bridge::Bridge;
 use crate::programs::Finder;
+use crate::saved::TabId;
 
 pub use crate::panel::gh::PrCache;
 use crate::panel::gh::PrRow;
@@ -155,15 +156,16 @@ fn account_config(
 #[tauri::command(async)]
 pub fn panel_connectors(
     accounts: State<'_, Accounts>,
-    messages: State<'_, Messages>,
+    bridge: State<'_, Bridge>,
     account: Option<AccountId>,
     folder: Option<PathBuf>,
+    tab: Option<TabId>,
 ) -> Result<Connectors, PanelError> {
     let config = account_config(&accounts, account)?;
     let folder = folder.as_deref().map(self::folder).transpose()?;
     let plugins = plugins::enabled(&accounts.claude_home(account)?, folder);
-    // The same check a chat's start makes before it is given the server; the file it names is not read.
-    let app_server = messages.ready() && accounts.load().is_ok_and(|p| p.messages);
+    // Whether this tab's running chat was given the server when it started, without reading the file it names.
+    let app_server = tab.is_some_and(|tab| bridge.linked(tab));
     Ok(mcp::read(&config, folder, &plugins, app_server))
 }
 

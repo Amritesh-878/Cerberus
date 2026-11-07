@@ -296,6 +296,13 @@ impl Bridge {
         })
     }
 
+    /// Whether the tab's running chat was started with the `cerberus` server.
+    pub fn linked(&self, tab: TabId) -> bool {
+        self.0
+            .as_ref()
+            .is_some_and(|core| core.state().links.values().any(|l| l.tab == tab))
+    }
+
     pub fn attach(&self, token: &str, pty: SessionId) {
         if let Some(core) = &self.0
             && let Some(link) = core.state().links.get_mut(token)

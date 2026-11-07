@@ -209,6 +209,7 @@ test("the cards show the shown tab and switch with it", async () => {
   const last = core.calls.filter((c) => c.cmd === "panel_connectors").at(-1);
   expect(field(last?.args, "folder")).toBe(NOTES);
   expect(field(last?.args, "account")).toBe(0);
+  expect(field(last?.args, "tab")).toBe(4);
 });
 
 test("a card folds from its title and the folded set is saved", async () => {

@@ -123,7 +123,9 @@ export function createPanelFeed(
       } else {
         readRepo(key, folder, () => live);
       }
-      void connectors.load(key, () => panelConnectors(t.account, folder));
+      void connectors.load(key, () =>
+        panelConnectors(t.account, folder, t.tab),
+      );
       void skills.load(key, () => panelSkills(t.account, folder));
       if (folder === null) return;
       // Only git can change under a running chat often enough to poll; config and skills reload on a tab change.
