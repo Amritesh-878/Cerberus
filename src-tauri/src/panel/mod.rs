@@ -20,6 +20,7 @@ use crate::saved::TabId;
 pub use crate::panel::gh::PrCache;
 use crate::panel::gh::PrRow;
 use crate::panel::git::Git;
+use crate::panel::git::Head;
 use crate::panel::mcp::Connectors;
 use crate::panel::skills::Skill;
 
@@ -29,8 +30,12 @@ pub enum PanelError {
     Accounts(#[from] AccountsError),
     #[error("folder not found")]
     NoFolder,
-    #[error("no pull request is known for this folder yet")]
+    #[error("that pull request is not known for this folder yet")]
     NoPr,
+    #[error("that pull request is not a draft")]
+    NotDraft,
+    #[error("gh could not mark #{0} ready for review; check `gh auth status` in a shell")]
+    NotReady(u64),
     #[error("VS Code was not found")]
     NoVsCode,
     #[error("could not open it: {0}")]
@@ -52,6 +57,8 @@ pub enum Changes {
     #[serde(rename_all = "camelCase")]
     Repo {
         name: String,
+        /// The repo's top folder, so folders in one repo list its PRs once.
+        root: String,
         branch: Option<String>,
         commit: Option<String>,
         base: Option<String>,
@@ -92,6 +99,7 @@ pub fn panel_changes(folder: PathBuf) -> Result<Changes, PanelError> {
         .into_owned();
     Ok(Changes::Repo {
         name,
+        root: repo.root.to_string_lossy().into_owned(),
         branch: repo.branch,
         commit: repo.commit,
         base: repo.base,
@@ -102,31 +110,71 @@ pub fn panel_changes(folder: PathBuf) -> Result<Changes, PanelError> {
     })
 }
 
-/// The branch's open PR, asked of `gh` at most once a minute per repo.
+fn repo_root(folder: &Path) -> Result<PathBuf, PanelError> {
+    git()
+        .and_then(|git| git.head(self::folder(folder).ok()?))
+        .map(|head: Head| head.root)
+        .ok_or(PanelError::NoPr)
+}
+
+/// Every PR of the folder's repo, asked of `gh` at most once a minute per repo.
 #[tauri::command(async)]
-pub fn panel_pr(prs: State<'_, PrCache>, folder: PathBuf) -> Result<Option<PrRow>, PanelError> {
+pub fn panel_prs(prs: State<'_, PrCache>, folder: PathBuf) -> Result<Vec<PrRow>, PanelError> {
     let folder = self::folder(&folder)?;
     let (Some(git), Some(gh)) = (git(), Finder::from_env().find("gh")) else {
-        return Ok(None);
+        return Ok(Vec::new());
     };
-    let Some((root, Some(branch))) = git.head(folder).map(|h| (h.root, h.branch)) else {
-        return Ok(None);
+    let Some(root) = git.head(folder).map(|h| h.root) else {
+        return Ok(Vec::new());
     };
-    let pr = prs.get(&root, &branch, Instant::now(), || {
-        gh::open_pr(&gh, folder, &branch)
-    });
-    Ok(pr.as_ref().map(PrRow::from))
+    let found = prs.get(&root, Instant::now(), || gh::list(&gh, folder));
+    Ok(gh::rows(&found))
+}
+
+fn pr_url(prs: &PrCache, folder: &Path, number: u64) -> Result<String, PanelError> {
+    prs.url(&repo_root(folder)?, number).ok_or(PanelError::NoPr)
 }
 
 #[tauri::command(async)]
-pub fn panel_open_pr(prs: State<'_, PrCache>, folder: PathBuf) -> Result<(), PanelError> {
-    let folder = self::folder(&folder)?;
-    let url = git()
-        .and_then(|git| git.head(folder))
-        .map(|head| head.root)
-        .and_then(|root| prs.url(&root))
-        .ok_or(PanelError::NoPr)?;
+pub fn panel_open_pr(
+    prs: State<'_, PrCache>,
+    folder: PathBuf,
+    number: u64,
+) -> Result<(), PanelError> {
+    let url = pr_url(&prs, &folder, number)?;
     Ok(reveal::open(url.as_ref())?)
+}
+
+/// The PR's link for the clipboard; only a link `gh` gave for this repo is handed out.
+#[tauri::command(async)]
+pub fn panel_pr_link(
+    prs: State<'_, PrCache>,
+    folder: PathBuf,
+    number: u64,
+) -> Result<String, PanelError> {
+    pr_url(&prs, &folder, number)
+}
+
+/// Runs `gh pr ready` for a draft the list showed, after the user confirmed it in the panel.
+#[tauri::command(async)]
+pub fn panel_pr_ready(
+    prs: State<'_, PrCache>,
+    folder: PathBuf,
+    number: u64,
+) -> Result<(), PanelError> {
+    let folder = self::folder(&folder)?;
+    let root = repo_root(folder)?;
+    if !prs.is_draft(&root, number) {
+        return Err(PanelError::NotDraft);
+    }
+    let gh = Finder::from_env()
+        .find("gh")
+        .ok_or(PanelError::NotReady(number))?;
+    if !gh::ready(&gh, folder, number) {
+        return Err(PanelError::NotReady(number));
+    }
+    prs.made_ready(&root, number);
+    Ok(())
 }
 
 /// Opens the folder in VS Code, whose Source Control view shows the diff.
