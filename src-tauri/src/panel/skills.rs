@@ -5,16 +5,23 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+use crate::panel::plugins::{self, Plugin};
+
 // A skill's front matter sits at the top; the rest of the file is never read.
 const HEAD_BYTES: u64 = 16 * 1024;
 const MAX_SKILLS: usize = 200;
 const MAX_DESCRIPTION: usize = 300;
+// The plugin name Claude Code gives claude.ai's synced skills, as in `anthropic-skills:pdf`.
+const SYNCED_PREFIX: &str = "anthropic-skills:";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Scope {
     Project,
     Account,
+    /// Synced from the account's skills on claude.ai.
+    Synced,
+    Plugin,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -55,19 +62,33 @@ pub fn usage(account_config: &Path) -> BTreeMap<String, u64> {
         .unwrap_or_default()
 }
 
-/// The project's `.claude/skills` and the account's `skills`, most used first; a name the project has hides the account's.
+/// The project's skills, then the account's, its synced ones and its plugins', most used first; a name seen first hides later ones.
 pub fn read(
     folder: Option<&Path>,
     claude_home: &Path,
+    plugins: &[Plugin],
     usage: &BTreeMap<String, u64>,
 ) -> Vec<Skill> {
     let mut skills = folder
-        .map(|f| in_dir(&f.join(".claude").join("skills"), Scope::Project))
+        .map(|f| in_dir(&f.join(".claude").join("skills"), Scope::Project, ""))
         .unwrap_or_default();
-    for skill in in_dir(&claude_home.join("skills"), Scope::Account) {
-        if !skills.iter().any(|s| s.name == skill.name) {
-            skills.push(skill);
+    let mut add = |found: Vec<Skill>| {
+        for skill in found {
+            if !skills.iter().any(|s| s.name == skill.name) {
+                skills.push(skill);
+            }
         }
+    };
+    add(in_dir(&claude_home.join("skills"), Scope::Account, ""));
+    if plugins::synced_skills_on(claude_home) {
+        // One folder per organization and account signed in here; which one is current is not read.
+        for org in folders(&claude_home.join("skills").join("synced")) {
+            add(in_dir(&org, Scope::Synced, SYNCED_PREFIX));
+        }
+    }
+    for plugin in plugins {
+        let prefix = format!("{}:", plugin.name);
+        add(in_dir(&plugin.root.join("skills"), Scope::Plugin, &prefix));
     }
     for skill in &mut skills {
         skill.uses = usage.get(&skill.name).copied().unwrap_or(0);
@@ -81,7 +102,20 @@ pub fn read(
     skills
 }
 
-fn in_dir(dir: &Path, scope: Scope) -> Vec<Skill> {
+fn folders(dir: &Path) -> Vec<std::path::PathBuf> {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut found: Vec<_> = entries
+        .flatten()
+        .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
+        .map(|e| e.path())
+        .collect();
+    found.sort();
+    found
+}
+
+fn in_dir(dir: &Path, scope: Scope, prefix: &str) -> Vec<Skill> {
     let Ok(entries) = fs::read_dir(dir) else {
         return Vec::new();
     };
@@ -92,7 +126,7 @@ fn in_dir(dir: &Path, scope: Scope) -> Vec<Skill> {
             let head = head(&entry.path().join("SKILL.md"))?;
             let (name, description) = front_matter(&head);
             Some(Skill {
-                name: name.unwrap_or(folder),
+                name: format!("{prefix}{}", name.unwrap_or(folder)),
                 description,
                 scope,
                 uses: 0,
@@ -197,7 +231,7 @@ mod tests {
         skill(&account_skills, "bare", "No front matter here.\n");
         fs::create_dir_all(account_skills.join("empty")).unwrap();
 
-        let found = read(Some(&project), &home, &BTreeMap::new());
+        let found = read(Some(&project), &home, &[], &BTreeMap::new());
 
         let listed: Vec<(&str, Option<&str>, Scope)> = found
             .iter()
@@ -250,7 +284,7 @@ mod tests {
             }"#,
         );
 
-        let found = read(None, &home, &usage(&config));
+        let found = read(None, &home, &[], &usage(&config));
 
         let listed: Vec<(&str, u64)> = found.iter().map(|s| (s.name.as_str(), s.uses)).collect();
         assert_eq!(
@@ -274,6 +308,90 @@ mod tests {
         assert_eq!(usage(&none), BTreeMap::from([("x".to_owned(), 0)]));
     }
 
+    fn synced_and_plugin_tree(dir: &TestDir) -> (std::path::PathBuf, Vec<Plugin>) {
+        let home = dir.path().join("home");
+        let synced = home.join("skills").join("synced");
+        for org in ["org-one_acct-one", "org-two_acct-one"] {
+            skill(
+                &synced.join(org),
+                "pdf",
+                "---\nname: pdf\ndescription: Read and fill PDF files.\nlicense: FAKE-LICENSE-SECRET\n---\n",
+            );
+            fs::write(
+                synced.join(org).join("manifest.json"),
+                r#"{ "skills": [{ "skillId": "FAKE-ID-SECRET" }] }"#,
+            )
+            .unwrap();
+        }
+        skill(
+            &synced.join("org-two_acct-one"),
+            "sheets",
+            "---\nname: sheets\n---\n",
+        );
+        fs::write(synced.join(".bucket-marker"), "").unwrap();
+        let root = dir.path().join("cache").join("tools").join("1.0.0");
+        skill(
+            &root.join("skills"),
+            "audit",
+            "---\nname: audit\ndescription: Check a page.\n---\nRun FAKE-BODY-SECRET\n",
+        );
+        skill(&root.join("skills"), "trace", "---\nname: trace\n---\n");
+        let plugins = vec![Plugin {
+            name: "tools".to_owned(),
+            root,
+        }];
+        (home, plugins)
+    }
+
+    #[test]
+    fn synced_and_plugin_skills_are_named_as_claude_code_names_them_and_counted() {
+        let dir = TestDir::new();
+        let (home, plugins) = synced_and_plugin_tree(&dir);
+        let config = usage_config(
+            &dir,
+            r#"{ "primaryApiKey": "FAKE-KEY-SECRET", "skillUsage": {
+                "tools:trace": { "usageCount": 9, "lastUsedAt": 1762300000000 },
+                "anthropic-skills:pdf": { "usageCount": 4, "lastUsedAt": 1762200000000 } } }"#,
+        );
+
+        let found = read(None, &home, &plugins, &usage(&config));
+
+        let listed: Vec<(&str, Scope, u64)> = found
+            .iter()
+            .map(|s| (s.name.as_str(), s.scope, s.uses))
+            .collect();
+        assert_eq!(
+            listed,
+            [
+                ("tools:trace", Scope::Plugin, 9),
+                ("anthropic-skills:pdf", Scope::Synced, 4),
+                ("anthropic-skills:sheets", Scope::Synced, 0),
+                ("tools:audit", Scope::Plugin, 0),
+            ]
+        );
+        assert_eq!(
+            found[1].description.as_deref(),
+            Some("Read and fill PDF files.")
+        );
+        let shown = format!("{}{found:?}", serde_json::to_string(&found).unwrap());
+        for secret in ["FAKE", "1762", "org-", "acct-"] {
+            assert!(!shown.contains(secret), "{secret} in {shown}");
+        }
+    }
+
+    #[test]
+    fn synced_skills_are_hidden_when_the_settings_turn_them_off() {
+        let dir = TestDir::new();
+        let (home, _) = synced_and_plugin_tree(&dir);
+        fs::write(
+            home.join("settings.json"),
+            r#"{ "syncClaudeAiSkills": false, "env": { "K": "FAKE-ENV-SECRET" } }"#,
+        )
+        .unwrap();
+
+        assert!(read(None, &home, &[], &BTreeMap::new()).is_empty());
+    }
+
     #[test]
     fn missing_folders_have_no_skills() {
         let dir = TestDir::new();
@@ -282,6 +400,7 @@ mod tests {
             read(
                 Some(&dir.path().join("none")),
                 &dir.path().join("none"),
+                &[],
                 &BTreeMap::new()
             )
             .is_empty()

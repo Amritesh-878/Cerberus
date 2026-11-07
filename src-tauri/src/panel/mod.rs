@@ -1,6 +1,7 @@
 mod gh;
 mod git;
 mod mcp;
+mod plugins;
 mod reveal;
 mod skills;
 mod vscode;
@@ -12,6 +13,7 @@ use serde::{Serialize, Serializer};
 use tauri::State;
 
 use crate::accounts::{AccountId, Accounts, AccountsError};
+use crate::bridge::spawn::Messages;
 use crate::programs::Finder;
 
 pub use crate::panel::gh::PrCache;
@@ -153,12 +155,16 @@ fn account_config(
 #[tauri::command(async)]
 pub fn panel_connectors(
     accounts: State<'_, Accounts>,
+    messages: State<'_, Messages>,
     account: Option<AccountId>,
     folder: Option<PathBuf>,
 ) -> Result<Connectors, PanelError> {
     let config = account_config(&accounts, account)?;
     let folder = folder.as_deref().map(self::folder).transpose()?;
-    Ok(mcp::read(&config, folder))
+    let plugins = plugins::enabled(&accounts.claude_home(account)?, folder);
+    // The same check a chat's start makes before it is given the server; the file it names is not read.
+    let app_server = messages.ready() && accounts.load().is_ok_and(|p| p.messages);
+    Ok(mcp::read(&config, folder, &plugins, app_server))
 }
 
 #[tauri::command(async)]
@@ -170,7 +176,8 @@ pub fn panel_skills(
     let home = accounts.claude_home(account)?;
     let usage = skills::usage(&account_config(&accounts, account)?);
     let folder = folder.as_deref().map(self::folder).transpose()?;
-    Ok(skills::read(folder, &home, &usage))
+    let plugins = plugins::enabled(&home, folder);
+    Ok(skills::read(folder, &home, &plugins, &usage))
 }
 
 #[cfg(test)]
