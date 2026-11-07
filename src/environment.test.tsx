@@ -9,6 +9,7 @@ import {
   emit,
   field,
   open,
+  press,
   ptyCore,
   renderApp,
   SAVED,
@@ -327,4 +328,18 @@ test("the dialog stays open while a folder move is pending, so no second move ca
   expect(document.querySelector(".env-dialog")).toBeNull();
   expect(env.calls.filter((c) => c.cmd === "tab_move_folder")).toHaveLength(1);
   expect(field(field(env.pty.spawned.at(-1), "request"), "cwd")).toBe(BETA);
+});
+
+test("app shortcuts do nothing while the dialog is open, so its tab cannot close behind it", async () => {
+  const env = envCore([]);
+  const root = await renderApp(() => PROFILES, env.core);
+  await editEnvironment(root, "planner");
+
+  press("W", { ctrlKey: true, shiftKey: true });
+  press("w", { metaKey: true });
+  await settle();
+
+  expect(document.querySelector(".env-dialog")).not.toBeNull();
+  expect(root.textContent).toContain("planner");
+  expect(env.pty.killed).toEqual([]);
 });

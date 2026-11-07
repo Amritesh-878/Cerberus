@@ -549,6 +549,8 @@ export function App() {
     const onKey = (event: KeyboardEvent) => {
       const shortcut = shortcutFor(event);
       if (!shortcut || profiles() === undefined) return;
+      // The Edit environment dialog is modal: a shortcut behind it could close its tab and drop the edits.
+      if (editing() !== undefined) return;
       event.preventDefault();
       event.stopPropagation();
       if (shortcut === "shortcuts") {
