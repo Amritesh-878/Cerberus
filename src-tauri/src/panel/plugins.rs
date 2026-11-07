@@ -204,7 +204,14 @@ fn json_inside(root: &Path, file: &str) -> Option<PathBuf> {
         .components()
         .all(|c| matches!(c, Component::Normal(_) | Component::CurDir));
     let json = !file.contains("://") && !file.to_lowercase().ends_with(".mcpb");
-    (plain && json).then(|| root.join(relative))
+    if !(plain && json) {
+        return None;
+    }
+    // Resolved, so a link inside the plugin cannot point the read outside it.
+    let resolved = root.join(relative).canonicalize().ok()?;
+    resolved
+        .starts_with(root.canonicalize().ok()?)
+        .then_some(resolved)
 }
 
 #[cfg(test)]
@@ -308,5 +315,33 @@ mod tests {
 
         assert!(enabled(&home, None).is_empty());
         assert!(!synced_skills_on(&home));
+    }
+
+    // Symlinks need extra rights on Windows, so the macOS leg covers this one.
+    #[cfg(unix)]
+    #[test]
+    fn a_manifest_path_that_links_outside_the_plugin_is_not_read() {
+        let dir = TestDir::new();
+        let root = dir.path().join("plugin");
+        write(
+            &dir.path().join("outside.json"),
+            r#"{ "mcpServers": { "FAKE-OUTSIDE": {} } }"#,
+        );
+        write(
+            &root.join("inside.json"),
+            r#"{ "mcpServers": { "ok": {} } }"#,
+        );
+        std::os::unix::fs::symlink(dir.path().join("outside.json"), root.join("link.json"))
+            .unwrap();
+        let manifest = root.join(".claude-plugin").join("plugin.json");
+
+        write(&manifest, r#"{ "mcpServers": "./link.json" }"#);
+        assert!(servers(&root).unwrap().is_empty());
+
+        write(&manifest, r#"{ "mcpServers": "./inside.json" }"#);
+        assert_eq!(
+            servers(&root).unwrap().into_keys().collect::<Vec<_>>(),
+            ["ok"]
+        );
     }
 }

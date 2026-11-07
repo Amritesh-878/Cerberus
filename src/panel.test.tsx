@@ -1,3 +1,4 @@
+import { emit as emitEvent } from "@tauri-apps/api/event";
 import { afterEach, expect, test } from "vitest";
 
 import type { PanelPrefs, Profiles } from "./accounts";
@@ -521,4 +522,30 @@ test("plugin and claude.ai skills are marked, and Connectors names Cerberus's ow
   expect(connectors).toContain(
     "Connectors added on claude.ai are not listed here",
   );
+});
+
+test("a bridge report re-reads the shown tab's connectors, so cerberus comes and goes with its link", async () => {
+  const core = panelCore(withPanel({ open: true, expanded: ["connectors"] }));
+  let linked = false;
+  const root = await renderApp(core.profiles, {
+    ...core.core,
+    panel_connectors: () => ({
+      servers: linked
+        ? [{ name: "cerberus", kind: "stdio", scope: "app" }]
+        : [],
+      unreadable: [],
+    }),
+  });
+  await open(root, "planner");
+  expect(card(root, "Connectors").textContent).not.toContain("cerberus");
+
+  linked = true;
+  await emitEvent("bridge", { pending: [], notes: [] });
+  await settle();
+  expect(card(root, "Connectors").textContent).toContain("stdio · Cerberus");
+
+  linked = false;
+  await emitEvent("bridge", { pending: [], notes: [] });
+  await settle();
+  expect(card(root, "Connectors").textContent).not.toContain("cerberus");
 });
