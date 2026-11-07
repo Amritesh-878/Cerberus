@@ -1,4 +1,4 @@
-import { createEffect, createSignal, on, untrack } from "solid-js";
+import { createSignal } from "solid-js";
 
 import type { TabId } from "./tree";
 
@@ -14,15 +14,23 @@ export function nextPair(
   return [from, to];
 }
 
-/** Two chats side by side while one of them is the shown tab; showing any other tab closes it. */
+/** Whether a tab dropped at (x, y) splits with the shown one: anywhere on the right half of the chat area. */
+export function dropsToSplit(
+  x: number,
+  y: number,
+  area: { left: number; top: number; width: number; height: number },
+): boolean {
+  return (
+    x >= area.left + area.width / 2 &&
+    x <= area.left + area.width &&
+    y >= area.top &&
+    y <= area.top + area.height
+  );
+}
+
+/** Two chats side by side whenever one of them is shown, kept while other tabs show, until closed. */
 export function createSplit(shown: () => TabId | undefined) {
   const [pair, setPair] = createSignal<Pair>();
-  createEffect(
-    on(shown, (id) => {
-      const now = untrack(pair);
-      if (now && (id === undefined || !now.includes(id))) setPair(undefined);
-    }),
-  );
   const showing = (): Pair | undefined => {
     const now = pair();
     const id = shown();
@@ -35,8 +43,13 @@ export function createSplit(shown: () => TabId | undefined) {
       const now = showing();
       return now?.[0] === id ? "left" : now?.[1] === id ? "right" : undefined;
     },
+    /** The half beside the shown tab, which must be running for the split to show it. */
+    beside: (): TabId | undefined => {
+      const now = showing();
+      return now?.find((id) => id !== shown());
+    },
     open: (from: TabId, to: TabId) => {
-      setPair((now) => nextPair(now, from, to));
+      if (from !== to) setPair((now) => nextPair(now, from, to));
     },
     close: () => {
       setPair(undefined);

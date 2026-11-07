@@ -55,7 +55,9 @@ button {
 .sidebar-edge:hover,
 .sidebar-edge:focus-visible,
 .panel-edge:hover,
-.panel-edge:focus-visible {
+.panel-edge:focus-visible,
+.split-edge:hover,
+.split-edge:focus-visible {
   background: linear-gradient(
     to right,
     transparent 2px,
@@ -1552,8 +1554,6 @@ kbd {
   accent-color: var(--accent);
 }
 
-.step-nav {
-  display: flex;
 .setting-text {
   display: flex;
   flex-direction: column;
@@ -1565,6 +1565,8 @@ kbd {
   color: var(--dim);
 }
 
+.step-nav {
+  display: flex;
   gap: 10px;
   align-items: center;
   margin-top: 20px;
@@ -2164,12 +2166,45 @@ button.card-row:focus-visible,
 }
 
 .tab-view.split-left {
-  right: 50%;
+  right: calc(100% - var(--split-share, 50%));
 }
 
 .tab-view.split-right {
-  left: 50%;
+  left: var(--split-share, 50%);
   border-left: 1px solid var(--line);
+}
+
+/* Over the line between the two chats, wider than it so it is easy to catch. */
+.split-edge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--split-share, 50%) - 3px);
+  z-index: 5;
+  width: 6px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+/* The right half of the chat area while a tab is dragged out of the sidebar. */
+.split-drop {
+  position: absolute;
+  inset: 8px 8px 8px 50%;
+  z-index: 6;
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  color: var(--dim);
+  pointer-events: none;
+  background: rgb(217 119 87 / 6%);
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+}
+
+.split-drop.over {
+  color: var(--text);
+  background: rgb(217 119 87 / 16%);
+  border-color: var(--accent);
 }
 
 @media (width <= 720px) {
@@ -2181,6 +2216,10 @@ button.card-row:focus-visible,
   .tab-view.split-left {
     right: 0;
     bottom: 50%;
+  }
+
+  .split-edge {
+    display: none;
   }
 
   .tab-view.split-right {

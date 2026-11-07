@@ -38,6 +38,8 @@ export interface Profiles {
   /** In pixels; `null` keeps the default. */
   sidebarWidth: number | null;
   panel: PanelPrefs;
+  /** The left chat's share of a split in thousandths; `null` keeps half and half. */
+  splitShare: number | null;
   /** Desktop notifications when a chat in another tab needs you. */
   alerts: boolean;
   /** Shell tabs suggest from history as you type, through each shell's own feature. */
@@ -131,6 +133,10 @@ export function setStartFolder(folder: string | null): Promise<Profiles> {
 
 export function setSidebarWidth(width: number): Promise<Profiles> {
   return invoke<Profiles>("set_sidebar_width", { width });
+}
+
+export function setSplitShare(share: number): Promise<Profiles> {
+  return invoke<Profiles>("set_split_share", { share });
 }
 
 export function setPanel(panel: PanelPrefs): Promise<Profiles> {

@@ -58,6 +58,20 @@ ends what the app started; on macOS a tab's programs get a hangup when its termi
 
 Drag the sidebar's right edge to resize it, or double-click the edge to reset it.
 
+**Two tabs side by side.** Drag a tab from the sidebar onto the right half of the chat area to show
+it beside the tab on screen; the right half lights up while a drop there would split. Any two tabs
+can share the view. Drag the line between them to resize (the arrow keys move it when it has
+focus), and double-click it for half and half; the share is saved. **Close split** in the bar
+above the two ends it. On a narrow window the two stack instead.
+
+The split stays until **Close split** or until either tab closes. Showing another tab or project
+hides it, and showing either of its tabs again brings it back as it was. Messages between accounts
+open a split too (below).
+
+Claude Code's tables count an emoji such as ✅ as two columns, and so does Cerberus, so their
+borders line up. When a tab's size changes (the window, the sidebar, a split), Cerberus tells the
+program the new size once it settles, so Claude Code redraws once at the new width.
+
 ## Restarts and resuming
 
 Projects and tabs are saved as you change them, in `tree.db` in the app's data folder. After a
@@ -132,7 +146,7 @@ Ctrl+Shift+A (Cmd+Shift+A on macOS) jumps to the next tab waiting on you.
 When a chat stops, hits a limit or ends while you aren't looking at it (its tab is hidden, or the
 window isn't focused), you get a desktop notification such as "planner · alpha: Waiting on you".
 Clicking it, while it is on screen, opens that tab. A notification names only the tab and its
-project, never chat text or an account. Turn alerts off in **Accounts**.
+project, never chat text or an account. Turn alerts off in **Accounts > Desktop alerts**.
 
 The state comes from Claude Code's `sessions` file. For a limit, Cerberus reads only the error
 type and reset time from the chat's last record, and never shows, logs or stores anything else
@@ -143,6 +157,10 @@ from a transcript.
 Right-click a Claude Code tab and pick **Continue on `<account>`…** to carry its chat to another
 of your accounts, for example to keep work and personal chats apart. If the chat is running,
 Cerberus asks before closing it, and the row says "Moving to `<account>`…" until it lands.
+
+On a tab whose chat ended (now a shell), the item reads **Continue the ended chat on
+`<account>`…**: it moves only that tab's own saved chat, never a `claude` you started by hand in
+the shell, and asks first since the move closes the shell.
 
 Cerberus copies the chat's file, and its folder of subagent chats, into the other account's
 folder under a temporary name, renaming it once complete, then reopens the tab there with
@@ -174,8 +192,12 @@ tab message a Claude Code tab on another of your accounts, and every message wai
   say), the popup says it may still arrive and offers **Type it in instead**. Nothing is typed
   unless you click it, but the inbox copy can still show after you do: check the target chat
   before pressing Enter, or the message arrives twice.
-- **Both chats side by side.** After an approval the sender and target show split until you close
-  the split or open another tab. The reply takes the same road and the same popup.
+- **Both chats side by side.** Every delivered message opens or keeps the split of its two tabs:
+  approved, approved as edited, typed into the input box, or typed in later with **Type it in
+  instead**. A new split puts the sender on the left; a reply between the same two keeps their
+  sides. A reject, a cancel or a failed delivery never changes the split. It stays as described in
+  [Projects and tabs](#projects-and-tabs): hidden while another tab shows, back with either of its
+  tabs, until **Close split** or either tab closes. The reply takes the same road and the same popup.
 - **Cancelling.** Esc in the sending chat stops its call and the message leaves the popup. A closed
   target tab or a restart ends a waiting message, and the sending chat is told it wasn't sent.
 - **Notes.** A tab whose messages can only be typed in shows "messages: prefill only" in the top
@@ -244,7 +266,7 @@ Cerberus never types into the shell.
 | fish | Nothing: fish suggests by itself |
 | bash and Git Bash | Nothing yet |
 
-The setting is **Accounts > Suggestions in shell tabs**, on by default, and applies to shell tabs
+The setting is **Accounts > Suggestions from history**, on by default, and applies to shell tabs
 started after you change it. Off, shells start exactly as before. Claude Code tabs never get it;
 a tab whose chat ended and became a shell does. A shell tab started with its own command or
 script (`pwsh -c ...`) is left alone, and so is the login shell Cerberus reads `PATH` from at

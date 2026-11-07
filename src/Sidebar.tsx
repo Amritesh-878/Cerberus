@@ -34,6 +34,7 @@ import {
 import { RENAME_KEY } from "./keys";
 import type { Statuses } from "./statuses";
 import { menuAccount, type MenuPlace, TabMenu } from "./TabMenu";
+import { type TabDragEvents, tabDrag } from "./tabDrag";
 import type { TabAccount } from "./tab";
 import {
   groups,
@@ -71,6 +72,8 @@ export function Sidebar(props: {
   onAccounts: () => void;
   /** Setup is running, so only its own tabs show and nothing here can leave it. */
   locked: boolean;
+  /** Where a tab dragged out of the list goes; absent, rows don't drag. */
+  onDragTab?: (id: TabId) => TabDragEvents | undefined;
 }) {
   const [search, setSearch] = createSignal("");
   const [renaming, setRenaming] = createSignal<TabId>();
@@ -188,6 +191,7 @@ export function Sidebar(props: {
                             )
                       }
                       renaming={renaming() === row.tab.id}
+                      drag={() => props.onDragTab?.(row.tab.id)}
                       onMenu={(at) => {
                         if (
                           targetsOf(row.tab).length > 0 ||
@@ -293,6 +297,7 @@ function TabRow(props: {
   movingTo: string | undefined;
   shortcut: Account | undefined;
   renaming: boolean;
+  drag: () => TabDragEvents | undefined;
   onSelect: () => void;
   onClose: () => void;
   onStartRename: () => void;
@@ -301,6 +306,7 @@ function TabRow(props: {
   onShortcut: (account: Account, at: MenuPlace) => void;
 }) {
   const tab = () => props.row.tab;
+  const drag = tabDrag();
   // An ended chat's tab runs the shell, so it shows as one until Resume chat.
   const program = () => (props.ended ? "shell" : tab().launch.program);
   const icon = () => (
@@ -343,9 +349,19 @@ function TabRow(props: {
               type="button"
               class="tab-select"
               aria-current={props.active ? "page" : undefined}
-              title="Double-click or F2 to rename"
+              title="Double-click or F2 to rename; drag onto the chat to show side by side"
+              onPointerDown={drag.onPointerDown}
+              onPointerMove={(event) => {
+                drag.onPointerMove(event, props.drag());
+              }}
+              onPointerUp={(event) => {
+                drag.onPointerUp(event, props.drag());
+              }}
+              onPointerCancel={(event) => {
+                drag.onPointerCancel(event, props.drag());
+              }}
               onClick={() => {
-                props.onSelect();
+                if (!drag.swallowClick()) props.onSelect();
               }}
               onDblClick={() => {
                 props.onStartRename();

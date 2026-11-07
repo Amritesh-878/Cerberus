@@ -26,6 +26,7 @@ import {
   type Profiles,
   resetProfiles,
   setSidebarWidth,
+  setSplitShare,
   statusText,
 } from "./accounts";
 import { AccountsScreen } from "./AccountsScreen";
@@ -69,12 +70,14 @@ import {
   toSaved,
 } from "./saved";
 import { Sidebar } from "./Sidebar";
-import { createSplit } from "./split";
+import { createSavedWidth } from "./savedWidth";
+import { createSplit, dropsToSplit } from "./split";
 import { createStatuses } from "./statuses";
 import { setupGaps, type Step, stepFor } from "./steps";
 import { shellChoice, type Tab, tabFor } from "./tab";
 import { ShortcutsSheet } from "./ShortcutsSheet";
-import { SidebarEdge } from "./SidebarEdge";
+import type { TabDragEvents } from "./tabDrag";
+import { SidebarEdge, SplitEdge } from "./SidebarEdge";
 import { menuAccount, type MenuPlace, TabMenu } from "./TabMenu";
 import { TerminalView } from "./Terminal";
 import {
@@ -95,7 +98,7 @@ import {
   type Tree,
 } from "./tree";
 import { Walkthrough } from "./Walkthrough";
-import { SIDEBAR_DEFAULT } from "./widths";
+import { SIDEBAR_DEFAULT, SPLIT_DEFAULT } from "./widths";
 
 type Page = "walkthrough" | "accounts";
 
@@ -156,39 +159,18 @@ export function App() {
   // Holds the tab it opened for, so switching tabs while it is open cannot move another chat.
   const [pillMenu, setPillMenu] = createSignal<{ at: MenuPlace; tab: TabId }>();
   const [sheet, setSheet] = createSignal(false);
-  // Held while dragging, so the edge follows the pointer before the saved value comes back.
-  const [dragged, setDragged] = createSignal<number>();
-  const sidebarWidth = () =>
-    dragged() ?? profiles()?.sidebarWidth ?? SIDEBAR_DEFAULT;
-  const [widthError, setWidthError] = createSignal<string>();
-  // One save in flight; a newer width waits, and only the latest is sent, so saves land in order.
-  let widthSaving = false;
-  let widthWaiting: number | undefined;
-  const sendWidth = (width: number) => {
-    widthSaving = true;
-    setSidebarWidth(width)
-      .then(
-        (saved) => {
-          setWidthError(undefined);
-          changed(saved);
-        },
-        (error: unknown) => {
-          setWidthError(String(error));
-          // A newer width still waiting gets its own try; with none, fall back to the saved one.
-          if (widthWaiting === undefined) setDragged(undefined);
-        },
-      )
-      .finally(() => {
-        widthSaving = false;
-        const next = widthWaiting;
-        widthWaiting = undefined;
-        if (next !== undefined) sendWidth(next);
-      });
-  };
-  const saveWidth = () => {
-    if (widthSaving) widthWaiting = sidebarWidth();
-    else sendWidth(sidebarWidth());
-  };
+  const sidebarWidth = createSavedWidth({
+    saved: () => profiles()?.sidebarWidth,
+    fallback: SIDEBAR_DEFAULT,
+    send: setSidebarWidth,
+    changed,
+  });
+  const splitShare = createSavedWidth({
+    saved: () => profiles()?.splitShare,
+    fallback: SPLIT_DEFAULT,
+    send: setSplitShare,
+    changed,
+  });
   const [drawer, setDrawer] = createSignal(false);
   const [tabsClosed, setTabsClosed] = createSignal(0);
   const [board, setBoard] = createSignal<Board>(new Map());
@@ -289,6 +271,35 @@ export function App() {
   };
   const messaging = createMessaging();
   const split = createSplit(shown);
+  let stage: HTMLDivElement | undefined;
+  // Set while a tab is dragged out of the sidebar; `over` once it would split on release.
+  const [dropping, setDropping] = createSignal<{ over: boolean }>();
+  const overStage = (x: number, y: number) => {
+    const area = stage?.getBoundingClientRect();
+    return area !== undefined && dropsToSplit(x, y, area);
+  };
+  // Read on every move and on the drop, so it follows the tab shown right now.
+  const dropInto = (id: TabId) => {
+    const into = shown();
+    return inSetup() || into === id ? undefined : into;
+  };
+  const dragTab = (id: TabId): TabDragEvents => {
+    return {
+      move: (x, y) => {
+        setDropping(
+          dropInto(id) === undefined ? undefined : { over: overStage(x, y) },
+        );
+      },
+      drop: (x, y) => {
+        setDropping(undefined);
+        const into = dropInto(id);
+        if (into !== undefined && overStage(x, y)) split.open(into, id);
+      },
+      cancel: () => {
+        setDropping(undefined);
+      },
+    };
+  };
   const tabName = (id: TabId): TabName => {
     const tab = tabById(id);
     const account = tab?.launch.account;
@@ -306,8 +317,14 @@ export function App() {
         : `tab ${String(id)}`,
     };
   };
+  // The tab beside the shown one in a split starts too, so its half is never blank.
   const started = createMemo<ReadonlySet<TabId>>(
-    (before) => startedTabs(before, shown(), tabIds()),
+    (before) =>
+      startedTabs(
+        startedTabs(before, shown(), tabIds()),
+        split.beside(),
+        tabIds(),
+      ),
     new Set(),
   );
   const startedIds = createMemo(() =>
@@ -643,12 +660,14 @@ export function App() {
           <div
             class="app"
             classList={{ drawer: drawer() }}
-            style={{ "--sidebar-width": `${String(sidebarWidth())}px` }}
+            style={{
+              "--sidebar-width": `${String(sidebarWidth.value())}px`,
+            }}
           >
             <SidebarEdge
-              width={sidebarWidth()}
-              onWidth={setDragged}
-              onDone={saveWidth}
+              width={sidebarWidth.value()}
+              onWidth={sidebarWidth.drag}
+              onDone={sidebarWidth.save}
             />
             <Sidebar
               locked={inSetup()}
@@ -675,6 +694,7 @@ export function App() {
               }
               onRemoveProject={forgetProject}
               onNewProject={newProject}
+              onDragTab={dragTab}
               onAccounts={() => {
                 showPage("accounts");
                 setDrawer(false);
@@ -727,10 +747,17 @@ export function App() {
                     </span>
                   )}
                 </Show>
-                <Show when={widthError()}>
+                <Show when={sidebarWidth.error()}>
                   {(error) => (
                     <span class="save-error" role="status" title={error()}>
                       Sidebar width not saved
+                    </span>
+                  )}
+                </Show>
+                <Show when={splitShare.error()}>
+                  {(error) => (
+                    <span class="save-error" role="status" title={error()}>
+                      Split not saved
                     </span>
                   )}
                 </Show>
@@ -860,7 +887,15 @@ export function App() {
                   </div>
                 )}
               </Show>
-              <div class="stage">
+              <div
+                class="stage"
+                ref={(el) => {
+                  stage = el;
+                }}
+                style={{
+                  "--split-share": `${String(splitShare.value() / 10)}%`,
+                }}
+              >
                 <For each={startedIds()}>
                   {(id) => (
                     <Show when={tabById(id)}>
@@ -983,6 +1018,21 @@ export function App() {
                     </Show>
                   )}
                 </For>
+                <Show when={split.showing()}>
+                  <SplitEdge
+                    width={splitShare.value()}
+                    area={() => stage?.getBoundingClientRect()}
+                    onWidth={splitShare.drag}
+                    onDone={splitShare.save}
+                  />
+                </Show>
+                <Show when={dropping()}>
+                  {(over) => (
+                    <div class="split-drop" classList={{ over: over().over }}>
+                      <span>Show side by side</span>
+                    </div>
+                  )}
+                </Show>
                 <Show when={page() !== undefined || shown() === undefined}>
                   <div class="page" hidden={shown() !== undefined}>
                     <Switch

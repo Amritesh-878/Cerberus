@@ -45,6 +45,8 @@ SHA-256 so you can check a download.
 - **A shell when a chat ends.** After `/exit` the tab becomes a shell in the same folder.
   **Resume chat** in its menu brings the chat back.
 - **Move a chat to another of your accounts**, from the tab's right-click menu.
+- **Two tabs side by side.** Drag a tab from the sidebar onto the right half of the chat; drag the
+  line between them to resize.
 - **A right panel for the tab on screen**: its account, folder and branch, the branch's changes
   and open PR with **Create PR** and **Open in VS Code**, its skills (most used first, starred ones
   on top, shift-click to type one in) and the MCP servers its `claude` would load.

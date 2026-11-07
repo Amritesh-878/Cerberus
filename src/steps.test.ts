@@ -16,6 +16,7 @@ const PROFILES: Profiles = {
   shell: null,
   startFolder: null,
   sidebarWidth: null,
+  splitShare: null,
   panel: {
     open: false,
     width: null,
