@@ -1046,6 +1046,7 @@ export function App() {
                 canType={chatShown() !== undefined}
                 onCreatePr={createPr}
                 onType={typeIntoChat}
+                links={messaging.snapshot()}
               />
             </Show>
             <Show when={sheet()}>

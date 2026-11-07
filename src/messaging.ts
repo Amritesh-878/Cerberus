@@ -85,6 +85,8 @@ export function createMessaging() {
     });
   });
   return {
+    /** The latest report, a new object on every change. */
+    snapshot,
     pending: () => snapshot().pending,
     note: (tab: number | undefined): MessagesNote | undefined =>
       tab === undefined

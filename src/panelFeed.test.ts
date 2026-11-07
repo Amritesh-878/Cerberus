@@ -18,8 +18,8 @@ afterEach(() => {
   clearMocks();
 });
 
-const A: Target = { tab: 1, folder: String.raw`C:\a`, account: 1, chat: true };
-const B: Target = { tab: 2, folder: String.raw`C:\b`, account: 2, chat: true };
+const A: Target = { tab: 1, folder: String.raw`C:\a`, account: 1 };
+const B: Target = { tab: 2, folder: String.raw`C:\b`, account: 2 };
 
 /** A core that records each read and can hold `panel_changes` replies to release them in any order. */
 function core(options: { hold?: boolean } = {}) {
@@ -62,11 +62,16 @@ function core(options: { hold?: boolean } = {}) {
 
 function feedFor(initial: Target | undefined) {
   const [target, setTarget] = createSignal(initial);
+  const [links, setLinks] = createSignal(0);
   const feed = createRoot((stop) => {
     dispose = stop;
-    return createPanelFeed(target);
+    return createPanelFeed(target, POLL_MS, links);
   });
-  return { feed, setTarget };
+  return {
+    feed,
+    setTarget,
+    linkChanged: () => setLinks((n) => n + 1),
+  };
 }
 
 async function flush(): Promise<void> {
@@ -183,16 +188,16 @@ test("a tab on the same folder and account still reloads the folder's files", as
   expect(calls.filter((c) => c.startsWith("panel_skills"))).toHaveLength(1);
 });
 
-test("a chat that starts again in the shown tab reloads its connectors", async () => {
+test("a chat linking or leaving the bridge reloads only the connectors", async () => {
   const { calls } = core();
-  const { setTarget } = feedFor({ ...A, chat: false });
+  const { linkChanged } = feedFor(A);
   await flush();
 
   calls.length = 0;
-  setTarget(A);
+  linkChanged();
   await flush();
 
-  expect(calls.filter((c) => c.startsWith("panel_connectors"))).toHaveLength(1);
+  expect(calls).toEqual([String.raw`panel_connectors C:\a`]);
 });
 
 test("a git reply that lands after the panel closes starts no PR read", async () => {

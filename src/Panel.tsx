@@ -29,7 +29,12 @@ import {
   skillCommand,
   skillSource,
 } from "./panelData";
-import { createPanelFeed, type Loaded, type Target } from "./panelFeed";
+import {
+  createPanelFeed,
+  type Loaded,
+  POLL_MS,
+  type Target,
+} from "./panelFeed";
 import type { PanelState } from "./panelPrefs";
 import { PanelEdge } from "./SidebarEdge";
 import type { Statuses } from "./statuses";
@@ -127,6 +132,8 @@ export function Panel(props: {
   onCreatePr: (folder: string) => void;
   /** Types into the shown chat, never with Enter. */
   onType: (text: string) => void;
+  /** The bridge's latest report, which changes as chats link and unlink. */
+  links: unknown;
 }) {
   const target = (): Target | undefined => {
     const tab = props.tab;
@@ -135,10 +142,9 @@ export function Panel(props: {
       tab: tab.id,
       folder: tab.launch.spec.cwd,
       account: tab.launch.account?.id ?? null,
-      chat: props.canType,
     };
   };
-  const feed = createPanelFeed(target);
+  const feed = createPanelFeed(target, POLL_MS, () => props.links);
   const [failed, setFailed] = createSignal<string>();
   const act = (doing: Promise<void>) => {
     doing.then(

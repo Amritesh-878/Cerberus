@@ -127,7 +127,8 @@ only the plugin switches, where each plugin is installed, and the `syncClaudeAiS
 read.
 
 Nothing runs while the panel is closed. While it is open, git is read when it opens, on a tab
-change and every 10 seconds; GitHub is asked about a repo at most once a minute.
+change and every 10 seconds; GitHub is asked about a repo at most once a minute. Connectors are
+read again when a chat links to Cerberus for messages or leaves it.
 
 ## The session board and alerts
 
