@@ -45,6 +45,8 @@ SHA-256 so you can check a download.
 - **A shell when a chat ends.** After `/exit` the tab becomes a shell in the same folder.
   **Resume chat** in its menu brings the chat back.
 - **Move a chat to another of your accounts**, from the tab's right-click menu.
+- **Two tabs side by side.** Drag a tab from the sidebar onto the right half of the chat; drag the
+  line between them to resize.
 - **A right panel for the tab on screen**: its account, folders and branch, each repo's changes
   and every PR (open, draft, merged; ready a draft from its menu) with **Create PR** and **Open in
   VS Code**, an **Edit environment** dialog for the tab's name, extra folders (`--add-dir`), main

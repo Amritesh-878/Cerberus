@@ -1,4 +1,5 @@
 import { FitAddon } from "@xterm/addon-fit";
+import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
@@ -14,10 +15,12 @@ import {
   terminalAction,
   terminalHandlesKey,
 } from "./keys";
-import { PtySession, type SpawnSpec } from "./pty";
+import { PtySession, settledResize, type SpawnSpec } from "./pty";
 import { throttle } from "./throttle";
 
 const FIT_INTERVAL_MS = 30;
+// Quiet time before the program hears of a new size; each resize makes Claude Code redraw its screen.
+const PTY_RESIZE_SETTLE_MS = 120;
 // Long enough for a large chat to load; the first state report usually ends it sooner.
 const RESUMING_NOTICE_MS = 20_000;
 const MISSING_NOTICE_MS = 10_000;
@@ -114,7 +117,12 @@ export function TerminalView(props: {
       theme: { background: "#1a1a1a" },
       // Option+B, Option+F and Option+arrows move by word in shells, as in Terminal.app with this set.
       macOptionIsMeta: PLATFORM === "mac",
+      // The Unicode 11 widths below are a proposed API in xterm 6.
+      allowProposedApi: true,
     });
+    // Emoji such as ✅ take two columns, as Claude Code counts them, so its tables line up.
+    term.loadAddon(new Unicode11Addon());
+    term.unicode.activeVersion = "11";
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(element);
@@ -144,11 +152,16 @@ export function TerminalView(props: {
       }, ms);
     };
     // Starts the tab's program in this pane; after an ended chat the core runs the shell instead.
+    const resizer = settledResize((size) => {
+      session.resize(size);
+    }, PTY_RESIZE_SETTLE_MS);
     const start = (firstInput: string | null): PtySession => {
       let input = firstInput;
+      const size = { cols: term.cols, rows: term.rows };
+      resizer.started(size);
       const current = new PtySession(
         spec,
-        { cols: term.cols, rows: term.rows },
+        size,
         {
           output: (bytes) => {
             if (disposed) return;
@@ -221,7 +234,7 @@ export function TerminalView(props: {
         session.write(data);
       }),
       term.onResize((size) => {
-        session.resize(size);
+        resizer.call(size);
       }),
       term.onSelectionChange(() => {
         copySelection(term);
@@ -247,6 +260,7 @@ export function TerminalView(props: {
       clearTimeout(noticeTimer);
       observer.disconnect();
       refit.cancel();
+      resizer.cancel();
       element.removeEventListener("paste", onPaste, true);
       subscriptions.forEach((subscription) => {
         subscription.dispose();

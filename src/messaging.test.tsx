@@ -100,21 +100,130 @@ test("an approved message shows both chats side by side on the target", async ()
   expect(views(root)).toEqual(["", "shown"]);
 });
 
-test("showing another tab closes the split", async () => {
-  const app = core({
-    pending: [{ id: 1, from: 3, to: 6, text: "hi" }],
+const TWO_PROJECTS: SavedTree = {
+  ...TREE,
+  projects: [
+    ...TREE.projects,
+    { id: 2, name: "beta", folder: String.raw`C:\code\p2` },
+  ],
+  tabs: [
+    ...TREE.tabs,
+    {
+      id: 8,
+      projectId: 2,
+      parentId: null,
+      title: "other",
+      program: "claude",
+      cwd: null,
+      account: 0,
+    },
+  ],
+  nextId: 9,
+};
+
+const splitOf = (root: HTMLElement) =>
+  root.querySelector(".split-bar") === null
+    ? "none"
+    : views(root)
+        .map((v) =>
+          v.includes("split-left")
+            ? "L"
+            : v.includes("split-right")
+              ? "R"
+              : "-",
+        )
+        .join("");
+
+async function arrive(id: number, from: number, to: number): Promise<void> {
+  await emitEvent("bridge", {
+    pending: [{ id, from, to, text: "hi" }],
     notes: [],
   });
-  const root = await renderApp(() => SAVED, app.core);
-  await open(root, "coder");
+  await settle();
+}
+
+async function gone(): Promise<void> {
+  await emitEvent("bridge", { pending: [], notes: [] });
+  await settle();
+}
+
+test("every delivered message opens or keeps its split, nothing else changes it, and it outlives a project switch", async () => {
+  const replies: unknown[] = [];
+  const pty = ptyCore();
+  const root = await renderApp(() => SAVED, {
+    ...pty.core,
+    tree_load: () => ({ tree: TWO_PROJECTS, notice: null }),
+    bridge_snapshot: () => ({ pending: [], notes: [] }),
+    bridge_decide: () => replies.shift(),
+    bridge_type_in: () => null,
+    bridge_discard: () => null,
+  });
   await open(root, "planner");
+  // Views in tree order: planner, coder, shell, other; only started tabs have one.
+
+  replies.push({ how: "delivered", from: 3, to: 6 });
+  await arrive(1, 3, 6);
   click(root, "Approve");
   await settle();
+  await gone();
+  expect(activeTitle(root)).toBe("coder");
+  expect(splitOf(root)).toBe("LR");
 
+  await open(root, "other");
+  expect(splitOf(root)).toBe("none");
   await open(root, "shell");
+  expect(splitOf(root)).toBe("none");
+  await open(root, "planner");
+  expect(splitOf(root)).toBe("LR--");
 
-  expect(root.querySelector(".split-bar")).toBeNull();
-  expect(views(root).filter((v) => v.includes("split"))).toEqual([]);
+  click(root, "Close split");
+  await settle();
+  replies.push({ how: "rejected" });
+  await arrive(2, 6, 3);
+  click(root, "Reject");
+  await settle();
+  await gone();
+  expect(splitOf(root)).toBe("none");
+
+  replies.push({ how: "failed", reason: "the tab closed (fake)" });
+  await arrive(3, 3, 6);
+  click(root, "Approve");
+  await settle();
+  click(root, "OK");
+  await gone();
+  expect(splitOf(root)).toBe("none");
+
+  // Cancelled by the sender: the message just leaves the queue.
+  await arrive(4, 3, 6);
+  await gone();
+  expect(splitOf(root)).toBe("none");
+
+  // Edited, then typed into the target's input box for Enter.
+  replies.push({ how: "prefilled", from: 3, to: 6 });
+  await arrive(5, 3, 6);
+  const box = root.querySelector<HTMLTextAreaElement>(".approval-text");
+  if (box) box.value = "hello";
+  box?.dispatchEvent(new Event("input", { bubbles: true }));
+  await settle();
+  click(root, "Approve edited");
+  await settle();
+  click(root, "OK");
+  await gone();
+  expect(splitOf(root)).toBe("LR--");
+
+  // A reply keeps the sides; typed in after the split was closed, it opens again with the sender on the left.
+  replies.push({ how: "unconfirmed", id: 6, from: 6, to: 3 });
+  await arrive(6, 6, 3);
+  click(root, "Approve");
+  await settle();
+  await gone();
+  expect(activeTitle(root)).toBe("planner");
+  expect(splitOf(root)).toBe("LR--");
+  click(root, "Close split");
+  await settle();
+  click(root, "Type it in instead");
+  await settle();
+  expect(splitOf(root)).toBe("RL--");
 });
 
 test("closing the other half ends the split", async () => {

@@ -33,3 +33,12 @@ export function clampPanel(width: number, windowWidth: number): number {
     Math.max(PANEL_MIN, Math.round(width)),
   );
 }
+
+/** The left chat's share of a split, in thousandths of the chat area. */
+export const SPLIT_DEFAULT = 500;
+export const SPLIT_MIN = 200;
+export const SPLIT_MAX = 800;
+
+export function clampSplit(share: number): number {
+  return Math.min(SPLIT_MAX, Math.max(SPLIT_MIN, Math.round(share)));
+}

@@ -378,6 +378,14 @@ pub fn set_sidebar_width(
 }
 
 #[tauri::command(async)]
+pub fn set_split_share(
+    accounts: State<'_, Accounts>,
+    share: u32,
+) -> Result<Profiles, AccountsError> {
+    accounts.set_split_share(share)
+}
+
+#[tauri::command(async)]
 pub fn set_panel(
     accounts: State<'_, Accounts>,
     panel: PanelPrefs,

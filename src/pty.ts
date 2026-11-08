@@ -149,3 +149,34 @@ export class PtySession {
       });
   }
 }
+
+export interface Resizer {
+  /** The size the program was started at, so the same size is not sent again. */
+  started: (size: Size) => void;
+  call: (size: Size) => void;
+  cancel: () => void;
+}
+
+/** Sends the last size once resizing stops for `ms`, so the program redraws once at the settled size. */
+export function settledResize(send: (size: Size) => void, ms: number): Resizer {
+  let last: Size | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return {
+    started: (size) => {
+      last = size;
+    },
+    call: (size) => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = undefined;
+        if (last?.cols === size.cols && last.rows === size.rows) return;
+        last = size;
+        send(size);
+      }, ms);
+    },
+    cancel: () => {
+      clearTimeout(timer);
+      timer = undefined;
+    },
+  };
+}

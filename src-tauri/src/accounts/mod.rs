@@ -23,6 +23,8 @@ pub type AccountId = u32;
 const SIDEBAR_WIDTHS: std::ops::RangeInclusive<u32> = 200..=560;
 const PANEL_WIDTHS: std::ops::RangeInclusive<u32> = 240..=640;
 const MOST_DISMISSED: usize = 500;
+/// The left chat's share of a split, in thousandths, so neither side can be dragged shut.
+const SPLIT_SHARES: std::ops::RangeInclusive<u32> = 200..=800;
 /// The right panel's cards that can be collapsed; a name not here is dropped when saved.
 const PANEL_CARDS: [&str; 4] = ["environment", "changes", "connectors", "skills"];
 /// Cards that start folded, so for these the saved list is the ones the user opened.
@@ -117,6 +119,9 @@ pub struct Profiles {
     pub sidebar_width: Option<u32>,
     #[serde(default)]
     pub panel: PanelPrefs,
+    /// The left chat's share of a split in thousandths; `None` keeps half and half.
+    #[serde(default)]
+    pub split_share: Option<u32>,
     /// Desktop notifications when a chat in another tab needs you.
     #[serde(default = "on")]
     pub alerts: bool,
@@ -150,6 +155,7 @@ impl Default for Profiles {
             start_folder: None,
             sidebar_width: None,
             panel: PanelPrefs::default(),
+            split_share: None,
             alerts: true,
             suggestions: true,
             messages: true,
@@ -353,6 +359,14 @@ impl Accounts {
         let width = width.clamp(*SIDEBAR_WIDTHS.start(), *SIDEBAR_WIDTHS.end());
         self.update(|p| {
             p.sidebar_width = Some(width);
+            Ok(())
+        })
+    }
+
+    pub fn set_split_share(&self, share: u32) -> Result<Profiles, AccountsError> {
+        let share = share.clamp(*SPLIT_SHARES.start(), *SPLIT_SHARES.end());
+        self.update(|p| {
+            p.split_share = Some(share);
             Ok(())
         })
     }
@@ -891,6 +905,24 @@ mod tests {
             accounts.load().unwrap().panel.dismissed,
             saved.panel.dismissed
         );
+    }
+
+    #[test]
+    fn the_split_share_is_saved_inside_its_limits() {
+        let home = TestDir::new();
+        let accounts = Accounts::new(&home.path().join("app"), home.path().to_path_buf());
+
+        assert_eq!(accounts.load().unwrap().split_share, None);
+        assert_eq!(
+            accounts.set_split_share(620).unwrap().split_share,
+            Some(620)
+        );
+        assert_eq!(accounts.set_split_share(0).unwrap().split_share, Some(200));
+        assert_eq!(
+            accounts.set_split_share(1000).unwrap().split_share,
+            Some(800)
+        );
+        assert_eq!(accounts.load().unwrap().split_share, Some(800));
     }
 
     #[test]

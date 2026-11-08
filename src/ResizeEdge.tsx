@@ -7,11 +7,13 @@ export interface EdgeLimits {
   reset: number;
 }
 
-/** A draggable edge between two columns; `side` is where the column it sizes sits. */
+/** A draggable edge between two columns; `toWidth` turns the pointer's x into the size it sets. */
 export function ResizeEdge(props: {
   class: string;
   label: string;
-  side: "left" | "right";
+  toWidth: (x: number) => number;
+  /** What ArrowRight adds to the size; negative for a column on the right. */
+  step: number;
   limits: EdgeLimits;
   width: number;
   onWidth: (width: number) => void;
@@ -32,12 +34,8 @@ export function ResizeEdge(props: {
   const set = (width: number) => {
     props.onWidth(props.limits.clamp(width, windowWidth()));
   };
-  // A column on the right grows as the pointer and the arrow keys move left.
-  const toWidth = (x: number) => (props.side === "left" ? x : innerWidth - x);
-  const step = (key: string) => {
-    const right = props.side === "left" ? 16 : -16;
-    return key === "ArrowRight" ? right : key === "ArrowLeft" ? -right : 0;
-  };
+  const step = (key: string) =>
+    key === "ArrowRight" ? props.step : key === "ArrowLeft" ? -props.step : 0;
   // The pointer that started the drag; another finger or pen neither moves nor ends it.
   let dragging: number | undefined;
   const finish = (event: PointerEvent & { currentTarget: HTMLDivElement }) => {
@@ -68,7 +66,7 @@ export function ResizeEdge(props: {
         event.currentTarget.setPointerCapture(event.pointerId);
       }}
       onPointerMove={(event) => {
-        if (event.pointerId === dragging) set(toWidth(event.clientX));
+        if (event.pointerId === dragging) set(props.toWidth(event.clientX));
       }}
       onPointerUp={finish}
       onPointerCancel={finish}
