@@ -1,6 +1,6 @@
 use std::fs;
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -102,6 +102,17 @@ fn is_current(file: &SessionFile, modified_ms: Option<u64>, started_ms: u64) -> 
         .is_some_and(|at| at >= started_ms)
 }
 
+/// The session file at `path`, unless it is unreadable or older than `started_ms`.
+pub(super) fn read_current(path: &Path, started_ms: u64) -> Option<SessionFile> {
+    let file = parse_session_file(&fs::read(path).ok()?)?;
+    let modified_ms = fs::metadata(path)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .and_then(|d| u64::try_from(d.as_millis()).ok());
+    is_current(&file, modified_ms, started_ms).then_some(file)
+}
+
 /// How long to wait before another search for a file that was not there: quick at first, then slower.
 fn search_gap(age: Duration) -> Duration {
     if age < QUICK_SEARCH {
@@ -134,6 +145,15 @@ impl Finder {
         }
     }
 
+    /// A finder for a process already known to be `claude`, so it never walks the process tree.
+    fn at(watched: Watched) -> Self {
+        let pid = watched.pid;
+        Self {
+            pid: Some(pid),
+            ..Self::new(watched)
+        }
+    }
+
     fn file_of(&self, pid: u32) -> PathBuf {
         self.watched
             .config_dir
@@ -142,14 +162,7 @@ impl Finder {
     }
 
     fn read(&self, pid: u32) -> Option<SessionFile> {
-        let path = self.file_of(pid);
-        let file = parse_session_file(&fs::read(&path).ok()?)?;
-        let modified_ms = fs::metadata(&path)
-            .and_then(|m| m.modified())
-            .ok()
-            .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-            .and_then(|d| u64::try_from(d.as_millis()).ok());
-        is_current(&file, modified_ms, self.watched.started_ms).then_some(file)
+        read_current(&self.file_of(pid), self.watched.started_ms)
     }
 
     fn session(&mut self) -> Option<SessionFile> {
@@ -192,6 +205,60 @@ impl Finder {
     }
 }
 
+/// One `claude` process's session file: its state changes, and its chat id once that chat can be resumed.
+pub(super) struct Follower {
+    finder: Finder,
+    tracker: Tracker,
+    /// The chat's folder as its session file last said, or the tab's when it never did.
+    cwd: String,
+}
+
+impl Follower {
+    fn new(finder: Finder) -> Self {
+        Self {
+            cwd: finder.watched.cwd.clone(),
+            finder,
+            tracker: Tracker::default(),
+        }
+    }
+
+    /// Follows the process `watched.pid` itself.
+    pub(super) fn at(watched: Watched) -> Self {
+        Self::new(Finder::at(watched))
+    }
+
+    /// One poll: a state change to report, and a chat id to save.
+    pub(super) fn step(&mut self) -> (Option<TabState>, Option<String>) {
+        // The file appears a moment after the process starts, so a missing one is normal.
+        let Some(session) = self.finder.session() else {
+            return (None, None);
+        };
+        let now = unix_now();
+        if let Some(cwd) = &session.cwd {
+            self.cwd.clone_from(cwd);
+        }
+        let (finder, cwd) = (&mut self.finder, &self.cwd);
+        let changed = self.tracker.observe(&session, now, |id| {
+            limit_in(&finder.transcript_now(cwd, id)?, now)
+                .ok()
+                .flatten()
+        });
+        let unsaved = self
+            .tracker
+            .unsaved(|id| finder.transcript(cwd, id).is_some());
+        (changed, unsaved)
+    }
+
+    /// Once the process is gone: a chat id still to save, and whether the chat can be resumed at all.
+    pub(super) fn finish(&mut self) -> (Option<String>, bool) {
+        let (finder, cwd) = (&mut self.finder, &self.cwd);
+        let unsaved = self
+            .tracker
+            .unsaved(|id| finder.transcript_now(cwd, id).is_some());
+        (unsaved, self.tracker.saved.is_some())
+    }
+}
+
 /// Follows a `claude` process's session file until `stop` fires or its sender is dropped.
 pub fn watch(
     watched: Watched,
@@ -200,25 +267,13 @@ pub fn watch(
     mut on_state: impl FnMut(TabState) + Send + 'static,
 ) -> io::Result<JoinHandle<()>> {
     thread::Builder::new().spawn(move || {
-        let fallback_cwd = watched.cwd.clone();
-        let mut finder = Finder::new(watched);
-        let mut tracker = Tracker::default();
+        let mut follower = Follower::new(Finder::new(watched));
         while let Err(RecvTimeoutError::Timeout) = stop.recv_timeout(POLL) {
-            // The file appears a moment after the process starts, so a missing one is normal.
-            let Some(session) = finder.session() else {
-                continue;
-            };
-            let now = unix_now();
-            let cwd = session.cwd.clone().unwrap_or_else(|| fallback_cwd.clone());
-            let changed = tracker.observe(&session, now, |id| {
-                limit_in(&finder.transcript_now(&cwd, id)?, now)
-                    .ok()
-                    .flatten()
-            });
+            let (changed, unsaved) = follower.step();
             if let Some(state) = changed {
                 on_state(state);
             }
-            if let Some(id) = tracker.unsaved(|id| finder.transcript(&cwd, id).is_some()) {
+            if let Some(id) = unsaved {
                 on_session(&id);
             }
         }

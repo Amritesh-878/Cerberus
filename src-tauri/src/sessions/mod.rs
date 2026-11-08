@@ -1,6 +1,7 @@
 pub mod carry;
 mod limit;
 pub mod procs;
+pub mod shell;
 mod watch;
 
 use std::fs;

@@ -13,10 +13,12 @@ use crate::accounts::{
 use crate::bridge::Bridge;
 use crate::bridge::spawn::Messages;
 use crate::cli_link::{self, LinkError, Linked};
-use crate::handover::{ContinueError, RunningTabs, continue_chat, move_to_folder};
+use crate::handover::{ContinueError, RunningTabs, continue_chat, move_to_folder, reopen_chat};
 use crate::programs::{Finder, ProgramChoice, pick_shell};
 use crate::pty::{Exit, PtyError, PtyManager, SessionId, SpawnRequest};
 use crate::saved::{EnvEdit, EnvError, Loaded, Saved, SavedTree, TabId, TreeError};
+use crate::sessions::procs::Probes;
+use crate::sessions::shell::{HandChat, Keeper, Report, Shell, watch_shell};
 use crate::sessions::{
     Resume, TabState, Watched, add_dir_args, chat_ended, is_claude, plan_resume, watch,
 };
@@ -96,6 +98,10 @@ pub fn pty_spawn(
         claude_home = None;
     }
     let runs_claude = claude_home.is_some();
+    // A shell is watched on the tab's own account only, for a `claude` the user starts in it.
+    let shell_home = (!runs_claude)
+        .then(|| accounts.claude_home(account).ok())
+        .flatten();
     if runs_claude {
         request.args = add_dir_args(&request.args, &request.dirs, &cwd);
     }
@@ -210,8 +216,61 @@ pub fn pty_spawn(
             }
             Err(e) => eprintln!("could not watch tab {tab:?}: {e}"),
         }
+    } else if let (Some(config_dir), Some(pid), Some(tab)) = (shell_home, pid, tab) {
+        let shell = Shell {
+            config_dir,
+            pid,
+            cwd,
+            started_ms,
+            probes: Probes::SYSTEM,
+        };
+        let report = TabReport {
+            keeper: Keeper {
+                saved: Saved::clone(&saved),
+                tab,
+            },
+            events: state_events,
+            app: app.clone(),
+            id,
+        };
+        // Without a watcher the shell still works; a `claude` started in it is just not followed.
+        match watch_shell(shell, stopped, report) {
+            Ok(watcher) => running.watching(tab, watcher),
+            Err(e) => eprintln!("could not watch shell tab {tab}: {e}"),
+        }
     }
     Ok(Spawned { id, resume })
+}
+
+/// Sends a `claude` started in a shell tab to the tab as it starts, works and ends, and keeps its chat in the saved tab.
+struct TabReport {
+    keeper: Keeper,
+    events: Channel<InvokeResponseBody>,
+    app: AppHandle,
+    id: SessionId,
+}
+
+impl Report for TabReport {
+    fn chat(&mut self, chat: &HandChat) {
+        self.keeper.chat(chat);
+        if let Ok(body) = chat.clone().body() {
+            let _ = self.events.send(body);
+        }
+    }
+
+    fn session(&mut self, id: &str) {
+        self.keeper.session(id);
+    }
+
+    fn state(&mut self, state: TabState) {
+        if let Ok(body) = state.body() {
+            let _ = self.events.send(body);
+        }
+    }
+
+    fn open(&self) -> bool {
+        self.app.state::<PtyManager>().is_open(self.id)
+    }
 }
 
 /// With messages on, links the tab to the bridge and adds the `cerberus` MCP server; off leaves the spawn as it was.
@@ -265,6 +324,16 @@ pub fn tab_move_folder(
 #[tauri::command(async)]
 pub fn resume_chat(saved: State<'_, Saved>, tab: TabId) {
     saved.set_ended(tab, false);
+}
+
+/// Waits for a stopped tab's shell and the `claude` started in it to end, so the tab can resume that chat as a Claude tab.
+#[tauri::command(async)]
+pub fn reopen_as_claude(
+    saved: State<'_, Saved>,
+    running: State<'_, Arc<RunningTabs>>,
+    tab: TabId,
+) -> Result<(), ContinueError> {
+    reopen_chat(&saved, &running, tab)
 }
 
 #[tauri::command(async)]
