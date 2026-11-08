@@ -388,12 +388,15 @@ impl Accounts {
         let plain = |text: &str, most: usize| {
             !text.is_empty() && text.len() <= most && !text.chars().any(char::is_control)
         };
-        let dismissed = prefs
+        let mut kept: Vec<(String, String)> = prefs
             .dismissed
             .into_iter()
             .filter(|(key, stamp)| plain(key, 300) && key.contains('#') && plain(stamp, 64))
-            .take(MOST_DISMISSED)
             .collect();
+        // Newest update times first, so a fresh dismissal survives the cap and the oldest go.
+        kept.sort_by(|a, b| b.1.cmp(&a.1));
+        kept.truncate(MOST_DISMISSED);
+        let dismissed = kept.into_iter().collect();
         self.update(|p| {
             let favourites = prefs
                 .favourites
@@ -877,6 +880,35 @@ mod tests {
             Some(560)
         );
         assert_eq!(accounts.load().unwrap().sidebar_width, Some(560));
+    }
+
+    #[test]
+    fn a_new_dismissal_is_kept_when_the_list_is_full() {
+        let home = TestDir::new();
+        let accounts = Accounts::new(&home.path().join("app"), home.path().to_path_buf());
+        // Keys that sort before the new one, all with older update times.
+        let mut dismissed: BTreeMap<String, String> = (0..MOST_DISMISSED)
+            .map(|n| {
+                (
+                    format!("a/a#{n}"),
+                    format!("2026-01-01T00:00:{:02}Z", n % 60),
+                )
+            })
+            .collect();
+        dismissed.insert("z/z#1".to_owned(), "2026-11-08T12:00:00Z".to_owned());
+
+        let saved = accounts
+            .set_panel(PanelPrefs {
+                dismissed,
+                ..PanelPrefs::default()
+            })
+            .unwrap();
+
+        assert_eq!(saved.panel.dismissed.len(), MOST_DISMISSED);
+        assert_eq!(
+            saved.panel.dismissed.get("z/z#1").map(String::as_str),
+            Some("2026-11-08T12:00:00Z")
+        );
     }
 
     #[test]
