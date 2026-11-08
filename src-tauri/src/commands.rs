@@ -13,11 +13,13 @@ use crate::accounts::{
 use crate::bridge::Bridge;
 use crate::bridge::spawn::Messages;
 use crate::cli_link::{self, LinkError, Linked};
-use crate::handover::{ContinueError, RunningTabs, continue_chat};
+use crate::handover::{ContinueError, RunningTabs, continue_chat, move_to_folder};
 use crate::programs::{Finder, ProgramChoice, pick_shell};
 use crate::pty::{Exit, PtyError, PtyManager, SessionId, SpawnRequest};
-use crate::saved::{Loaded, Saved, SavedTree, TabId, TreeError};
-use crate::sessions::{Resume, TabState, Watched, chat_ended, is_claude, plan_resume, watch};
+use crate::saved::{EnvEdit, EnvError, Loaded, Saved, SavedTree, TabId, TreeError};
+use crate::sessions::{
+    Resume, TabState, Watched, add_dir_args, chat_ended, is_claude, plan_resume, watch,
+};
 use crate::suggestions::Suggestions;
 
 #[derive(Serialize)]
@@ -94,6 +96,12 @@ pub fn pty_spawn(
         claude_home = None;
     }
     let runs_claude = claude_home.is_some();
+    if runs_claude {
+        request.args = add_dir_args(&request.args, &request.dirs, &cwd);
+    }
+    if let Some(tab) = tab {
+        request.tab_env = saved.env_of(tab);
+    }
     // An unreadable profiles file is reported elsewhere; the shell still opens, as it did before.
     let suggest = accounts.load().is_ok_and(|p| p.suggestions);
     if let Some(setup) =
@@ -223,6 +231,34 @@ fn link_messages(
     request.args = messages.args(&request.args);
     request.env.extend(ticket.env);
     Some(ticket.token)
+}
+
+/// The tab's variable names; their values never leave the core.
+#[tauri::command(async)]
+pub fn tab_env(saved: State<'_, Saved>, tab: TabId) -> Vec<String> {
+    saved.env_names(tab)
+}
+
+/// Saves the dialog's variable edits for the tab's next start, all or none.
+#[tauri::command(async)]
+pub fn tab_set_env(
+    saved: State<'_, Saved>,
+    tab: TabId,
+    edits: Vec<EnvEdit>,
+) -> Result<Vec<String>, EnvError> {
+    saved.set_env(tab, edits)
+}
+
+/// Readies a stopped tab's chat to resume in `folder`; the webview then starts the tab there.
+#[tauri::command(async)]
+pub fn tab_move_folder(
+    accounts: State<'_, Accounts>,
+    saved: State<'_, Saved>,
+    running: State<'_, Arc<RunningTabs>>,
+    tab: TabId,
+    folder: String,
+) -> Result<(), ContinueError> {
+    move_to_folder(&saved, &accounts, &running, tab, &folder)
 }
 
 /// Lets an ended chat's tab run `claude --resume` again the next time it starts.

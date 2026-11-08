@@ -1,4 +1,5 @@
 mod db;
+mod env;
 
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -14,6 +15,7 @@ use serde::{Deserialize, Serialize, Serializer};
 
 use crate::accounts::AccountId;
 use crate::saved::db::Db;
+pub use crate::saved::env::{EnvEdit, EnvError, EnvVar};
 use crate::sessions::is_session_id;
 
 pub type TabId = u32;
@@ -25,6 +27,8 @@ pub const FILE_NAME: &str = "tree.db";
 const QUIET: Duration = Duration::from_millis(300);
 const MOST_DELAY: Duration = Duration::from_secs(2);
 const RETRY: Duration = Duration::from_secs(2);
+const MOST_DIRS: usize = 16;
+const LONGEST_DIR: usize = 4096;
 
 #[derive(Debug, thiserror::Error)]
 pub enum TreeError {
@@ -81,6 +85,9 @@ pub struct SavedTab {
     pub program: String,
     pub cwd: Option<String>,
     pub account: Option<AccountId>,
+    /// Folders beside `cwd` that a Claude Code chat is started with, as `--add-dir`.
+    #[serde(default)]
+    pub dirs: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -115,6 +122,12 @@ impl SavedTree {
             if tab.title.trim().is_empty() || tab.program.is_empty() {
                 return invalid(format!("tab {} has no title or program", tab.id));
             }
+            let odd_dir = |d: &String| {
+                d.is_empty() || d.len() > LONGEST_DIR || d.chars().any(char::is_control)
+            };
+            if tab.dirs.len() > MOST_DIRS || tab.dirs.iter().any(odd_dir) {
+                return invalid(format!("tab {} has folders that cannot be used", tab.id));
+            }
             if let Some(parent) = tab.parent_id {
                 let fits = tabs.get(&parent).is_some_and(|p| {
                     p.id != tab.id && p.parent_id.is_none() && p.project_id == tab.project_id
@@ -140,6 +153,8 @@ struct Snapshot {
     sessions: HashMap<TabId, String>,
     /// Tabs whose chat ended by itself; they reopen as a shell until Resume chat.
     ended: HashSet<TabId>,
+    /// Kept out of `SavedTree`, so variable values never travel to the webview.
+    env: HashMap<TabId, Vec<EnvVar>>,
 }
 
 enum Message {
@@ -251,6 +266,7 @@ impl Saved {
             let kept: HashSet<_> = tree.tabs.iter().map(|t| t.id).collect();
             snapshot.sessions.retain(|id, _| kept.contains(id));
             snapshot.ended.retain(|id| kept.contains(id));
+            snapshot.env.retain(|id, _| kept.contains(id));
             snapshot.tree = tree;
         }
         live.changed();
@@ -326,6 +342,44 @@ impl Saved {
         let tree = &snapshot.tree;
         let found = tree.tabs.iter().find(|t| t.id == tab)?;
         Some((found.account, place_in(tree, found)))
+    }
+
+    /// The tab's variable names, for the dialog; values stay in the core.
+    pub fn env_names(&self, tab: TabId) -> Vec<String> {
+        self.env_of(tab).into_iter().map(|v| v.name).collect()
+    }
+
+    pub fn env_of(&self, tab: TabId) -> Vec<EnvVar> {
+        let Ok(live) = self.live() else {
+            return Vec::new();
+        };
+        lock(&live.snapshot)
+            .env
+            .get(&tab)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// Applies the dialog's edits all or none, and returns the names now set.
+    pub fn set_env(&self, tab: TabId, edits: Vec<EnvEdit>) -> Result<Vec<String>, EnvError> {
+        let live = self.live().map_err(|_| EnvError::NoTab)?;
+        let names = {
+            let mut snapshot = lock(&live.snapshot);
+            if !snapshot.tree.tabs.iter().any(|t| t.id == tab) {
+                return Err(EnvError::NoTab);
+            }
+            let current = snapshot.env.get(&tab).map_or(&[][..], Vec::as_slice);
+            let vars = env::edited(current, edits)?;
+            let names = vars.iter().map(|v| v.name.clone()).collect();
+            if vars.is_empty() {
+                snapshot.env.remove(&tab);
+            } else {
+                snapshot.env.insert(tab, vars);
+            }
+            names
+        };
+        live.changed();
+        Ok(names)
     }
 
     pub fn session_of(&self, tab: TabId) -> Option<String> {
@@ -506,6 +560,7 @@ pub(crate) mod tests {
             program: program.to_owned(),
             cwd: Some(r"C:\work\app".to_owned()),
             account: Some(2),
+            dirs: Vec::new(),
         }
     }
 
@@ -564,6 +619,44 @@ pub(crate) mod tests {
         );
         assert_eq!(restarted.session_of(6).as_deref(), Some(SESSION));
         assert_eq!(restarted.session_of(3), None);
+    }
+
+    #[test]
+    fn a_tabs_variables_survive_a_restart_and_leave_with_the_tab() {
+        let dir = TestDir::new();
+        let path = dir.path().join("tree.db");
+        let saved = Saved::open(&path, |_| {});
+        saved.save(two_projects()).unwrap();
+        let set = |name: &str, value: &str| EnvEdit {
+            name: name.to_owned(),
+            value: Some(value.to_owned()),
+        };
+
+        assert_eq!(
+            saved.set_env(6, vec![set("API_URL", "http://localhost:9")]),
+            Ok(vec!["API_URL".to_owned()])
+        );
+        assert_eq!(saved.set_env(99, vec![set("A", "1")]), Err(EnvError::NoTab));
+        assert!(matches!(
+            saved.set_env(6, vec![set("B", "2"), set("CLAUDE_CONFIG_DIR", "x")]),
+            Err(EnvError::Managed(_))
+        ));
+        saved.flush();
+        drop(saved);
+        let restarted = Saved::open(&path, |_| {});
+
+        assert_eq!(restarted.env_names(6), ["API_URL"]);
+        assert_eq!(restarted.env_of(6)[0].value, "http://localhost:9");
+        assert!(
+            !serde_json::to_string(&restarted.load().unwrap())
+                .unwrap()
+                .contains("localhost:9"),
+            "a value reached what the webview loads"
+        );
+        let mut without = two_projects();
+        without.tabs.retain(|t| t.id != 6);
+        restarted.save(without).unwrap();
+        assert!(restarted.env_of(6).is_empty());
     }
 
     #[test]

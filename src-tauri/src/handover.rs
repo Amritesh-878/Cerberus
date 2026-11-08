@@ -7,7 +7,7 @@ use serde::{Serialize, Serializer};
 
 use crate::accounts::{AccountId, Accounts, AccountsError};
 use crate::saved::{Saved, TabId};
-use crate::sessions::carry::{CarryError, copy_chat};
+use crate::sessions::carry::{CarryError, copy_chat, copy_to_folder};
 use crate::sessions::procs;
 
 // Long enough for a closed tab's `claude` to finish exiting, short enough to answer a click.
@@ -18,6 +18,8 @@ const TREE_POLL: Duration = Duration::from_millis(100);
 pub enum ContinueError {
     #[error("this tab is not saved")]
     NoTab,
+    #[error("that folder does not exist")]
+    NoFolder,
     #[error("this tab already runs on that account")]
     SameAccount,
     #[error("this chat is already moving")]
@@ -224,6 +226,52 @@ fn continue_within(
     Ok(())
 }
 
+/// Copies the tab's chat to `folder`'s project once its program has stopped, so it resumes there.
+pub fn move_to_folder(
+    saved: &Saved,
+    accounts: &Accounts,
+    running: &RunningTabs,
+    tab: TabId,
+    folder: &str,
+) -> Result<(), ContinueError> {
+    move_within(saved, accounts, running, tab, folder, EXIT_WAIT)
+}
+
+fn move_within(
+    saved: &Saved,
+    accounts: &Accounts,
+    running: &RunningTabs,
+    tab: TabId,
+    folder: &str,
+    wait: Duration,
+) -> Result<(), ContinueError> {
+    let path = std::path::Path::new(folder);
+    if !path.is_absolute() || !path.is_dir() {
+        return Err(ContinueError::NoFolder);
+    }
+    let _moving = running.begin_move(tab).ok_or(ContinueError::Busy)?;
+    let saved_tab = saved.tab(tab).ok_or(ContinueError::NoTab)?;
+    if !running.settle(tab, wait) {
+        return Err(ContinueError::Running);
+    }
+    // A shell, or a chat that never started, has nothing to carry.
+    let Some(id) = saved.session_of(tab) else {
+        return Ok(());
+    };
+    let home = accounts.chat_home(saved_tab.account)?;
+    let from = saved_tab
+        .cwd
+        .unwrap_or_else(|| accounts.home().to_string_lossy().into_owned());
+    if from == folder {
+        return Ok(());
+    }
+    match copy_to_folder(&home, &from, folder, &id, &running.probes.is_running) {
+        // A chat whose file is gone starts anew in the new folder, as it would have in the old one.
+        Err(CarryError::Missing) => Ok(()),
+        other => Ok(other?),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -288,6 +336,7 @@ mod tests {
                     program: "claude".to_owned(),
                     cwd: Some(CWD.to_owned()),
                     account: Some(0),
+                    dirs: Vec::new(),
                 }],
                 next_id: 3,
             })
@@ -335,6 +384,52 @@ mod tests {
                 .join(slug(CWD))
                 .join(format!("{id}.jsonl"))
         }
+    }
+
+    #[test]
+    fn a_stopped_chat_is_copied_to_the_new_folder_on_its_own_account() {
+        let world = world();
+        let plans = world.dir.path().join("plans");
+        fs::create_dir_all(&plans).unwrap();
+        let plans = plans.to_string_lossy().into_owned();
+
+        move_within(
+            &world.saved,
+            &world.accounts,
+            &world.running,
+            2,
+            &plans,
+            Duration::from_millis(300),
+        )
+        .unwrap();
+
+        let home = world.dir.path().join(".claude-personal");
+        assert!(crate::sessions::transcript(&home, &plans, ID).is_some());
+        assert!(!world.copied(ID).exists(), "the chat left its account");
+    }
+
+    #[test]
+    fn a_folder_move_waits_for_a_running_chat_and_refuses_a_missing_folder() {
+        let world = world();
+        let plans = world.dir.path().join("plans");
+        fs::create_dir_all(&plans).unwrap();
+        let plans = plans.to_string_lossy().into_owned();
+        let gone = world.dir.path().join("gone").to_string_lossy().into_owned();
+        let moving = |folder: &str| {
+            move_within(
+                &world.saved,
+                &world.accounts,
+                &world.running,
+                2,
+                folder,
+                Duration::from_millis(50),
+            )
+        };
+
+        assert!(matches!(moving(&gone), Err(ContinueError::NoFolder)));
+        assert!(matches!(moving("relative"), Err(ContinueError::NoFolder)));
+        world.running.started(2);
+        assert!(matches!(moving(&plans), Err(ContinueError::Running)));
     }
 
     #[test]

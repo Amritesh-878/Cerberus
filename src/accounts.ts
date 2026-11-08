@@ -26,6 +26,8 @@ export interface PanelPrefs {
   expanded: PanelCard[];
   /** Starred skill names by account id. */
   favourites: Partial<Record<string, string[]>>;
+  /** Dismissed PRs by `owner/repo#n`, to the update time they were dismissed at; the core always sends it. */
+  dismissed?: Partial<Record<string, string>>;
 }
 
 export interface Profiles {

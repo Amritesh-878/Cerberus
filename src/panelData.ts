@@ -9,6 +9,8 @@ export type Changes =
       kind: "repo";
       /** The repo folder's name. */
       name: string;
+      /** The repo's top folder, so folders in one repo show it once. */
+      root: string;
       /** `null` when HEAD is detached, and `commit` names it. */
       branch: string | null;
       commit: string | null;
@@ -25,6 +27,11 @@ export type Changes =
 export interface PrRow {
   number: number;
   title: string;
+  state: "draft" | "open" | "merged" | "closed";
+  /** `owner/repo#n`, which a dismissal is saved under. */
+  key: string;
+  /** Changes whenever the PR does, so a dismissed one comes back. */
+  updated: string;
 }
 
 export interface Connector {
@@ -53,13 +60,23 @@ export function panelChanges(folder: string): Promise<Changes> {
   return invoke<Changes>("panel_changes", { folder });
 }
 
-/** The branch's open PR; the core asks GitHub at most once a minute per repo. */
-export function panelPr(folder: string): Promise<PrRow | null> {
-  return invoke<PrRow | null>("panel_pr", { folder });
+/** Every PR of the folder's repo, newest first; the core asks GitHub at most once a minute per repo. */
+export function panelPrs(folder: string): Promise<PrRow[]> {
+  return invoke<PrRow[]>("panel_prs", { folder });
 }
 
-export function openPr(folder: string): Promise<void> {
-  return invoke("panel_open_pr", { folder });
+/** The core opens the link `gh` gave, so the webview never names a URL to open. */
+export function openPr(folder: string, number: number): Promise<void> {
+  return invoke("panel_open_pr", { folder, number });
+}
+
+export function prLink(folder: string, number: number): Promise<string> {
+  return invoke<string>("panel_pr_link", { folder, number });
+}
+
+/** Runs `gh pr ready` for a draft; call only after the user confirmed. */
+export function prReady(folder: string, number: number): Promise<void> {
+  return invoke("panel_pr_ready", { folder, number });
 }
 
 export function openFolder(folder: string): Promise<void> {

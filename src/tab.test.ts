@@ -33,6 +33,7 @@ test("an installed program opens a tab under its account", () => {
       args: ["--login", "-i"],
       cwd: String.raw`C:\code`,
       account: 2,
+      dirs: [],
     },
     imagePasteKey: null,
     account: { id: 2, name: "work" },

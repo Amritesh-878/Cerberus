@@ -103,6 +103,7 @@ test("only ids, names, folders and choices are saved, never a program path", () 
     program: "claude",
     cwd: String.raw`C:\code\app`,
     account: 0,
+    dirs: [],
   });
 });
 
@@ -143,6 +144,7 @@ test("a program no longer installed keeps its tab, which fails visibly when open
     args: [],
     cwd: null,
     account: 7,
+    dirs: [],
   });
   expect(tab?.launch.account).toEqual({ id: 7, name: "removed account" });
 });

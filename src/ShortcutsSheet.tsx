@@ -4,8 +4,8 @@ import { CloseIcon } from "./icons";
 import { shortcutSheet } from "./keys";
 
 /** Wraps Tab and Shift+Tab inside the sheet, so focus never reaches the page behind a modal. */
-function keepInside(sheet: HTMLElement, event: KeyboardEvent): boolean {
-  const stops = [...sheet.querySelectorAll<HTMLElement>("button")];
+export function keepInside(sheet: HTMLElement, event: KeyboardEvent): boolean {
+  const stops = [...sheet.querySelectorAll<HTMLElement>("button, input")];
   const first = stops[0];
   const last = stops.at(-1);
   const active = document.activeElement;

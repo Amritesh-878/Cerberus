@@ -13,8 +13,8 @@ import {
   CodeIcon,
   DiffIcon,
   FolderIcon,
+  GearIcon,
   PlugIcon,
-  PrIcon,
   SkillIcon,
   StarIcon,
 } from "./icons";
@@ -25,17 +25,23 @@ import {
   openFolder,
   openPr,
   openVsCode,
+  type PrRow,
+  prLink,
+  prReady,
   type Skill,
   skillCommand,
   skillSource,
 } from "./panelData";
 import {
   createPanelFeed,
+  type FolderChanges,
   type Loaded,
   POLL_MS,
+  type RepoPrs,
   type Target,
 } from "./panelFeed";
 import type { PanelState } from "./panelPrefs";
+import { type PrActions, PrList } from "./PrList";
 import { PanelEdge } from "./SidebarEdge";
 import type { Statuses } from "./statuses";
 import { folderName, type TreeTab } from "./tree";
@@ -46,6 +52,8 @@ function Card(props: {
   meta?: string;
   /** One line under the title while the card is open. */
   subtitle?: string;
+  /** A button at the right of the title, such as Edit environment. */
+  action?: JSX.Element;
   state: PanelState;
   children: JSX.Element;
 }) {
@@ -67,6 +75,7 @@ function Card(props: {
         <Show when={props.meta}>
           <span class="card-meta">{props.meta}</span>
         </Show>
+        {props.action}
       </h2>
       <Show when={open()}>
         <div class="card-body">
@@ -134,6 +143,7 @@ export function Panel(props: {
   onType: (text: string) => void;
   /** The bridge's latest report, which changes as chats link and unlink. */
   links: unknown;
+  onEditEnvironment: () => void;
 }) {
   const target = (): Target | undefined => {
     const tab = props.tab;
@@ -142,6 +152,7 @@ export function Panel(props: {
       tab: tab.id,
       folder: tab.launch.spec.cwd,
       account: tab.launch.account?.id ?? null,
+      dirs: tab.launch.spec.dirs ?? [],
     };
   };
   const feed = createPanelFeed(target, POLL_MS, () => props.links);
@@ -154,7 +165,34 @@ export function Panel(props: {
       (error: unknown) => setFailed(`Could not open it: ${String(error)}`),
     );
   };
-  const changes = () => loadedValue(feed.changes());
+  const folders = () => loadedValue(feed.folders()) ?? [];
+  const changesOf = (folder: string) =>
+    folders().find((f) => f.folder === folder)?.changes;
+  const changes = () => folders()[0]?.changes;
+  const prActions: PrActions = {
+    open: (folder, pr) => {
+      act(openPr(folder, pr.number));
+    },
+    copy: (folder, pr) => {
+      act(
+        prLink(folder, pr.number).then((link) =>
+          navigator.clipboard.writeText(link),
+        ),
+      );
+    },
+    dismiss: (pr) => {
+      props.state.dismiss(pr.key, pr.updated);
+    },
+    ready: (folder, pr) => {
+      prReady(folder, pr.number).then(
+        () => {
+          setFailed(undefined);
+          feed.rereadPrs();
+        },
+        (error: unknown) => setFailed(String(error)),
+      );
+    },
+  };
   const account = () => props.tab?.launch.account ?? null;
   const accountName = (id: number, fallback: string) =>
     props.profiles.accounts.find((a) => a.id === id)?.name ?? fallback;
@@ -188,7 +226,26 @@ export function Panel(props: {
             <p class="panel-empty">Open a tab to see its details here.</p>
           }
         >
-          <Card id="environment" title="Environment" state={props.state}>
+          <Card
+            id="environment"
+            title="Environment"
+            state={props.state}
+            action={
+              <Show when={props.tab?.projectId != null}>
+                <button
+                  type="button"
+                  class="card-action"
+                  aria-label="Edit environment"
+                  title="Edit environment: name, folders and variables"
+                  onClick={() => {
+                    props.onEditEnvironment();
+                  }}
+                >
+                  <GearIcon />
+                </button>
+              </Show>
+            }
+          >
             <Show
               when={account()}
               fallback={
@@ -238,6 +295,28 @@ export function Panel(props: {
                 </button>
               )}
             </Show>
+            <For each={props.tab?.launch.spec.dirs ?? []}>
+              {(dir) => (
+                <button
+                  type="button"
+                  class="card-row action"
+                  title={`${dir}\nOpen in the file manager`}
+                  onClick={() => {
+                    act(openFolder(dir));
+                  }}
+                >
+                  <span class="row-icon">
+                    <FolderIcon />
+                  </span>
+                  <span class="row-text">
+                    <span class="row-main">{folderName(dir)}</span>
+                    <Show when={branchText(changesOf(dir))}>
+                      {(branch) => <span class="row-detail">{branch()}</span>}
+                    </Show>
+                  </span>
+                </button>
+              )}
+            </For>
             <Show when={branchText(changes())}>
               {(branch) => <Row icon={<BranchIcon />} text={branch()} />}
             </Show>
@@ -245,12 +324,11 @@ export function Panel(props: {
           <Card id="changes" title="Changes" state={props.state}>
             <ChangesBody
               folder={props.tab?.launch.spec.cwd ?? null}
-              changes={feed.changes()}
-              pr={loadedValue(feed.pr()) ?? null}
+              folders={feed.folders()}
+              prs={loadedValue(feed.prs()) ?? []}
+              isDismissed={(pr) => props.state.isDismissed(pr.key, pr.updated)}
+              actions={prActions}
               onCreatePr={props.onCreatePr}
-              onOpenPr={(folder) => {
-                act(openPr(folder));
-              }}
               onOpenVsCode={(folder) => {
                 act(openVsCode(folder));
               }}
@@ -422,103 +500,133 @@ function SkillRow(props: {
   );
 }
 
-function ChangesBody(props: {
-  folder: string | null;
-  changes: Loaded<Changes>;
-  pr: { number: number; title: string } | null;
+type RepoChanges = Extract<Changes, { kind: "repo" }>;
+
+function RepoRow(props: {
+  folder: string;
+  repo: RepoChanges;
   onCreatePr: (folder: string) => void;
-  onOpenPr: (folder: string) => void;
   onOpenVsCode: (folder: string) => void;
 }) {
-  const repo = () => {
-    const found = loadedValue(props.changes);
-    return found?.kind === "repo" ? found : undefined;
+  return (
+    <Row
+      icon={<DiffIcon />}
+      text={props.repo.name}
+      title={
+        props.repo.base === null
+          ? "Uncommitted work"
+          : `Against ${props.repo.base}, uncommitted work included`
+      }
+      meta={
+        <>
+          <span class="added">+{props.repo.added}</span>
+          <span class="removed">−{props.repo.removed}</span>
+          <button
+            type="button"
+            class="row-button"
+            disabled={!props.repo.gh || props.repo.branch === null}
+            title={
+              props.repo.gh
+                ? "Opens a shell with gh pr create typed, for you to send"
+                : "Install the GitHub CLI (gh) to create a PR from here"
+            }
+            onClick={() => {
+              props.onCreatePr(props.folder);
+            }}
+          >
+            Create PR
+          </button>
+          <Show when={props.repo.vscode}>
+            <button
+              type="button"
+              class="row-button icon"
+              aria-label="Open in VS Code"
+              title="Open in VS Code, whose Source Control view shows the diff"
+              onClick={() => {
+                props.onOpenVsCode(props.folder);
+              }}
+            >
+              <CodeIcon />
+            </button>
+          </Show>
+        </>
+      }
+    />
+  );
+}
+
+/** One row per repo among the tab's folders, the main folder first, each with its PRs below it. */
+function ChangesBody(props: {
+  folder: string | null;
+  folders: Loaded<FolderChanges[]>;
+  prs: RepoPrs[];
+  isDismissed: (pr: PrRow) => boolean;
+  actions: PrActions;
+  onCreatePr: (folder: string) => void;
+  onOpenVsCode: (folder: string) => void;
+}) {
+  const main = () => loadedValue(props.folders)?.[0];
+  // Folders in one repo show its row once, under the first of them.
+  const repos = () => {
+    const seen = new Map<string, { folder: string; repo: RepoChanges }>();
+    for (const f of loadedValue(props.folders) ?? []) {
+      const changes = f.changes;
+      if (changes?.kind === "repo" && !seen.has(changes.root)) {
+        seen.set(changes.root, { folder: f.folder, repo: changes });
+      }
+    }
+    return seen;
   };
+  // Keyed by root, so each poll's fresh objects keep the rows, and an open PR menu, in place.
+  const roots = () => [...repos().keys()];
   return (
     <Switch fallback={<Note>Reading…</Note>}>
       <Match when={props.folder === null}>
         <Note>No project folder</Note>
       </Match>
-      <Match when={loadedError(props.changes)}>
+      <Match when={loadedError(props.folders)}>
         {(error) => <Note>{error()}</Note>}
       </Match>
-      <Match when={loadedValue(props.changes)?.kind === "notRepo"}>
-        <Note>Not a git repository</Note>
-      </Match>
-      <Match when={loadedValue(props.changes)?.kind === "noGit"}>
-        <Note>Git is not installed</Note>
-      </Match>
-      <Match when={repo()}>
-        {(found) => (
-          <>
-            <Row
-              icon={<DiffIcon />}
-              text={found().name}
-              title={
-                found().base === null
-                  ? "Uncommitted work"
-                  : `Against ${String(found().base)}, uncommitted work included`
-              }
-              meta={
-                <>
-                  <span class="added">+{found().added}</span>
-                  <span class="removed">−{found().removed}</span>
-                  <button
-                    type="button"
-                    class="row-button"
-                    disabled={!found().gh || found().branch === null}
-                    title={
-                      found().gh
-                        ? "Opens a shell with gh pr create typed, for you to send"
-                        : "Install the GitHub CLI (gh) to create a PR from here"
-                    }
-                    onClick={() => {
-                      if (props.folder !== null) props.onCreatePr(props.folder);
-                    }}
-                  >
-                    Create PR
-                  </button>
-                  <Show when={found().vscode}>
-                    <button
-                      type="button"
-                      class="row-button icon"
-                      aria-label="Open in VS Code"
-                      title="Open in VS Code, whose Source Control view shows the diff"
-                      onClick={() => {
-                        if (props.folder !== null)
-                          props.onOpenVsCode(props.folder);
-                      }}
-                    >
-                      <CodeIcon />
-                    </button>
-                  </Show>
-                </>
-              }
-            />
-            <Show when={props.pr}>
-              {(pr) => (
-                <button
-                  type="button"
-                  class="card-row action"
-                  title="Open in the browser"
-                  onClick={() => {
-                    if (props.folder !== null) props.onOpenPr(props.folder);
-                  }}
-                >
-                  <span class="row-icon pr">
-                    <PrIcon />
-                  </span>
-                  <span class="row-text">
-                    <span class="row-main">{pr().title}</span>
-                    <span class="row-detail">
-                      {found().name} #{pr().number}
-                    </span>
-                  </span>
-                </button>
-              )}
-            </Show>
-          </>
-        )}
+      <Match when={loadedValue(props.folders)}>
+        {/* Each folder's failure stays beside it, so the other repos still show. */}
+        <For each={(loadedValue(props.folders) ?? []).filter((f) => f.error)}>
+          {(failed) => (
+            <Note>
+              {folderName(failed.folder)}: {failed.error}
+            </Note>
+          )}
+        </For>
+        <Show when={main()?.changes?.kind === "notRepo"}>
+          <Note>Not a git repository</Note>
+        </Show>
+        <Show when={main()?.changes?.kind === "noGit"}>
+          <Note>Git is not installed</Note>
+        </Show>
+        <For each={roots()}>
+          {(root) => (
+            <>
+              <Show when={repos().get(root)}>
+                {(found) => (
+                  <RepoRow
+                    folder={found().folder}
+                    repo={found().repo}
+                    onCreatePr={props.onCreatePr}
+                    onOpenVsCode={props.onOpenVsCode}
+                  />
+                )}
+              </Show>
+              <Show when={props.prs.find((r) => r.root === root)}>
+                {(repoPrs) => (
+                  <PrList
+                    repo={repoPrs()}
+                    isDismissed={props.isDismissed}
+                    actions={props.actions}
+                  />
+                )}
+              </Show>
+            </>
+          )}
+        </For>
       </Match>
     </Switch>
   );

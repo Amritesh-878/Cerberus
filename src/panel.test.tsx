@@ -55,6 +55,7 @@ const TREE: SavedTree = {
 const REPO: Changes = {
   kind: "repo",
   name: "alpha",
+  root: ALPHA,
   branch: "feature",
   commit: null,
   base: "origin/main",
@@ -115,7 +116,15 @@ function panelCore(start: Profiles) {
       ...record("panel_changes", (args) =>
         field(args, "folder") === ALPHA ? REPO : { kind: "notRepo" },
       ),
-      ...record("panel_pr", () => ({ number: 21, title: "Add the export" })),
+      ...record("panel_prs", () => [
+        {
+          number: 21,
+          title: "Add the export",
+          state: "open",
+          key: "example/alpha#21",
+          updated: "u1",
+        },
+      ]),
       ...record("panel_connectors", (args) => ({
         servers:
           field(args, "account") === 1
@@ -159,7 +168,7 @@ test("a closed panel reads nothing, and its button opens it and saves that", asy
   expect(core.reads().map((c) => c.cmd)).toEqual(
     expect.arrayContaining([
       "panel_changes",
-      "panel_pr",
+      "panel_prs",
       "panel_connectors",
       "panel_skills",
     ]),
@@ -296,13 +305,15 @@ test("the PR row opens through the core, which holds the URL", async () => {
   const root = await renderApp(core.profiles, core.core);
   await open(root, "planner");
 
-  card(root, "Changes")
-    .querySelector<HTMLButtonElement>("button.card-row")
-    ?.click();
+  click(card(root, "Changes"), "More for #21");
+  await settle();
+  click(card(root, "Changes"), "Open on GitHub");
   await settle();
 
   const opened = core.calls.filter((c) => c.cmd === "panel_open_pr");
-  expect(opened.map((c) => field(c.args, "folder"))).toEqual([ALPHA]);
+  expect(
+    opened.map((c) => [field(c.args, "folder"), field(c.args, "number")]),
+  ).toEqual([[ALPHA, 21]]);
 });
 
 function skillNames(root: HTMLElement): string[] {

@@ -158,6 +158,29 @@ export function renameTab(tree: Tree, id: TabId, title: string): Tree {
   };
 }
 
+/** The tab's main and extra folders; the caller restarts the tab when the main one changed. */
+export function setFolders(
+  tree: Tree,
+  id: TabId,
+  cwd: string | null,
+  dirs: readonly string[],
+): Tree {
+  return {
+    ...tree,
+    tabs: tree.tabs.map((t) =>
+      t.id === id
+        ? {
+            ...t,
+            launch: {
+              ...t.launch,
+              spec: { ...t.launch.spec, cwd, dirs: [...dirs] },
+            },
+          }
+        : t,
+    ),
+  };
+}
+
 /** A closed planner's sub-tabs stay open and move up to the top of its project. */
 export function closeTab(tree: Tree, id: TabId): Tree {
   return {

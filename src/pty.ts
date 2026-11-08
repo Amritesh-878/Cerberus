@@ -8,6 +8,8 @@ export interface SpawnSpec {
   /** `null` starts in the user's home folder. */
   cwd: string | null;
   account: number | null;
+  /** Folders beside `cwd` that a Claude Code chat starts with; the core checks each one. Missing means none. */
+  dirs?: string[];
 }
 
 export interface ProgramChoice {

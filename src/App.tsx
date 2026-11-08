@@ -43,6 +43,8 @@ import {
   reported,
   startedTabs,
 } from "./board";
+import { applyEnvironment, type EnvironmentChange } from "./environment";
+import { EnvironmentDialog } from "./EnvironmentDialog";
 import { Home } from "./Home";
 import { AccountDot, MenuIcon, PanelIcon } from "./icons";
 import { shortcutFor } from "./keys";
@@ -568,6 +570,8 @@ export function App() {
     const onKey = (event: KeyboardEvent) => {
       const shortcut = shortcutFor(event);
       if (!shortcut || profiles() === undefined) return;
+      // The Edit environment dialog is modal: a shortcut behind it could close its tab and drop the edits.
+      if (editing() !== undefined) return;
       event.preventDefault();
       event.stopPropagation();
       if (shortcut === "shortcuts") {
@@ -636,6 +640,32 @@ export function App() {
   const typeIntoChat = (text: string) => {
     const id = chatShown();
     if (id !== undefined) typers.get(id)?.(text);
+  };
+
+  // The tab whose Edit environment dialog is open, and the tabs whose change is still being applied.
+  const [editing, setEditing] = createSignal<TabId>();
+  const [applying, setApplying] = createSignal<ReadonlySet<TabId>>(new Set());
+  const saveEnvironment = (id: TabId, change: EnvironmentChange) => {
+    setApplying((all) => new Set(all).add(id));
+    return applyEnvironment(environment, id, change).finally(() => {
+      setApplying((all) => {
+        const next = new Set(all);
+        next.delete(id);
+        return next;
+      });
+    });
+  };
+  const environment = {
+    tree,
+    setTree,
+    runOf,
+    setRun,
+    typeInto: (id: TabId, text: string) => {
+      if (tabById(id)?.launch.program === "claude" && isRunning(id)) {
+        typers.get(id)?.(text);
+      }
+    },
+    setAlert,
   };
 
   const startFresh = () => {
@@ -1106,7 +1136,31 @@ export function App() {
                 onCreatePr={createPr}
                 onType={typeIntoChat}
                 links={messaging.snapshot()}
+                onEditEnvironment={() => {
+                  const id = shown();
+                  if (id !== undefined && !applying().has(id)) setEditing(id);
+                }}
               />
+            </Show>
+            <Show
+              when={(() => {
+                const id = editing();
+                return id === undefined ? undefined : tabById(id);
+              })()}
+            >
+              {(tab) => (
+                <EnvironmentDialog
+                  tab={tab()}
+                  chatRunning={
+                    tab().launch.program === "claude" && isRunning(tab().id)
+                  }
+                  busy={markOf(board(), tab().id)?.kind === "working"}
+                  onSave={(change) => saveEnvironment(tab().id, change)}
+                  onClose={() => {
+                    setEditing(undefined);
+                  }}
+                />
+              )}
             </Show>
             <Show when={sheet()}>
               <ShortcutsSheet onClose={() => setSheet(false)} />

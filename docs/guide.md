@@ -106,17 +106,22 @@ Ctrl+/ alone stays with the terminal. The start page lists the main ones.
 The panel button at the right of the top bar, or Ctrl+Shift+B (Cmd+Shift+B on macOS), shows the
 tab on screen in cards, and follows you as you switch tabs. Drag its left edge to resize it
 (double-click resets it); click a card's title to fold it. Whether it is open, its width, the
-folded cards and starred skills are kept in `profiles.json`.
+folded cards, starred skills and dismissed PRs are kept in `profiles.json`.
 
-- **Environment:** the tab's account with its email and plan, the project folder (a click opens it
-  in the file manager) and the git branch.
-- **Changes:** lines added and removed on the branch since it left the remote's default branch
-  (`origin/HEAD`, else `main` or `master`), uncommitted and untracked files included. **Create PR**
+- **Environment:** the tab's account with its email and plan, the tab's folders (a click opens one
+  in the file manager; an extra folder shows its branch) and the main folder's git branch. The gear
+  opens **Edit environment** (below).
+- **Changes:** one row per repo among the tab's folders, the main folder's first: lines added and
+  removed on the branch since it left the remote's default branch (`origin/HEAD`, else `main` or
+  `master`), uncommitted and untracked files included. **Create PR**
   opens a shell tab in the folder with `gh pr create --fill` typed; nothing runs until you press
   Enter. The code button beside it opens the folder in VS Code, whose Source Control view shows
   the diff; it shows only when VS Code's `code` command is on `PATH` (on macOS the app in
-  Applications also counts). With the [GitHub CLI](https://cli.github.com) signed in, the branch's
-  open PR shows below; a click opens it in the browser.
+  Applications also counts). With the [GitHub CLI](https://cli.github.com) signed in, each repo's
+  PRs follow its row, newest first: up to 100 drafts and open PRs, however old, and the newest 100 of any state,
+  five at a time with **Show more**. A PR's **⋯** menu has **Open on GitHub**, **Copy link**, **Dismiss** (hidden until the PR
+  changes on GitHub) and, on a draft, **Ready for review**, which asks first and then runs
+  `gh pr ready <number>`.
 - **Skills:** the project's `.claude/skills`, the account's `skills` folder, the skills synced
   from claude.ai (named `anthropic-skills:<skill>`, marked "claude.ai") and the skills of each
   enabled plugin (named `<plugin>:<skill>`, marked "plugin"), with each skill's description. The
@@ -144,6 +149,27 @@ read. Any of these files that exists but cannot be read is named at the end of C
 Nothing runs while the panel is closed. While it is open, git is read when it opens, on a tab
 change and every 10 seconds; GitHub is asked about a repo at most once a minute. Connectors are
 read again when a chat links to Cerberus for messages or leaves it.
+
+### Edit environment
+
+The gear on the Environment card edits the tab on screen. Nothing changes until **Save**.
+
+- **Name:** the tab's title.
+- **Folders:** the main folder (**Change…**) and any extra folders (**Add folder…**, and the cross
+  to remove one), each with its git branch. A Claude Code tab starts with each extra folder as
+  `--add-dir`, every time. Adding one to a running chat also types `/add-dir <folder>` into its
+  input for you to send (one folder per save is typed; the rest apply on the next start). Removing
+  one applies on the next start.
+- **A new main folder** restarts the tab there. A Claude Code chat is copied to the new folder's
+  project on the same account and resumes with `claude --resume`, so it keeps its history; the old
+  folder keeps its copy. If the chat is working, the dialog asks first. A shell tab just restarts
+  in the new folder.
+- **Environment variables** are set for the tab's program each time it starts, under the ones
+  Cerberus manages: `CLAUDE_CONFIG_DIR`, `TERM`, `COLORTERM`, `ZDOTDIR`, the variables Claude Code
+  sets for its own shells, and any name starting with `CERBERUS_` or `CLAUDE_CODE_MESSAGING_` are
+  refused. The dialog shows names only. Values are stored in plain text in `tree.db` (see below)
+  and never logged or shown in an error, so keep real keys in your own secret store and reference
+  them from there.
 
 ## The session board and alerts
 

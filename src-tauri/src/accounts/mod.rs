@@ -22,6 +22,7 @@ pub type AccountId = u32;
 
 const SIDEBAR_WIDTHS: std::ops::RangeInclusive<u32> = 200..=560;
 const PANEL_WIDTHS: std::ops::RangeInclusive<u32> = 240..=640;
+const MOST_DISMISSED: usize = 500;
 /// The left chat's share of a split, in thousandths, so neither side can be dragged shut.
 const SPLIT_SHARES: std::ops::RangeInclusive<u32> = 200..=800;
 /// The right panel's cards that can be collapsed; a name not here is dropped when saved.
@@ -92,6 +93,8 @@ pub struct PanelPrefs {
     pub expanded: Vec<String>,
     /// Skill names starred per account id, kept as text since JSON keys are strings.
     pub favourites: BTreeMap<String, Vec<String>>,
+    /// Dismissed PRs, `owner/repo#n` to the update time they were dismissed at; a newer update shows them again.
+    pub dismissed: BTreeMap<String, String>,
 }
 
 /// A walkthrough step, saved so a restart part way through setup reopens it there.
@@ -382,6 +385,18 @@ impl Accounts {
         };
         let collapsed = known(&prefs.collapsed, false);
         let expanded = known(&prefs.expanded, true);
+        let plain = |text: &str, most: usize| {
+            !text.is_empty() && text.len() <= most && !text.chars().any(char::is_control)
+        };
+        let mut kept: Vec<(String, String)> = prefs
+            .dismissed
+            .into_iter()
+            .filter(|(key, stamp)| plain(key, 300) && key.contains('#') && plain(stamp, 64))
+            .collect();
+        // Newest update times first, so a fresh dismissal survives the cap and the oldest go.
+        kept.sort_by(|a, b| b.1.cmp(&a.1));
+        kept.truncate(MOST_DISMISSED);
+        let dismissed = kept.into_iter().collect();
         self.update(|p| {
             let favourites = prefs
                 .favourites
@@ -400,6 +415,7 @@ impl Accounts {
                 collapsed,
                 expanded,
                 favourites,
+                dismissed,
             };
             Ok(())
         })
@@ -867,6 +883,63 @@ mod tests {
     }
 
     #[test]
+    fn a_new_dismissal_is_kept_when_the_list_is_full() {
+        let home = TestDir::new();
+        let accounts = Accounts::new(&home.path().join("app"), home.path().to_path_buf());
+        // Keys that sort before the new one, all with older update times.
+        let mut dismissed: BTreeMap<String, String> = (0..MOST_DISMISSED)
+            .map(|n| {
+                (
+                    format!("a/a#{n}"),
+                    format!("2026-01-01T00:00:{:02}Z", n % 60),
+                )
+            })
+            .collect();
+        dismissed.insert("z/z#1".to_owned(), "2026-11-08T12:00:00Z".to_owned());
+
+        let saved = accounts
+            .set_panel(PanelPrefs {
+                dismissed,
+                ..PanelPrefs::default()
+            })
+            .unwrap();
+
+        assert_eq!(saved.panel.dismissed.len(), MOST_DISMISSED);
+        assert_eq!(
+            saved.panel.dismissed.get("z/z#1").map(String::as_str),
+            Some("2026-11-08T12:00:00Z")
+        );
+    }
+
+    #[test]
+    fn dismissed_prs_are_saved_with_their_update_time_and_odd_entries_dropped() {
+        let home = TestDir::new();
+        let accounts = Accounts::new(&home.path().join("app"), home.path().to_path_buf());
+        let entry = |key: &str, stamp: &str| (key.to_owned(), stamp.to_owned());
+
+        let saved = accounts
+            .set_panel(PanelPrefs {
+                dismissed: BTreeMap::from([
+                    entry("example/repo#21", "2026-01-02T03:04:05Z"),
+                    entry("no-number", "x"),
+                    entry("a/b#1", ""),
+                    entry("a/b#2", "line\nbreak"),
+                ]),
+                ..PanelPrefs::default()
+            })
+            .unwrap();
+
+        assert_eq!(
+            saved.panel.dismissed,
+            BTreeMap::from([entry("example/repo#21", "2026-01-02T03:04:05Z")])
+        );
+        assert_eq!(
+            accounts.load().unwrap().panel.dismissed,
+            saved.panel.dismissed
+        );
+    }
+
+    #[test]
     fn the_split_share_is_saved_inside_its_limits() {
         let home = TestDir::new();
         let accounts = Accounts::new(&home.path().join("app"), home.path().to_path_buf());
@@ -900,6 +973,7 @@ mod tests {
                     .to_vec(),
                 expanded: ["connectors", "skills"].map(String::from).to_vec(),
                 favourites: BTreeMap::new(),
+                dismissed: BTreeMap::new(),
             })
             .unwrap();
 
@@ -909,6 +983,7 @@ mod tests {
             collapsed: vec!["changes".to_owned(), "skills".to_owned()],
             expanded: vec!["connectors".to_owned()],
             favourites: BTreeMap::new(),
+            dismissed: BTreeMap::new(),
         };
         assert_eq!(saved.panel, expected);
         assert_eq!(accounts.load().unwrap().panel, expected);

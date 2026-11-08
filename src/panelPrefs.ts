@@ -15,6 +15,7 @@ const CLOSED: PanelPrefs = {
   collapsed: [],
   expanded: [],
   favourites: {},
+  dismissed: {},
 };
 
 /** Cards that start folded until the user opens them; the core keeps the same list. */
@@ -30,6 +31,9 @@ export interface PanelState {
   collapsed: (card: PanelCard) => boolean;
   /** The account's starred skill names. */
   favourites: (account: AccountId) => readonly string[];
+  /** Hidden until the PR changes after it was dismissed. */
+  isDismissed: (key: string, updated: string) => boolean;
+  dismiss: (key: string, updated: string) => void;
   error: () => string | undefined;
   toggle: () => void;
   toggleCard: (card: PanelCard) => void;
@@ -98,6 +102,11 @@ export function createPanelState(
         ? !prefs().expanded.includes(card)
         : prefs().collapsed.includes(card),
     favourites: (account) => prefs().favourites[String(account)] ?? [],
+    isDismissed: (key, updated) => prefs().dismissed?.[key] === updated,
+    dismiss: (key, updated) => {
+      const now = untrack(prefs);
+      change({ ...now, dismissed: { ...now.dismissed, [key]: updated } });
+    },
     error,
     toggle: () => {
       const now = untrack(prefs);

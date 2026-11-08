@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use rusqlite::{Connection, ErrorCode, OpenFlags, OptionalExtension, params};
 
+use crate::saved::env::{self, EnvVar};
 use crate::saved::{SavedProject, SavedTab, SavedTree, Snapshot, TabId, TreeError};
 
 /// SQLite reads `%`, `?` and `#` in a URI path as syntax, so they are escaped.
@@ -27,7 +28,7 @@ fn unlocked_uri(path: &Path) -> String {
 }
 
 // Forward only: a merged step is never edited, and each one runs once, in order.
-const MIGRATIONS: [&str; 2] = [
+const MIGRATIONS: [&str; 3] = [
     "
     CREATE TABLE projects (
         id INTEGER PRIMARY KEY,
@@ -53,7 +54,18 @@ const MIGRATIONS: [&str; 2] = [
 ",
     // A chat that ended by itself: its tab comes back as a shell until Resume chat.
     "ALTER TABLE tabs ADD COLUMN ended INTEGER NOT NULL DEFAULT 0;",
+    // A tab's extra folders and its variables, each a JSON list.
+    "
+    ALTER TABLE tabs ADD COLUMN dirs TEXT NOT NULL DEFAULT '[]';
+    ALTER TABLE tabs ADD COLUMN env TEXT NOT NULL DEFAULT '[]';
+",
 ];
+
+/// A JSON column; a broken one makes the file corrupt, so it is set aside rather than half read.
+fn json_column<T: serde::de::DeserializeOwned>(text: &str) -> Result<T, TreeError> {
+    serde_json::from_str(text)
+        .map_err(|_| TreeError::Invalid("a tab's folders or variables cannot be read".to_owned()))
+}
 
 pub struct Db(Connection);
 
@@ -125,8 +137,13 @@ impl Db {
     }
 
     fn load_version(&self, version: usize) -> Result<Snapshot, TreeError> {
-        // Version 1 has no `ended` column, so its tabs read as not ended.
+        // Older versions lack the later columns, so their tabs read as not ended, with no extras.
         let ended_column = if version >= 2 { "ended" } else { "0" };
+        let extra_columns = if version >= 3 {
+            "dirs, env"
+        } else {
+            "'[]', '[]'"
+        };
         let projects = self
             .0
             .prepare("SELECT id, name, folder FROM projects ORDER BY sort")?
@@ -140,10 +157,11 @@ impl Db {
             .collect::<Result<Vec<_>, _>>()?;
         let mut sessions = HashMap::new();
         let mut ended = HashSet::new();
-        let tabs = self
+        let mut env = HashMap::new();
+        let rows = self
             .0
             .prepare(&format!(
-                "SELECT id, project_id, parent_id, title, program, cwd, account_id, session_id, {ended_column}
+                "SELECT id, project_id, parent_id, title, program, cwd, account_id, session_id, {ended_column}, {extra_columns}
                  FROM tabs ORDER BY sort"
             ))?
             .query_map([], |row| {
@@ -155,21 +173,27 @@ impl Db {
                     program: row.get(4)?,
                     cwd: row.get(5)?,
                     account: row.get(6)?,
+                    dirs: Vec::new(),
                 };
-                Ok((tab, row.get::<_, Option<String>>(7)?, row.get::<_, bool>(8)?))
+                let extras: (String, String) = (row.get(9)?, row.get(10)?);
+                Ok((tab, row.get::<_, Option<String>>(7)?, row.get::<_, bool>(8)?, extras))
             })?
-            .collect::<Result<Vec<_>, _>>()?
-            .into_iter()
-            .map(|(tab, session, has_ended)| {
-                if let Some(session) = session {
-                    sessions.insert(tab.id, session);
-                }
-                if has_ended {
-                    ended.insert(tab.id);
-                }
-                tab
-            })
-            .collect();
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut tabs = Vec::with_capacity(rows.len());
+        for (mut tab, session, has_ended, (dirs, vars)) in rows {
+            if let Some(session) = session {
+                sessions.insert(tab.id, session);
+            }
+            if has_ended {
+                ended.insert(tab.id);
+            }
+            tab.dirs = json_column(&dirs)?;
+            let vars = env::kept(json_column::<Vec<EnvVar>>(&vars)?);
+            if !vars.is_empty() {
+                env.insert(tab.id, vars);
+            }
+            tabs.push(tab);
+        }
         let next_id: Option<TabId> = self
             .0
             .query_row("SELECT value FROM meta WHERE key = 'next_id'", [], |row| {
@@ -186,6 +210,7 @@ impl Db {
             tree,
             sessions,
             ended,
+            env,
         })
     }
 
@@ -201,10 +226,14 @@ impl Db {
                 insert.execute(params![p.id, p.name, p.folder, sort])?;
             }
             let mut insert = tx.prepare(
-                "INSERT INTO tabs (id, project_id, parent_id, title, program, cwd, account_id, session_id, ended, sort)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                "INSERT INTO tabs (id, project_id, parent_id, title, program, cwd, account_id, session_id, ended, sort, dirs, env)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
             )?;
             for (sort, t) in (0_i64..).zip(&snapshot.tree.tabs) {
+                let vars = snapshot.env.get(&t.id).map_or(&[][..], Vec::as_slice);
+                let as_json = |e: serde_json::Error| TreeError::Invalid(e.to_string());
+                let dirs = serde_json::to_string(&t.dirs).map_err(as_json)?;
+                let vars = serde_json::to_string(vars).map_err(as_json)?;
                 insert.execute(params![
                     t.id,
                     t.project_id,
@@ -215,7 +244,9 @@ impl Db {
                     t.account,
                     snapshot.sessions.get(&t.id),
                     snapshot.ended.contains(&t.id),
-                    sort
+                    sort,
+                    dirs,
+                    vars
                 ])?;
             }
         }
@@ -248,6 +279,7 @@ mod tests {
             tree: two_projects(),
             sessions: HashMap::from([(3, SESSION.to_owned())]),
             ended: HashSet::new(),
+            env: HashMap::new(),
         };
         snapshot.tree.tabs.swap(0, 2);
 
@@ -263,6 +295,7 @@ mod tests {
             tree: two_projects(),
             sessions: HashMap::from([(3, SESSION.to_owned())]),
             ended: HashSet::from([3]),
+            env: HashMap::new(),
         };
 
         db.write(&snapshot).unwrap();
@@ -293,10 +326,71 @@ mod tests {
             .connection()
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 2);
+        assert_eq!(version, 3);
         let loaded = db.load().unwrap();
         assert_eq!(loaded.tree.tabs.len(), 1);
         assert!(loaded.ended.is_empty());
+    }
+
+    #[test]
+    fn a_file_from_before_tab_environments_loads_with_no_folders_or_variables() {
+        let dir = TestDir::new();
+        let path = dir.path().join("tree.db");
+        {
+            let first = Connection::open(&path).unwrap();
+            first.execute_batch(MIGRATIONS[0]).unwrap();
+            first.execute_batch(MIGRATIONS[1]).unwrap();
+            first
+                .execute_batch(
+                    "INSERT INTO projects VALUES (1, 'app', 'C:/work/app', 0);
+                     INSERT INTO tabs VALUES (3, 1, NULL, 'planner', 'claude', NULL, 1, NULL, 0, 1);
+                     INSERT INTO meta VALUES ('next_id', 4);",
+                )
+                .unwrap();
+            first.pragma_update(None, "user_version", 2).unwrap();
+        }
+
+        assert!(Db::read_unlocked(&path).unwrap().tabs[0].dirs.is_empty());
+        let loaded = Db::open(&path).unwrap().load().unwrap();
+
+        assert!(loaded.tree.tabs[0].dirs.is_empty());
+        assert!(loaded.ended.contains(&3));
+        assert!(loaded.env.is_empty());
+    }
+
+    #[test]
+    fn a_tabs_folders_and_variables_survive_a_round_trip() {
+        let mut db = Db::in_memory().unwrap();
+        let mut tree = two_projects();
+        tree.tabs[0].dirs = vec![r"C:\work\plans".to_owned(), "/srv/docs".to_owned()];
+        let vars = vec![EnvVar {
+            name: "API_URL".to_owned(),
+            value: "http://localhost:9".to_owned(),
+        }];
+        let snapshot = Snapshot {
+            env: HashMap::from([(tree.tabs[0].id, vars)]),
+            tree,
+            ..Snapshot::default()
+        };
+
+        db.write(&snapshot).unwrap();
+
+        assert_eq!(db.load().unwrap(), snapshot);
+    }
+
+    #[test]
+    fn a_broken_folder_list_makes_the_file_corrupt_not_half_read() {
+        let mut db = Db::in_memory().unwrap();
+        db.write(&Snapshot {
+            tree: two_projects(),
+            ..Snapshot::default()
+        })
+        .unwrap();
+        db.connection()
+            .execute("UPDATE tabs SET dirs = 'not json'", [])
+            .unwrap();
+
+        assert!(db.load().unwrap_err().is_corrupt());
     }
 
     #[test]
@@ -345,6 +439,7 @@ mod tests {
                 },
                 sessions: HashMap::new(),
                 ended: HashSet::new(),
+                env: HashMap::new(),
             }
         );
     }
@@ -357,6 +452,7 @@ mod tests {
             tree: two_projects(),
             sessions: HashMap::new(),
             ended: HashSet::new(),
+            env: HashMap::new(),
         };
         Db::open(&path).unwrap().write(&snapshot).unwrap();
 
@@ -375,6 +471,7 @@ mod tests {
             tree: two_projects(),
             sessions: HashMap::new(),
             ended: HashSet::new(),
+            env: HashMap::new(),
         })
         .unwrap();
 

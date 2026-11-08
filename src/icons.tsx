@@ -237,3 +237,23 @@ export function StarIcon() {
 export function CodeIcon() {
   return <Stroke d="M5.5 4.5 2 8l3.5 3.5M10.5 4.5 14 8l-3.5 3.5" size={13} />;
 }
+
+export function GearIcon() {
+  return (
+    <Stroke
+      d="M8 5.6a2.4 2.4 0 1 0 0 4.8 2.4 2.4 0 0 0 0-4.8M8 1.5v1.8M8 12.7v1.8M1.5 8h1.8M12.7 8h1.8M3.4 3.4l1.3 1.3M11.3 11.3l1.3 1.3M3.4 12.6l1.3-1.3M11.3 4.7l1.3-1.3"
+      size={13}
+      width={1.3}
+    />
+  );
+}
+
+export function MoreIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+      <circle cx="3.5" cy="8" r="1.2" fill="currentColor" />
+      <circle cx="8" cy="8" r="1.2" fill="currentColor" />
+      <circle cx="12.5" cy="8" r="1.2" fill="currentColor" />
+    </svg>
+  );
+}
