@@ -11,6 +11,8 @@ use serde::Serialize;
 pub const MOST_FILE: u64 = 2 * 1024 * 1024;
 /// A NUL in this much of the start marks a binary file, as git decides.
 const SNIFF: usize = 8000;
+/// Claude Code's login token and its prompt history: the app never reads either, whatever a chat wrote.
+const PRIVATE: [&str; 2] = [".credentials.json", "history.jsonl"];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
@@ -26,11 +28,20 @@ pub enum FileView {
     },
     Binary,
     Gone,
+    /// A file the app never reads, such as Claude Code's login token.
+    Private,
 }
 
 /// The file and, through `head`, its committed version; `head` runs only for a text file within the limits.
 pub fn view(path: &Path, head: impl FnOnce(&Path) -> Option<Vec<u8>>) -> FileView {
-    let Ok(info) = fs::metadata(path) else {
+    // Checked and read through the resolved path, so a link to a private file is caught and the file read is the one checked.
+    let Ok(real) = fs::canonicalize(path) else {
+        return FileView::Gone;
+    };
+    if is_private(path) || is_private(&real) {
+        return FileView::Private;
+    }
+    let Ok(info) = fs::metadata(&real) else {
         return FileView::Gone;
     };
     if !info.is_file() {
@@ -40,7 +51,7 @@ pub fn view(path: &Path, head: impl FnOnce(&Path) -> Option<Vec<u8>>) -> FileVie
         return FileView::TooBig { size: info.len() };
     }
     // The file can grow after the metadata was read, so the read itself stops past the limit.
-    let bytes = match read_at_most(path, MOST_FILE) {
+    let bytes = match read_at_most(&real, MOST_FILE) {
         Ok(Some(bytes)) => bytes,
         Ok(None) => {
             return FileView::TooBig {
@@ -56,6 +67,12 @@ pub fn view(path: &Path, head: impl FnOnce(&Path) -> Option<Vec<u8>>) -> FileVie
         .filter(|b| b.len() as u64 <= MOST_FILE)
         .and_then(text_of);
     FileView::Text { text, base }
+}
+
+fn is_private(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| PRIVATE.iter().any(|p| name.eq_ignore_ascii_case(p)))
 }
 
 /// The file's bytes, or `None` when it holds more than `most`; never reads past `most + 1`.
@@ -163,6 +180,41 @@ mod tests {
 
         assert!(matches!(binary, FileView::Text { base: None, .. }));
         assert!(matches!(huge, FileView::Text { base: None, .. }));
+    }
+
+    #[test]
+    fn the_login_token_and_history_are_never_read() {
+        let dir = TestDir::new();
+        let token = dir.path().join(".credentials.json");
+        fs::write(&token, r#"{"fake":"sk-ant-oat-not-real"}"#).unwrap();
+        let history = dir.path().join("History.JSONL");
+        fs::write(&history, "{}").unwrap();
+        let asked = std::cell::Cell::new(0);
+        let head = |_: &Path| {
+            asked.set(asked.get() + 1);
+            None
+        };
+
+        assert_eq!(view(&token, head), FileView::Private);
+        assert_eq!(view(&history, head), FileView::Private);
+        assert_eq!(asked.get(), 0);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_link_to_the_login_token_is_refused_and_other_links_are_read() {
+        let dir = TestDir::new();
+        let token = dir.path().join(".credentials.json");
+        fs::write(&token, r#"{"fake":"sk-ant-oat-not-real"}"#).unwrap();
+        let notes = dir.path().join("notes.md");
+        fs::write(&notes, "# notes").unwrap();
+        let to_token = dir.path().join("out.json");
+        let to_notes = dir.path().join("readme.md");
+        std::os::unix::fs::symlink(&token, &to_token).unwrap();
+        std::os::unix::fs::symlink(&notes, &to_notes).unwrap();
+
+        assert_eq!(view(&to_token, no_head), FileView::Private);
+        assert!(matches!(view(&to_notes, no_head), FileView::Text { .. }));
     }
 
     #[test]

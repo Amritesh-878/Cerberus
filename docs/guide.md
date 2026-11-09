@@ -264,7 +264,9 @@ otherwise.
 - **Close**, or Escape while the pane has focus, closes it. Switching tabs, a split of two tabs or
   a service's output closes it too.
 
-A file over 2 MB or a binary file isn't shown; the pane says so and offers **Open in VS Code**. The
+A file over 2 MB or a binary file isn't shown; the pane says so and offers **Open in VS Code**.
+Claude Code's login token (`.credentials.json`) and prompt history (`history.jsonl`) are never
+read, even through a link. The
 pane reads only files that chat's own hooks reported writing, and the text stays in the window:
 it is never logged or saved.
 

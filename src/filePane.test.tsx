@@ -410,4 +410,5 @@ test("the language by extension, the one changed span and the refusals", () => {
   expect(refusal(text("x"))).toBeUndefined();
   expect(refusal({ kind: "binary" })).toMatch(/binary/);
   expect(refusal({ kind: "gone" })).toMatch(/gone/);
+  expect(refusal({ kind: "private" })).toMatch(/never reads/);
 });

@@ -107,6 +107,8 @@ export function refusal(read: FileView): string | undefined {
       return "This file is binary, so the pane can't show it.";
     case "gone":
       return "This file is gone from disk.";
+    case "private":
+      return "This is Claude Code's login token or prompt history, which Cerberus never reads.";
   }
 }
 
@@ -432,7 +434,9 @@ export default function FilePane(props: {
             {(why) => (
               <div class="file-message">
                 <p>{why()}</p>
-                <Show when={read().kind !== "gone"}>
+                <Show
+                  when={read().kind === "tooBig" || read().kind === "binary"}
+                >
                   <button type="button" class="secondary" onClick={vsCode}>
                     Open in VS Code
                   </button>

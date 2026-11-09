@@ -67,7 +67,9 @@ export type FileView =
   | { kind: "text"; text: string; base: string | null }
   | { kind: "tooBig"; size: number }
   | { kind: "binary" }
-  | { kind: "gone" };
+  | { kind: "gone" }
+  /** Claude Code's login token or prompt history, which the app never reads. */
+  | { kind: "private" };
 
 /** Reads a file the tab's chat wrote, with its `HEAD` version; the core refuses any other path. */
 export function readOutput(tab: TabId, path: string): Promise<FileView> {
