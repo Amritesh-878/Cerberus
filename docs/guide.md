@@ -72,6 +72,21 @@ Claude Code's tables count an emoji such as ✅ as two columns, and so does Cerb
 borders line up. When a tab's size changes (the window, the sidebar, a split), Cerberus tells the
 program the new size once it settles, so Claude Code redraws once at the new width.
 
+### Collapsing the sidebar
+
+The button beside the search box, or Ctrl+Shift+E (Cmd+Shift+E on macOS), folds the sidebar to a
+thin rail: one icon per project (its initials), a dot on a project where a chat is waiting on you,
+and an expand button at the top. Clicking a project's icon opens the sidebar with that project
+unfolded. Collapsed or open is saved in `profiles.json`, and the width it opens to stays as you
+dragged it. The rail starts no drags; drag a tab to split from the open sidebar.
+
+Below 960 pixels wide the sidebar folds to the rail by itself, and opening it there lasts until the
+window grows again; your own choice is kept for wider windows. Below 720 it becomes a drawer behind
+the menu button, as before.
+
+When the right panel would leave the chat less than about 60 columns, it opens over the chat
+instead of beside it, with a close button in its own bar.
+
 ## Restarts and resuming
 
 Projects and tabs are saved as you change them, in `tree.db` in the app's data folder. After a

@@ -72,10 +72,11 @@ More detail on each, and how it works: [`docs/guide.md`](docs/guide.md).
 | Close tab | Ctrl+Shift+W | Cmd+W |
 | Next chat waiting on you | Ctrl+Shift+A | Cmd+Shift+A |
 | Right panel | Ctrl+Shift+B | Cmd+Shift+B |
+| Collapse or expand the sidebar | Ctrl+Shift+E | Cmd+Shift+E |
 | Rename | F2 | F2 |
 | New line in a Claude Code message | Shift+Enter | Shift+Enter |
 
-They leave Claude Code's own keys alone (Ctrl+T, Ctrl+B, Ctrl+C, Ctrl+V, Alt+V, Shift+Tab). Paste an image
+They leave Claude Code's own keys alone (Ctrl+T, Ctrl+B, Ctrl+E, Ctrl+C, Ctrl+V, Alt+V, Shift+Tab). Paste an image
 into Claude Code with Alt+V on Windows, or Cmd+V on macOS. In a shell tab, Shift+Enter is Enter.
 
 In a terminal on macOS, the editing keys of Terminal.app:
