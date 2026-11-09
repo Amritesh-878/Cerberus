@@ -59,6 +59,8 @@ SHA-256 so you can check a download.
 - **Live cards.** The shown chat's context use with a **Compact** button that types `/compact` for
   you, each account's 5-hour and 7-day use, and a warning near the limit that offers to continue the
   chat on another account, once you confirm.
+- **Find a chat** on any of your accounts, by title, folder or what was said, and open it in its own
+  folder on its own account.
 - **`cerberus open`** jumps to a tab from any terminal (below).
 
 More detail on each, and how it works: [`docs/guide.md`](docs/guide.md).
@@ -72,6 +74,7 @@ More detail on each, and how it works: [`docs/guide.md`](docs/guide.md).
 | Close tab | Ctrl+Shift+W | Cmd+W |
 | Next chat waiting on you | Ctrl+Shift+A | Cmd+Shift+A |
 | Right panel | Ctrl+Shift+B | Cmd+Shift+B |
+| Find a chat | Ctrl+Shift+F | Cmd+Shift+F |
 | Rename | F2 | F2 |
 | New line in a Claude Code message | Shift+Enter | Shift+Enter |
 
