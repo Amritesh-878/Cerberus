@@ -179,9 +179,9 @@ export function FindChat(props: {
         <Show when={gone()}>
           {(chat) => (
             <div class="find-gone" role="alert">
-              <p>
-                Its folder, {chat().folder ?? "unknown"}, is gone. Choose a
-                folder to continue the chat there.
+              <p title={chat().folder ?? undefined}>
+                Its folder, {folderName(chat().folder ?? "") || "unknown"}, is
+                gone. Choose a folder to continue the chat there.
               </p>
               <div class="find-gone-actions">
                 <button

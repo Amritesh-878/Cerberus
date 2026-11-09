@@ -197,7 +197,7 @@ test("a chat whose folder is gone asks for one, then moves the chat there before
   press("Enter");
   await settle();
   expect(root.querySelector(".find-gone")?.textContent).toContain(
-    String.raw`Its folder, C:\old\proto, is gone.`,
+    "Its folder, proto, is gone.",
   );
   expect(find.of("chat_resume")).toEqual([]);
   click(root.querySelector(".find-gone") ?? root, "Choose a folder…");
