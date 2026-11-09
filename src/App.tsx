@@ -297,6 +297,11 @@ export function App() {
     return services.view().services.find((s) => s.id === id);
   };
   const beside = () => viewed() !== undefined && shown() !== undefined;
+  // A string, since the first service's id is 0 and a keyed Show treats 0 as nothing to show.
+  const viewedKey = createMemo(() => {
+    const service = viewed();
+    return service === undefined ? undefined : String(service.id);
+  });
   createEffect(
     on(split.showing, (pair) => {
       if (pair) setViewing(undefined);
@@ -1111,11 +1116,8 @@ export function App() {
                     </Show>
                   )}
                 </For>
-                <Show
-                  when={viewed() === undefined ? undefined : viewing()}
-                  keyed
-                >
-                  {(id) => (
+                <Show when={viewedKey()} keyed>
+                  {(key) => (
                     <div
                       class="tab-view shown service-view"
                       classList={{ "split-right": beside() }}
@@ -1133,7 +1135,7 @@ export function App() {
                           Close
                         </button>
                       </div>
-                      <ServiceOutput service={id} />
+                      <ServiceOutput service={Number(key)} />
                     </div>
                   )}
                 </Show>

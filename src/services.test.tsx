@@ -275,6 +275,25 @@ test("Edit reads the command from the core and saves the change to that service"
   ]);
 });
 
+test("the first service, whose id is 0, opens its output too", async () => {
+  const { core, of } = servicesCore();
+  const first = { ...VIEW, services: [{ ...TUNNEL, id: 0 }] };
+  const root = await renderApp(() => SAVED, {
+    ...core,
+    services_view: () => first,
+  });
+
+  row(root, "tunnel")
+    .querySelector<HTMLButtonElement>(".service-name")
+    ?.click();
+  await settle();
+
+  expect(root.querySelector(".service-bar")?.textContent).toContain(
+    "tunnel output",
+  );
+  expect(of("service_watch").map((a) => field(a, "id"))).toEqual([0]);
+});
+
 test("a click on a service shows its output, and Close stops watching", async () => {
   const { core, of } = servicesCore();
   const root = await renderApp(() => SAVED, core);

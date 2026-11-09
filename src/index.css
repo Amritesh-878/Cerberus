@@ -2557,9 +2557,11 @@ button.card-row:focus-visible,
   color: var(--faint);
 }
 
+/* The address wraps onto its own line under the name, so a long one never squeezes it. */
 .service-row {
   display: flex;
-  gap: 6px;
+  flex-wrap: wrap;
+  gap: 0 6px;
   align-items: center;
   min-width: 0;
   min-height: 30px;
@@ -2615,10 +2617,12 @@ button.card-row:focus-visible,
 }
 
 .service-url {
+  box-sizing: border-box;
   display: flex;
-  flex: 0 1 auto;
-  gap: 2px;
+  flex: 1 0 100%;
+  gap: 4px;
   min-width: 0;
+  padding: 0 0 6px 13px;
 }
 
 .service-chip {
@@ -2642,7 +2646,6 @@ button.card-row:focus-visible,
 .service-chip.link {
   flex: 0 1 auto;
   min-width: 0;
-  max-width: 110px;
   overflow: hidden;
   text-overflow: ellipsis;
 }

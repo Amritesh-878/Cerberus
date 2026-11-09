@@ -197,6 +197,18 @@ function ServiceItem(props: {
           Restart
         </button>
       </Show>
+      <button
+        type="button"
+        class="icon-button service-more"
+        aria-label={`${props.service.name} menu`}
+        aria-haspopup="menu"
+        aria-expanded={menu() !== undefined}
+        onClick={(event) => {
+          setMenu(event.currentTarget.getBoundingClientRect());
+        }}
+      >
+        <MoreIcon />
+      </button>
       <Show when={props.service.url}>
         {(url) => (
           <span class="service-url">
@@ -224,18 +236,6 @@ function ServiceItem(props: {
           </span>
         )}
       </Show>
-      <button
-        type="button"
-        class="icon-button service-more"
-        aria-label={`${props.service.name} menu`}
-        aria-haspopup="menu"
-        aria-expanded={menu() !== undefined}
-        onClick={(event) => {
-          setMenu(event.currentTarget.getBoundingClientRect());
-        }}
-      >
-        <MoreIcon />
-      </button>
       <Show when={menu()}>
         {(at) => (
           <ServiceMenu
