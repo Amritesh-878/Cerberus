@@ -181,6 +181,28 @@ fn a_file_from_before_the_shell_started_is_skipped_without_a_walk() {
 }
 
 #[test]
+fn a_print_run_below_the_shell_is_not_a_chat_and_costs_no_walk() {
+    let dir = TestDir::new();
+    let shell = shell_on(dir.path(), now_ms() - 1_000, child);
+    let mut spotter = spotter(&shell);
+    let sessions = dir.path().join("sessions");
+    fs::create_dir_all(&sessions).unwrap();
+    let print = serde_json::json!({
+        "pid": CLAUDE,
+        "sessionId": SESSION,
+        "status": "busy",
+        "kind": "interactive",
+        "entrypoint": "sdk-cli",
+        "startedAt": now_ms(),
+    });
+    fs::write(sessions.join(format!("{CLAUDE}.json")), print.to_string()).unwrap();
+
+    assert!(spotter.spot(shell.probes.below).is_none());
+    assert!(spotter.spot(shell.probes.below).is_none());
+    assert_eq!(walks(), 0);
+}
+
+#[test]
 fn a_pid_whose_file_went_away_is_judged_again() {
     let dir = TestDir::new();
     let shell = shell_on(dir.path(), now_ms() - 1_000, child);
@@ -422,6 +444,7 @@ fn a_folder_that_does_not_exist_is_not_handed_on() {
         cwd: Some(dir.path().join("gone").to_string_lossy().into_owned()),
         status: crate::sessions::Status::Idle,
         started_at: None,
+        interactive: true,
     };
     let here = SessionFile {
         cwd: Some(dir.path().to_string_lossy().into_owned()),

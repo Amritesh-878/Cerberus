@@ -305,6 +305,7 @@ mod tests {
             cwd: Some(r"C:\work\app".to_owned()),
             status,
             started_at: None,
+            interactive: true,
         }
     }
 

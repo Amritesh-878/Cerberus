@@ -99,10 +99,18 @@ impl Spotter {
         }
         // A pid whose file is gone may come back as a new `claude`, so it is judged again.
         self.judged.retain(|pid| present.contains(pid));
-        let fresh: Vec<_> = fresh
-            .into_iter()
-            .filter_map(|(pid, path)| Some((pid, read_current(&path, self.started_ms)?)))
-            .collect();
+        let mut chats = Vec::new();
+        for (pid, path) in fresh {
+            match read_current(&path, self.started_ms) {
+                Some(file) if file.interactive => chats.push((pid, file)),
+                // A `claude -p` run is a command, not a chat for the tab to follow.
+                Some(_) => {
+                    self.judged.insert(pid);
+                }
+                None => {}
+            }
+        }
+        let fresh = chats;
         if fresh.is_empty() {
             return None;
         }

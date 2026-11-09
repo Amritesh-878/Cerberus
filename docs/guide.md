@@ -95,8 +95,10 @@ the same folder in another tab or window is never taken for it. Once the chat ha
 message, the tab saves it, so a restart brings the tab back as a Claude Code tab resuming it, in
 the folder it ran in. When it exits, the tab is a shell again with that chat as its ended chat, so
 **Resume chat** and **Continue the ended chat on…** use it. A chat that exits before its first
-message leaves the tab as it was. Tracking follows the tab's own account: a `claude` you start with
-another `CLAUDE_CONFIG_DIR` set in the shell is not followed.
+message leaves the tab as it was. Flags you typed (such as `--model`) aren't kept: after a restart
+the chat resumes with the tab's usual start. A `claude -p` run is a command, not a chat, and is not
+followed. Tracking follows the tab's own account: a `claude` you start with another
+`CLAUDE_CONFIG_DIR` set in the shell is not followed.
 
 A chat started this way has no Cerberus message helper, so it can't send messages to other
 accounts. The bar above the tab says so and offers **Reopen as Claude tab**, which closes the shell
