@@ -4,6 +4,7 @@ import {
   createSignal,
   For,
   Index,
+  type JSX,
   Match,
   on,
   Show,
@@ -49,6 +50,8 @@ import {
 
 export function Sidebar(props: {
   tree: Tree;
+  /** The Services section, shown above the footer. */
+  services?: JSX.Element;
   profiles: Profiles;
   statuses: Statuses;
   active: TabId | undefined;
@@ -258,6 +261,7 @@ export function Sidebar(props: {
           />
         )}
       </Show>
+      <Show when={!props.locked}>{props.services}</Show>
       <footer class="sidebar-foot" hidden={props.locked}>
         <button
           type="button"

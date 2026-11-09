@@ -104,6 +104,8 @@ export async function renderApp(
           return profiles();
         case "detect_accounts":
           return [];
+        case "services_view":
+          return { folded: false, services: [] };
         case "account_status":
           return { state: "loggedIn", summary: "user@example.com · Pro" };
         case "plugin:window|is_focused":

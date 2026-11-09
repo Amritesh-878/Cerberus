@@ -35,7 +35,7 @@ function canvasesOf(term: Terminal): HTMLCanvasElement[] {
 }
 
 // WebKit keeps only a few WebGL contexts alive, so only the tab on screen holds one.
-function createRenderer(term: Terminal): {
+export function createRenderer(term: Terminal): {
   show: () => void;
   hide: () => void;
 } {
