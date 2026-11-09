@@ -1,7 +1,9 @@
-//! What leaves the helper: a few named fields of Claude Code's status line input, nothing else.
+//! What leaves the helper: a few named fields of Claude Code's status line and hook input, nothing else.
 
 use serde::de::{Deserializer, IgnoredAny};
 use serde::{Deserialize, Serialize};
+
+pub use crate::live::hooks::{Subagent, Task, TaskKind, Tasks, Wrote};
 
 /// A status line input is a few KiB; anything far larger is not one.
 pub const MOST_INPUT: usize = 1024 * 1024;
@@ -26,6 +28,9 @@ pub struct Line {
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Event {
     Status(Status),
+    Wrote(Wrote),
+    Tasks(Tasks),
+    Subagent(Subagent),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

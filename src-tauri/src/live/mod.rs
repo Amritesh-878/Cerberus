@@ -2,10 +2,12 @@
 
 pub mod event;
 pub mod helper;
+mod hooks;
 mod meters;
 mod settings;
 #[cfg(test)]
 mod tests;
+mod work;
 
 use std::collections::{BTreeMap, HashMap};
 use std::ffi::OsString;
@@ -20,10 +22,11 @@ use serde::Serialize;
 
 use crate::accounts::AccountId;
 use crate::bridge::link;
-use crate::live::event::{Event, Line, MOST_LINE, PIPE_VAR, Status, TOKEN_VAR};
+use crate::live::event::{Event, Line, MOST_LINE, PIPE_VAR, TOKEN_VAR};
 pub use crate::live::meters::{DEFAULT_WARN_AT, Meter, Warning};
 use crate::live::meters::{Meters, Warner};
 pub use crate::live::settings::Shell;
+use crate::live::work::{Output, Running, Work};
 use crate::saved::TabId;
 
 // A status line runs a few times a minute per tab; more at once than this is not Cerberus.
@@ -47,8 +50,13 @@ pub struct TabLive {
     /// Share of the context window in use, 0 to 100; `None` until the first reply.
     pub context: Option<f64>,
     pub model: Option<String>,
-    /// His own status line runs where Cerberus cannot wrap it, so this tab reports nothing.
+    /// His own status line runs where Cerberus cannot wrap it, so this tab reports no context.
     pub kept_theirs: bool,
+    /// Files the chat wrote, newest first.
+    pub outputs: Vec<Output>,
+    /// Background shells and subagents still running, oldest first.
+    pub tasks: Vec<Running>,
+    pub finished: u32,
 }
 
 /// Everything the live cards show, ready to draw.
@@ -78,6 +86,8 @@ struct Link {
 struct State {
     links: HashMap<String, Link>,
     tabs: BTreeMap<TabId, TabLive>,
+    /// Kept across the tab's restarts, since a resumed chat is the same session.
+    work: HashMap<TabId, (PathBuf, Work)>,
     meters: Meters,
     warner: Warner,
 }
@@ -132,23 +142,23 @@ impl Live {
             core.shell,
             theirs.as_ref().and_then(|t| t.command.as_deref()),
         );
-        let arg = match &command {
-            Some(command) => {
-                let file = core.dir.join(format!("tab-{tab}.json"));
-                if let Err(e) =
-                    settings::write(&file, &settings::settings(command, theirs.as_ref()))
-                {
-                    eprintln!("live: could not write tab {tab}'s settings: {e}");
-                    return None;
-                }
-                Some(format!("--settings={}", file.display()))
-            }
-            None => None,
-        };
+        let hook = settings::hook_command(&core.helper, core.shell);
+        let file = core.dir.join(format!("tab-{tab}.json"));
+        let written = settings::settings(command.as_deref(), &hook, theirs.as_ref());
+        if let Err(e) = settings::write(&file, &written) {
+            eprintln!("live: could not write tab {tab}'s settings: {e}");
+            return None;
+        }
+        let arg = Some(format!("--settings={}", file.display()));
         {
             let mut state = core.state();
             state.links.retain(|_, l| l.tab != tab);
             state.links.insert(token.clone(), Link { tab, account });
+            state
+                .work
+                .entry(tab)
+                .or_insert_with(|| (cwd.to_path_buf(), Work::default()))
+                .0 = cwd.to_path_buf();
             state.tabs.insert(
                 tab,
                 TabLive {
@@ -179,8 +189,33 @@ impl Live {
                 return;
             };
             state.tabs.remove(&link.tab);
+            // Its tasks ended with its `claude`.
+            if let Some((_, work)) = state.work.get_mut(&link.tab) {
+                work.ended();
+            }
         }
         core.changed();
+    }
+
+    /// Opens a file the tab's chat wrote, in VS Code when it is installed, else as a double-click would.
+    pub fn open_output(&self, tab: TabId, path: &str) -> io::Result<()> {
+        let known = self.core.as_ref().is_some_and(|core| {
+            core.state()
+                .work
+                .get(&tab)
+                .is_some_and(|(_, work)| work.has_output(path))
+        });
+        // Only a path a hook reported for this tab, never one the webview names.
+        if !known {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                "not a file this chat wrote",
+            ));
+        }
+        match crate::panel::vscode::find() {
+            Some(code) => crate::panel::vscode::open(&code, Path::new(path)),
+            None => crate::panel::reveal::open(std::ffi::OsStr::new(path)),
+        }
     }
 
     pub fn view(&self) -> View {
@@ -214,7 +249,19 @@ impl Core {
         let warn_at = self.sink.warn_at();
         let state = self.state();
         View {
-            tabs: state.tabs.values().cloned().collect(),
+            tabs: state
+                .tabs
+                .values()
+                .map(|shown| {
+                    let mut shown = shown.clone();
+                    if let Some((folder, work)) = state.work.get(&shown.tab) {
+                        shown.outputs = work.outputs(folder);
+                        shown.tasks = work.running();
+                        shown.finished = work.finished();
+                    }
+                    shown
+                })
+                .collect(),
             meters: state.meters.view(now),
             warnings: state.warner.view(&state.meters, &accounts, warn_at, now),
         }
@@ -225,8 +272,16 @@ impl Core {
     }
 
     fn receive(&self, line: Line) {
-        let Event::Status(status) = line.event;
-        let status: Status = status.checked();
+        let Some(event) = hooks::checked(line.event) else {
+            return;
+        };
+        let status = match event {
+            Event::Status(status) => status.checked(),
+            hooked => {
+                self.hooked(&line.token, &hooked);
+                return;
+            }
+        };
         let warn_at = self.sink.warn_at();
         let warned = {
             let mut state = self.state();
@@ -250,6 +305,27 @@ impl Core {
         if let Some(warning) = warning {
             self.sink.warned(warning);
         }
+    }
+}
+
+impl Core {
+    fn hooked(&self, token: &str, event: &Event) {
+        {
+            let mut state = self.state();
+            let Some(&Link { tab, .. }) = state.links.get(token) else {
+                return;
+            };
+            let Some((_, work)) = state.work.get_mut(&tab) else {
+                return;
+            };
+            match event {
+                Event::Wrote(wrote) => work.wrote(wrote),
+                Event::Tasks(tasks) => work.listed(tasks),
+                Event::Subagent(subagent) => work.subagent(subagent),
+                Event::Status(_) => return,
+            }
+        }
+        self.changed();
     }
 }
 
