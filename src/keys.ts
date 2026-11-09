@@ -59,6 +59,7 @@ export type Shortcut =
   | "closeTab"
   | "nextWaiting"
   | "panel"
+  | "findChat"
   | "shortcuts";
 
 type Chords = readonly (readonly [Shortcut, string])[];
@@ -72,6 +73,8 @@ const OTHER_CHORDS: Chords = [
   ["closeTab", "Ctrl+Shift+W"],
   // Ctrl+B is Claude Code's background-task key, so the panel takes it only with Shift.
   ["panel", "Ctrl+Shift+B"],
+  // Ctrl+F stays with the terminal; Find a chat takes it only with Shift.
+  ["findChat", "Ctrl+Shift+F"],
   // Ctrl+/ stays with the terminal, where editors and shells use it.
   ["shortcuts", "Ctrl+Shift+/"],
 ];
@@ -86,6 +89,7 @@ const MAC_CHORDS: Chords = [
   ["nextWaiting", "Cmd+Shift+A"],
   ["closeTab", "Cmd+W"],
   ["panel", "Cmd+Shift+B"],
+  ["findChat", "Cmd+Shift+F"],
   ["shortcuts", "Cmd+/"],
 ];
 
@@ -206,6 +210,7 @@ const SHEET_ROWS: readonly (readonly [Shortcut, string])[] = [
   ["closeTab", "Close tab"],
   ["nextWaiting", "Next chat waiting on you"],
   ["panel", "Show or hide the right panel"],
+  ["findChat", "Find a chat on any account"],
   ["shortcuts", "Show or hide this sheet"],
 ];
 

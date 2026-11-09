@@ -2614,3 +2614,133 @@ button.card-row:focus-visible,
 .live-warning .faint {
   color: var(--dim);
 }
+
+/* Find a chat: one search box over every account's chats. */
+.sheet.find-chat {
+  display: flex;
+  flex-direction: column;
+  width: min(640px, 100%);
+  height: min(560px, calc(100vh - 32px));
+  padding: 14px 14px 10px;
+  overflow: hidden;
+}
+
+.find-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.find-box {
+  flex: 1;
+  height: 34px;
+}
+
+.find-gone {
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  background: #2a1f1b;
+  border-radius: 8px;
+}
+
+.find-gone p {
+  margin: 0 0 8px;
+}
+
+.find-gone-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.find-gone-actions button {
+  width: auto;
+  height: 28px;
+  padding: 0 12px;
+  margin: 0;
+  font-size: 12px;
+}
+
+.find-list {
+  flex: 1;
+  min-height: 0;
+  padding: 0;
+  margin: 0;
+  overflow: hidden auto;
+  list-style: none;
+}
+
+.find-row {
+  padding: 7px 10px;
+  cursor: pointer;
+  border-radius: 8px;
+}
+
+.find-row.selected {
+  background: #2c2c2c;
+}
+
+.find-line {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.find-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.find-tag {
+  padding: 0 6px;
+  font-size: 11px;
+  color: var(--dim);
+  background: var(--selected);
+  border-radius: 4px;
+}
+
+.find-when {
+  flex: none;
+  font-size: 11px;
+  color: var(--faint);
+}
+
+.find-meta {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--dim);
+}
+
+.find-folder {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--faint);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.find-folder.gone {
+  color: var(--removed);
+}
+
+.find-snippet {
+  margin: 3px 0 0;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--dim);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.find-status {
+  margin: 6px 4px 0;
+  font-size: 11px;
+  color: var(--faint);
+}

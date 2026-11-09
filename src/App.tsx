@@ -43,7 +43,13 @@ import {
   reported,
   startedTabs,
 } from "./board";
-import { applyEnvironment, type EnvironmentChange } from "./environment";
+import { type FoundChat, projectFor, resumeFound } from "./chatSearch";
+import {
+  applyEnvironment,
+  type EnvironmentChange,
+  tabMoveFolder,
+} from "./environment";
+import { FindChat } from "./FindChat";
 import { EnvironmentDialog } from "./EnvironmentDialog";
 import { createHandChats } from "./handChat";
 import { HandNote } from "./HandNote";
@@ -98,6 +104,7 @@ import {
   removeProject,
   renameProject,
   renameTab,
+  setFolders,
   stepTab,
   tabOrder,
   type TabId,
@@ -528,6 +535,46 @@ export function App() {
     select(id);
   };
 
+  const [finding, setFinding] = createSignal(false);
+  // A found chat: its tab if it has one, else a new tab that resumes it in its folder on its account.
+  const openFound = async (chat: FoundChat, folder?: string) => {
+    if (chat.openIn !== null && tabById(chat.openIn)) {
+      select(chat.openIn);
+      return;
+    }
+    const claude = programList()?.find((p) => p.id === "claude");
+    const account =
+      chat.account === null
+        ? null
+        : (profiles()?.accounts.find((a) => a.id === chat.account) ?? null);
+    if (chat.account !== null && account === null) {
+      throw new Error("its account is no longer set up");
+    }
+    // It starts out in the chat's own folder, where the core finds its file; a chosen folder comes after the move.
+    const own = chat.folder ?? folder;
+    const tab = claude && tabFor(claude, { account, cwd: own ?? null });
+    if (!tab || own === undefined)
+      throw new Error("Claude Code is not installed");
+    const [withProject, projectId] = projectFor(tree(), folder ?? own);
+    const [added, id] = addTab(withProject, { projectId, parentId: null }, tab);
+    setRun(id, 0);
+    setTree(renameTab(added, id, chat.title.slice(0, 60)));
+    try {
+      // The core resumes only a tab it has saved, so the save this change queued goes first.
+      await saving;
+      await resumeFound(id, chat.id);
+      if (folder !== undefined && folder !== chat.folder) {
+        await tabMoveFolder(id, folder);
+        setTree(setFolders(tree(), id, folder, []));
+      }
+    } catch (error) {
+      setTree(closeTab(tree(), id));
+      throw error;
+    }
+    setRun(id, 1);
+    select(id);
+  };
+
   const close = (id: TabId) => {
     const closing = tabById(id);
     if (!closing) return;
@@ -623,6 +670,10 @@ export function App() {
       }
       if (shortcut === "panel") {
         if (!inSetup()) panel.toggle();
+        return;
+      }
+      if (shortcut === "findChat") {
+        if (!inSetup()) setFinding((open) => !open);
         return;
       }
       if (inSetup() && shortcut !== "closeTab") return;
@@ -774,6 +825,10 @@ export function App() {
               onDragTab={dragTab}
               onAccounts={() => {
                 showPage("accounts");
+                setDrawer(false);
+              }}
+              onFindChat={() => {
+                setFinding(true);
                 setDrawer(false);
               }}
             />
@@ -1239,6 +1294,13 @@ export function App() {
                   }}
                 />
               )}
+            </Show>
+            <Show when={finding()}>
+              <FindChat
+                profiles={loaded()}
+                onOpen={openFound}
+                onClose={() => setFinding(false)}
+              />
             </Show>
             <Show when={sheet()}>
               <ShortcutsSheet onClose={() => setSheet(false)} />

@@ -70,6 +70,7 @@ export function Sidebar(props: {
   onRemoveProject: (id: ProjectId) => void;
   onNewProject: () => void;
   onAccounts: () => void;
+  onFindChat?: () => void;
   /** Setup is running, so only its own tabs show and nothing here can leave it. */
   locked: boolean;
   /** Where a tab dragged out of the list goes; absent, rows don't drag. */
@@ -268,6 +269,19 @@ export function Sidebar(props: {
         >
           <FolderIcon /> New project
         </button>
+        <Show when={props.onFindChat}>
+          <button
+            type="button"
+            class="icon-button"
+            aria-label="Find a chat"
+            title="Find a chat on any account"
+            onClick={() => {
+              props.onFindChat?.();
+            }}
+          >
+            <SearchIcon />
+          </button>
+        </Show>
         <button
           type="button"
           class="icon-button"
