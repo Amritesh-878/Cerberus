@@ -4,6 +4,7 @@ use std::fmt;
 use std::fs::{self, File};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -161,27 +162,33 @@ impl Saved {
 
 pub struct Store {
     path: PathBuf,
+    /// Set when the file could not be read at all, so no save replaces what may still be fine.
+    held: AtomicBool,
 }
 
 impl Store {
     pub fn new(dir: &Path) -> Self {
         Self {
             path: dir.join("services.json"),
+            held: AtomicBool::new(false),
         }
     }
 
     /// A missing file is no services; an entry that doesn't read is skipped, the rest kept.
+    /// Whatever is dropped stays in `services.json.bad`, since the next save rewrites the file.
     pub fn load(&self) -> Saved {
         let bytes = match fs::read(&self.path) {
             Ok(bytes) => bytes,
             Err(e) if e.kind() == io::ErrorKind::NotFound => return Saved::default(),
             Err(e) => {
                 eprintln!("services: could not read the saved list: {}", e.kind());
+                self.held.store(true, Ordering::Release);
                 return Saved::default();
             }
         };
         let Ok(Value::Object(mut file)) = serde_json::from_slice::<Value>(&bytes) else {
             eprintln!("services: the saved list is not readable, so it starts empty");
+            self.keep_aside(&bytes);
             return Saved::default();
         };
         let entries = match file.remove("services") {
@@ -203,14 +210,30 @@ impl Store {
         }
         if skipped > 0 {
             eprintln!("services: skipped {skipped} saved entries that did not read");
+            self.keep_aside(&bytes);
         }
         let past_ids = saved.services.iter().map(|s| s.id + 1).max().unwrap_or(0);
         saved.next_id = saved.next_id.max(past_ids);
         saved
     }
 
+    fn keep_aside(&self, bytes: &[u8]) {
+        if let Err(e) = fs::write(self.path.with_extension("json.bad"), bytes) {
+            eprintln!(
+                "services: could not keep the unreadable list aside: {}",
+                e.kind()
+            );
+            self.held.store(true, Ordering::Release);
+        }
+    }
+
     // A crash mid-write leaves only the temp file broken; the rename swaps the whole file at once.
     pub fn save(&self, saved: &Saved) -> io::Result<()> {
+        if self.held.load(Ordering::Acquire) {
+            return Err(io::Error::other(
+                "services.json could not be read at start, so it is left as it is",
+            ));
+        }
         if let Some(dir) = self.path.parent() {
             fs::create_dir_all(dir)?;
         }
@@ -283,6 +306,34 @@ mod tests {
         assert!(saved.folded);
         assert_eq!(saved.next_id, 8, "never reuses a saved id");
         assert!(saved.services[0].restart, "restart is on unless saved off");
+    }
+
+    #[test]
+    fn what_did_not_read_is_kept_aside_before_a_save_replaces_it() {
+        let dir = TestDir::new();
+        let broken = r#"{"services": [{"id": 0, "name": "ok", "command": "x"}, {"id": 1}]}"#;
+        fs::write(dir.path().join("services.json"), broken).unwrap();
+        let store = Store::new(dir.path());
+
+        let saved = store.load();
+        store.save(&saved).unwrap();
+
+        let aside = fs::read_to_string(dir.path().join("services.json.bad")).unwrap();
+        assert_eq!(aside, broken);
+        assert_eq!(store.load().services.len(), 1);
+    }
+
+    #[test]
+    fn a_file_that_could_not_be_read_is_never_overwritten() {
+        let dir = TestDir::new();
+        // A folder where the file should be fails the read, as a locked file would.
+        fs::create_dir_all(dir.path().join("services.json")).unwrap();
+        let store = Store::new(dir.path());
+
+        assert_eq!(store.load(), Saved::default());
+
+        assert!(store.save(&Saved::default()).is_err());
+        assert!(dir.path().join("services.json").is_dir());
     }
 
     #[test]

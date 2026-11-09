@@ -70,8 +70,9 @@ mod windows {
             }
         }
 
-        pub fn end(&self) {
-            // SAFETY: the job handle stays open until drop.
+        /// Ends every process in the job; dropping it after closes the handle.
+        pub fn end(self) {
+            // SAFETY: the job handle stays open until this value drops at the end of the call.
             unsafe {
                 TerminateJobObject(self.job, 1);
             }
@@ -108,8 +109,10 @@ mod unix {
         }
 
         /// TERM first so a dev server can clean up, then KILL whatever is left.
-        pub fn end(&self) {
+        pub fn end(self) {
             let group = self.group;
+            // Its drop would KILL at once and leave no grace, so only the delayed KILL below runs.
+            std::mem::forget(self);
             // SAFETY: signalling a process group by id; a gone group only returns an error.
             unsafe {
                 libc::kill(-group, libc::SIGTERM);
