@@ -14,7 +14,7 @@ use std::time::{Duration, Instant, UNIX_EPOCH};
 use serde::Serialize;
 
 use crate::accounts::AccountId;
-use crate::findchat::read::{Meta, Query, read};
+use crate::findchat::read::{Meta, Query, holds_all, meta, read};
 use crate::saved::TabId;
 
 /// Results go out in batches this big, or sooner when this long has passed.
@@ -181,18 +181,21 @@ impl ChatFinder {
             return Some((meta, None));
         }
         let bytes = fs::read(path).ok()?;
-        // A file without every plain word can't match, so it is not parsed; its list fields are known.
-        if known.is_some() && !query.is_empty() {
-            let lower = bytes.to_ascii_lowercase();
-            let has = |word: &str| lower.windows(word.len()).any(|w| w == word.as_bytes());
-            if !query.plain_words().all(has) {
-                return None;
-            }
+        let listed = known.unwrap_or_else(|| {
+            let quick = meta(&bytes);
+            self.cache()
+                .insert(path.to_path_buf(), (stamp, quick.clone()));
+            quick
+        });
+        if query.is_empty() {
+            return Some((listed, None));
+        }
+        // Most files lack a word, and this check is far cheaper than parsing their records.
+        if !holds_all(&bytes, query) {
+            return None;
         }
         let found = read(&bytes, query, cancelled)?;
-        self.cache()
-            .insert(path.to_path_buf(), (stamp, found.meta.clone()));
-        found.matched.then_some((found.meta, found.snippet))
+        found.matched.then_some((listed, found.snippet))
     }
 }
 

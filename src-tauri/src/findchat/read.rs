@@ -25,12 +25,12 @@ impl Query {
         self.words.is_empty()
     }
 
-    /// Words a raw file must hold for the chat to match; only plain ones, since JSON escapes others.
+    /// Each word's runs of ASCII letters and digits, which JSON never escapes, for the raw file check.
     pub fn plain_words(&self) -> impl Iterator<Item = &str> {
-        self.words
-            .iter()
-            .map(String::as_str)
-            .filter(|w| w.bytes().all(|b| b.is_ascii_alphanumeric()))
+        self.words.iter().flat_map(|w| {
+            w.split(|c: char| !c.is_ascii_alphanumeric())
+                .filter(|piece| piece.len() >= 2)
+        })
     }
 }
 
@@ -89,6 +89,61 @@ struct BlockIn {
     kind: Option<String>,
     #[serde(default)]
     text: Option<String>,
+}
+
+/// The list fields alone, from the first records and the last, without parsing the middle.
+pub fn meta(bytes: &[u8]) -> Meta {
+    let mut meta = Meta::default();
+    let mut first_user = None;
+    for record in bytes.split(|&b| b == b'\n').filter_map(record) {
+        if meta.folder.is_none() {
+            meta.folder = record.cwd.clone().filter(|c| !c.is_empty());
+        }
+        match record.kind.as_deref() {
+            Some("summary") => meta.title = record.summary.as_deref().and_then(one_line),
+            Some("user")
+                if first_user.is_none()
+                    && record.sidechain != Some(true)
+                    && record.meta != Some(true) =>
+            {
+                first_user = texts(record.message)
+                    .iter()
+                    .find(|t| !is_command(t))
+                    .and_then(|t| one_line(t));
+            }
+            _ => {}
+        }
+        if meta.folder.is_some() && (meta.title.is_some() || first_user.is_some()) {
+            break;
+        }
+    }
+    if meta.title.is_none() {
+        meta.title = first_user;
+    }
+    // The newest record is near the end, so the end is read first.
+    meta.last = bytes
+        .rsplit(|&b| b == b'\n')
+        .filter_map(record)
+        .find_map(|r| r.timestamp.as_deref().and_then(epoch_ms));
+    meta
+}
+
+/// Whether every plain word is somewhere in the raw file, any case; a file without one can't match.
+pub fn holds_all(bytes: &[u8], query: &Query) -> bool {
+    let words: Vec<&str> = query.plain_words().collect();
+    if words.is_empty() {
+        return true;
+    }
+    let lower = bytes.to_ascii_lowercase();
+    // A file that isn't UTF-8 is left to the full read, which skips its broken lines.
+    std::str::from_utf8(&lower).map_or(true, |text| words.iter().all(|w| text.contains(w)))
+}
+
+fn record(line: &[u8]) -> Option<RecordIn> {
+    if line.len() > MOST_LINE || line.iter().all(u8::is_ascii_whitespace) {
+        return None;
+    }
+    serde_json::from_slice(line).ok()
 }
 
 /// Reads a whole transcript; `cancelled` is asked between lines so a new keystroke stops it soon.
@@ -374,6 +429,59 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn the_quick_list_fields_match_a_full_read() {
+        let quick = meta(FAKE_CHAT.as_bytes());
+
+        assert_eq!(quick, read_fake("").meta);
+        let with_summary = format!(
+            "{}\n{FAKE_CHAT}",
+            r#"{"type":"summary","summary":"Login redirect fix","leafUuid":"x"}"#
+        );
+        assert_eq!(
+            meta(with_summary.as_bytes()).title.as_deref(),
+            Some("Login redirect fix")
+        );
+    }
+
+    #[test]
+    fn a_tool_result_after_the_first_message_keeps_the_title_when_the_folder_comes_late() {
+        let late_folder = concat!(
+            r#"{"type":"user","message":{"content":"First words here"}}"#,
+            "
+",
+            r#"{"type":"user","message":{"content":[{"type":"tool_result","content":"x"}]}}"#,
+            "
+",
+            r#"{"type":"assistant","cwd":"C:\\late","timestamp":"2026-11-01T10:00:00.000Z","message":{"content":"ok"}}"#,
+        );
+
+        let quick = meta(late_folder.as_bytes());
+
+        assert_eq!(quick.title.as_deref(), Some("First words here"));
+        assert_eq!(quick.folder.as_deref(), Some(r"C:\late"));
+    }
+
+    #[test]
+    fn the_raw_check_needs_every_plain_word_in_any_case() {
+        assert!(holds_all(
+            FAKE_CHAT.as_bytes(),
+            &Query::new("LOGIN Dashboard")
+        ));
+        assert!(!holds_all(
+            FAKE_CHAT.as_bytes(),
+            &Query::new("login giraffe")
+        ));
+        assert!(!holds_all(
+            FAKE_CHAT.as_bytes(),
+            &Query::new("zzzz-nothing")
+        ));
+        assert!(
+            holds_all(FAKE_CHAT.as_bytes(), &Query::new(r"c:\code\alpha")),
+            "a folder with backslashes"
+        );
+    }
+
+    #[test]
     fn a_cancel_stops_the_read() {
         assert_eq!(
             read(FAKE_CHAT.as_bytes(), &Query::new("login"), &|| true),
@@ -395,8 +503,11 @@ pub(crate) mod tests {
 
     #[test]
     fn plain_words_are_the_ones_a_raw_file_check_can_use() {
-        let query = Query::new("Login c:\\code naïve 42");
+        let query = Query::new("Login c:\\code naïve 42 zzzz-nothing");
 
-        assert_eq!(query.plain_words().collect::<Vec<_>>(), ["login", "42"]);
+        assert_eq!(
+            query.plain_words().collect::<Vec<_>>(),
+            ["login", "code", "na", "ve", "42", "zzzz", "nothing"]
+        );
     }
 }
