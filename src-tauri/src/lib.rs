@@ -131,6 +131,7 @@ pub fn run() {
             commands::set_shell,
             commands::set_sidebar_width,
             commands::set_split_share,
+            commands::set_sidebar_collapsed,
             commands::set_panel,
             commands::set_alerts,
             commands::set_suggestions,

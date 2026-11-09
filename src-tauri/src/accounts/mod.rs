@@ -130,6 +130,9 @@ pub struct Profiles {
     /// The left chat's share of a split in thousandths; `None` keeps half and half.
     #[serde(default)]
     pub split_share: Option<u32>,
+    /// The sidebar is folded to a rail of project icons; a narrow window folds it without saving.
+    #[serde(default)]
+    pub sidebar_collapsed: bool,
     /// Desktop notifications when a chat in another tab needs you.
     #[serde(default = "on")]
     pub alerts: bool,
@@ -170,6 +173,7 @@ impl Default for Profiles {
             sidebar_width: None,
             panel: PanelPrefs::default(),
             split_share: None,
+            sidebar_collapsed: false,
             alerts: true,
             suggestions: true,
             messages: true,
@@ -379,6 +383,13 @@ impl Accounts {
         let width = width.clamp(*SIDEBAR_WIDTHS.start(), *SIDEBAR_WIDTHS.end());
         self.update(|p| {
             p.sidebar_width = Some(width);
+            Ok(())
+        })
+    }
+
+    pub fn set_sidebar_collapsed(&self, collapsed: bool) -> Result<Profiles, AccountsError> {
+        self.update(|p| {
+            p.sidebar_collapsed = collapsed;
             Ok(())
         })
     }
@@ -972,6 +983,21 @@ mod tests {
             accounts.load().unwrap().panel.dismissed,
             saved.panel.dismissed
         );
+    }
+
+    #[test]
+    fn the_sidebar_starts_open_and_a_collapse_is_saved() {
+        let home = TestDir::new();
+        let accounts = Accounts::new(&home.path().join("app"), home.path().to_path_buf());
+
+        assert!(!accounts.load().unwrap().sidebar_collapsed);
+        assert!(
+            accounts
+                .set_sidebar_collapsed(true)
+                .unwrap()
+                .sidebar_collapsed
+        );
+        assert!(accounts.load().unwrap().sidebar_collapsed);
     }
 
     #[test]
