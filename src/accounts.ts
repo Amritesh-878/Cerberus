@@ -144,8 +144,15 @@ export function setSidebarWidth(width: number): Promise<Profiles> {
   return invoke<Profiles>("set_sidebar_width", { width });
 }
 
+let collapseSaving: Promise<unknown> = Promise.resolve();
+
+/** One save at a time, in click order, so a late reply cannot undo a newer choice. */
 export function setSidebarCollapsed(collapsed: boolean): Promise<Profiles> {
-  return invoke<Profiles>("set_sidebar_collapsed", { collapsed });
+  const saved = collapseSaving.then(() =>
+    invoke<Profiles>("set_sidebar_collapsed", { collapsed }),
+  );
+  collapseSaving = saved.catch(() => undefined);
+  return saved;
 }
 
 export function setSplitShare(share: number): Promise<Profiles> {

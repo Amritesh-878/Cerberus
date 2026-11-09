@@ -137,6 +137,39 @@ test("Ctrl+Shift+E collapses and expands the sidebar", async () => {
   expect(side.saves).toEqual([true, false]);
 });
 
+test("two quick toggles save in order and the sidebar never flicks back meanwhile", async () => {
+  const side = sidebarCore();
+  let release: () => void = () => undefined;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const save = side.core.set_sidebar_collapsed;
+  let first = true;
+  const root = await renderApp(side.profiles, {
+    ...side.core,
+    // The first save waits, so the second click lands while it is still on its way.
+    set_sidebar_collapsed: async (args: unknown) => {
+      if (first) {
+        first = false;
+        await held;
+      }
+      return save(args);
+    },
+  });
+
+  clickLabel(root, "Collapse the sidebar");
+  await settle();
+  clickLabel(root, "Expand the sidebar");
+  await settle();
+  expect(root.querySelector(".rail")).toBeNull();
+  release();
+  await settle();
+  await settle();
+
+  expect(root.querySelector(".rail")).toBeNull();
+  expect(side.saves).toEqual([true, false]);
+});
+
 test("a saved collapse comes back on start", async () => {
   const side = sidebarCore({ ...SAVED, sidebarCollapsed: true });
   const root = await renderApp(side.profiles, side.core);

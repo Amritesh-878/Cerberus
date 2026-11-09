@@ -209,18 +209,22 @@ export function App() {
     if (windowWidth() >= RAIL_BELOW) setNarrowOpen(false);
   });
   const mode = () => sidebarMode(windowWidth(), collapsed(), narrowOpen());
+  let collapseSaves = 0;
   const setCollapsed = (next: boolean) => {
     if (windowWidth() < RAIL_BELOW) {
       setNarrowOpen(!next);
       return;
     }
     setCollapsedNow(next);
+    collapseSaves += 1;
+    const mine = collapseSaves;
     setSidebarCollapsed(next)
       .then(changed, (error: unknown) => {
         console.error("sidebar state not saved:", error);
       })
       .finally(() => {
-        setCollapsedNow(undefined);
+        // Only the latest click lets go, so an earlier save settling cannot flick the sidebar back.
+        if (mine === collapseSaves) setCollapsedNow(undefined);
       });
   };
   const toggleSidebar = () => {
