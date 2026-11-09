@@ -176,7 +176,11 @@ test("a chat opens in a new tab on its account, in the project holding its folde
   await settle();
   await settle();
 
-  expect(sidebarTitles(root)).toEqual(["planner", "Fix the api tests"]);
+  expect(sidebarTitles(root)).toEqual(["planner", "Claude Code · personal"]);
+  // A tab's name is saved to disk, so the chat's title never becomes one.
+  expect(JSON.stringify(find.of("tree_save"))).not.toContain(
+    "Fix the api tests",
+  );
   expect(find.of("chat_resume")).toEqual([{ tab: 4, session: ELSEWHERE.id }]);
   const order = find.order();
   expect(order.lastIndexOf("tree_save")).toBeLessThan(
@@ -185,7 +189,7 @@ test("a chat opens in a new tab on its account, in the project holding its folde
   const spawn = find.pty.spawned.at(-1);
   expect(field(spawn, "account")).toBe(0);
   expect(field(field(spawn, "request"), "cwd")).toBe(ELSEWHERE.folder);
-  expect(activeTitle(root)).toBe("Fix the api tests");
+  expect(activeTitle(root)).toBe("Claude Code · personal");
 });
 
 test("a chat whose folder is gone asks for one, then moves the chat there before it resumes", async () => {

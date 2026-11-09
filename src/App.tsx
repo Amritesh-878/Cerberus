@@ -558,7 +558,8 @@ export function App() {
     const [withProject, projectId] = projectFor(tree(), folder ?? own);
     const [added, id] = addTab(withProject, { projectId, parentId: null }, tab);
     setRun(id, 0);
-    setTree(renameTab(added, id, chat.title.slice(0, 60)));
+    // The default name, since a tab's name is saved to disk and the chat's title is transcript text.
+    setTree(added);
     try {
       // The core resumes only a tab it has saved, so the save this change queued goes first.
       await saving;
