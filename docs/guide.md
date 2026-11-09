@@ -269,6 +269,34 @@ The state comes from Claude Code's `sessions` file. For a limit, Cerberus reads 
 type and reset time from the chat's last record, and never shows, logs or stores anything else
 from a transcript.
 
+## Finding a chat
+
+`claude --resume` lists only the chats of the folder you are in, on the account you are on. **Find
+a chat** (Ctrl+Shift+F, Cmd+Shift+F on macOS, or the search button at the foot of the sidebar)
+searches every account's chats at once:
+
+- Before you type, it lists every chat, newest first. Each row has the chat's title (its summary,
+  else its first message), its account, its folder, and when its last message was.
+- Words match anywhere, in any case: in the title, the folder or the text of what you and Claude
+  wrote. Tool calls, their output and Claude's thinking are not searched.
+- A chat needs only one of your words to show. Chats that match more of them come first, then the
+  newest, so one word you misremember only moves a chat down the list.
+- A word of five or more letters and digits also finds a word one typo away: one letter added,
+  missing, changed, or two neighbours swapped, so `authentcation` finds `authentication`. Shorter
+  words, and words with other characters such as a path, must appear as typed. An exact match ranks
+  above a typo.
+- A row shows a line around its best match, an exact one before a typo.
+- Arrow keys move, Enter (or a click) opens, Escape closes.
+- **Opening** a chat that is already in a tab switches to that tab. Otherwise a new Claude tab starts
+  on the chat's own account, in its recorded folder, inside the project that holds that folder (or a
+  new one), and resumes the chat. If the folder is gone, it says so and offers **Choose a folder**,
+  which copies the chat to the folder you pick (as Edit environment's move does) and resumes it there.
+
+The search reads each account's `projects` folder on a background thread, and results come in as
+they are found; each new keystroke stops the last search. Nothing it reads is written anywhere,
+logged or kept: it lives in memory while the dialog is open and is dropped when it closes.
+`history.jsonl` is never read.
+
 ## Moving a chat to another account
 
 Right-click a Claude Code tab and pick **Continue on `<account>`…** to carry its chat to another
