@@ -263,6 +263,45 @@ test("a refused open of a chat from a new folder takes its new project away too"
   expect(JSON.stringify(find.of("tree_save").at(-1))).not.toContain("repo");
 });
 
+test("a refused open keeps its new project when another chat opened into it meanwhile", async () => {
+  let refuse: (error: Error) => void = () => undefined;
+  let resumes = 0;
+  const find = findCore(() => {
+    resumes += 1;
+    return resumes === 1
+      ? new Promise((_, reject) => {
+          refuse = reject;
+        })
+      : null;
+  });
+  const root = await renderApp(() => SAVED, find.core);
+  press("F", { ctrlKey: true, shiftKey: true });
+  await settle();
+  answer(find, 0, [{ ...ELSEWHERE, folder: String.raw`D:\other\repo` }]);
+  await settle();
+  press("Enter");
+  await settle();
+  press("Escape");
+  await settle();
+  press("F", { ctrlKey: true, shiftKey: true });
+  await settle();
+  answer(find, 1, [
+    { ...GONE, folder: String.raw`D:\other\repo\api`, folderExists: true },
+  ]);
+  await settle();
+  press("Enter");
+  await settle();
+  await settle();
+
+  refuse(new Error("that chat is not in this tab's folder on its account"));
+  await settle();
+  await settle();
+
+  expect(resumes).toBe(2);
+  expect(sidebarTitles(root)).toHaveLength(2);
+  expect(JSON.stringify(find.of("tree_save").at(-1))).toContain("repo");
+});
+
 test("Enter on a focused button or while composing opens no chat", async () => {
   const find = findCore();
   const root = await openDialog(find);

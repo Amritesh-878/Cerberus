@@ -685,9 +685,10 @@ export function App() {
         setTree(setFolders(tree(), id, folder, []));
       }
     } catch (error) {
-      // A project made for this chat goes with it, rather than staying behind empty.
+      // A project made for this chat goes with it, unless another tab joined it while this one waited.
       const left = closeTab(tree(), id);
-      setTree(madeProject ? removeProject(left, projectId) : left);
+      const empty = !left.tabs.some((t) => t.projectId === projectId);
+      setTree(madeProject && empty ? removeProject(left, projectId) : left);
       throw error;
     }
     setRun(id, 1);
