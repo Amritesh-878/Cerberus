@@ -116,7 +116,7 @@ impl Warner {
         self.open.remove(&account);
     }
 
-    /// A closed tab's warning stays, since the account is still near its limit; it offers no move.
+    /// A closed tab's warning stays, since the account is still near its limit.
     pub fn view(
         &self,
         meters: &Meters,
