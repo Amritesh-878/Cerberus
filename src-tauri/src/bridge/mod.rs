@@ -252,6 +252,8 @@ struct Core {
     state: Mutex<State>,
     /// Set while a delivery waits to show, so other output skips the lock.
     watching: AtomicBool,
+    /// Held from snapshot to emit, so a newer snapshot never goes out before an older one.
+    emitting: Mutex<()>,
 }
 
 // A panicked holder leaves the maps usable, so poisoning is not a reason to fail.
@@ -266,6 +268,7 @@ impl Core {
 
     /// Called with no lock held, since the hooks reach other parts of the app.
     fn changed(&self) {
+        let _order = lock(&self.emitting);
         let snapshot = self.state().snapshot();
         self.hooks.changed(snapshot);
     }
@@ -283,6 +286,7 @@ impl Bridge {
             hooks: Box::new(hooks),
             state: Mutex::new(State::default()),
             watching: AtomicBool::new(false),
+            emitting: Mutex::new(()),
         });
         serve::listen(&core)?;
         Ok(Self(Some(core)))

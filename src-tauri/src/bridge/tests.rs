@@ -1010,3 +1010,58 @@ fn a_closed_tabs_messages_are_marked_sender_gone() {
     assert!(snapshot.pending.is_empty());
     assert_eq!(snapshot.sender_gone, [id]);
 }
+
+/// Hooks that hold the first snapshot inside `changed` until the test lets it go.
+struct HeldHooks {
+    entered: Mutex<Sender<()>>,
+    release: Mutex<Option<Receiver<()>>>,
+    sent: Mutex<Sender<Snapshot>>,
+}
+
+impl Hooks for HeldHooks {
+    fn label(&self, tab: TabId) -> Label {
+        TestHooks(Mutex::new(mpsc::channel().0)).label(tab)
+    }
+
+    fn changed(&self, snapshot: Snapshot) {
+        let held = lock(&self.release).take();
+        if let Some(release) = held {
+            let _ = lock(&self.entered).send(());
+            let _ = release.recv();
+        }
+        let _ = lock(&self.sent).send(snapshot);
+    }
+}
+
+#[test]
+fn snapshots_go_out_in_the_order_they_are_taken() {
+    let (entered_tx, entered) = mpsc::channel();
+    let (release_tx, release) = mpsc::channel();
+    let (sent_tx, sent) = mpsc::channel();
+    let bridge = Bridge::start(HeldHooks {
+        entered: Mutex::new(entered_tx),
+        release: Mutex::new(Some(release)),
+        sent: Mutex::new(sent_tx),
+    })
+    .unwrap();
+    let older = {
+        let bridge = bridge.clone();
+        thread::spawn(move || bridge.0.as_ref().unwrap().changed())
+    };
+    entered.recv_timeout(WAIT).unwrap();
+
+    let core = bridge.0.as_ref().unwrap();
+    core.state().sender_gone.push_back(7);
+    let newer = {
+        let bridge = bridge.clone();
+        thread::spawn(move || bridge.0.as_ref().unwrap().changed())
+    };
+    // Room for the newer snapshot to overtake, which only the emit order stops.
+    thread::sleep(Duration::from_millis(200));
+    release_tx.send(()).unwrap();
+    older.join().unwrap();
+    newer.join().unwrap();
+
+    let order: Vec<Vec<u64>> = sent.try_iter().map(|s| s.sender_gone).collect();
+    assert_eq!(order, [vec![], vec![7]]);
+}
