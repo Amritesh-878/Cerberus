@@ -15,7 +15,18 @@ impl Rule {
         let tunnel = command.split_whitespace().any(|word| {
             let word = word.trim_matches(|c| c == '"' || c == '\'');
             let name = word.rsplit(['/', '\\']).next().unwrap_or(word);
-            name.eq_ignore_ascii_case("cloudflared") || name.eq_ignore_ascii_case("cloudflared.exe")
+            // npm installs it as `.cmd` and `.ps1` shims on Windows.
+            let stem = name.rsplit_once('.').map_or(name, |(stem, ext)| {
+                if ["exe", "cmd", "bat", "ps1"]
+                    .iter()
+                    .any(|e| ext.eq_ignore_ascii_case(e))
+                {
+                    stem
+                } else {
+                    name
+                }
+            });
+            stem.eq_ignore_ascii_case("cloudflared")
         });
         if tunnel { Self::Tunnel } else { Self::Local }
     }
@@ -232,6 +243,11 @@ mod tests {
             Rule::for_command(r#""C:\Tools\cloudflared.exe" tunnel --url x"#),
             Rule::Tunnel
         );
+        assert_eq!(
+            Rule::for_command("& 'C:/nodejs/cloudflared.cmd' tunnel --url x"),
+            Rule::Tunnel
+        );
+        assert_eq!(Rule::for_command("cloudflared.yml.bak"), Rule::Local);
         assert_eq!(Rule::for_command("npm run dev"), Rule::Local);
         assert_eq!(Rule::for_command("echo not-cloudflared-here"), Rule::Local);
     }
