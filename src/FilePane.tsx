@@ -169,11 +169,14 @@ const THEME = EditorView.theme(
     "&.cm-focused .cm-selectionBackground, .cm-selectionBackground": {
       backgroundColor: "#3a3a3a",
     },
-    ".cm-changedLine": { backgroundColor: "rgb(108 192 122 / 10%)" },
-    ".cm-changedText": { backgroundColor: "rgb(108 192 122 / 25%)" },
-    ".cm-deletedChunk": { backgroundColor: "rgb(229 115 107 / 10%)" },
-    ".cm-deletedChunk .cm-deletedText": {
-      backgroundColor: "rgb(229 115 107 / 25%)",
+    // As specific as the merge view's own rules, so these flat tints replace its underlines.
+    "&.cm-merge-b .cm-changedLine": {
+      backgroundColor: "rgb(108 192 122 / 10%)",
+    },
+    "&.cm-merge-b .cm-changedText": { background: "rgb(108 192 122 / 25%)" },
+    "& .cm-deletedChunk": { backgroundColor: "rgb(229 115 107 / 10%)" },
+    "& .cm-deletedChunk .cm-deletedText": {
+      background: "rgb(229 115 107 / 25%)",
     },
     ".cm-insertedLine, .cm-deletedLine": { textDecoration: "none" },
   },
