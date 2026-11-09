@@ -163,6 +163,8 @@ pub fn run() {
             cards::live_view,
             cards::live_dismiss,
             cards::live_open_output,
+            cards::live_read_output,
+            cards::live_output_stamp,
             cards::set_live,
             cards::set_warn_at,
             messages::bridge_snapshot,

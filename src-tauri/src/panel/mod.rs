@@ -1,5 +1,5 @@
 mod gh;
-mod git;
+pub(crate) mod git;
 mod mcp;
 mod plugins;
 pub(crate) mod reveal;

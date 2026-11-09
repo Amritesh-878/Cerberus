@@ -3,6 +3,7 @@
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::accounts::{AccountId, Accounts, AccountsError, Profiles};
+use crate::live::files::FileView;
 use crate::live::{DEFAULT_WARN_AT, Live, Sink, View, Warning};
 use crate::saved::TabId;
 
@@ -50,6 +51,26 @@ pub fn live_dismiss(live: State<'_, Live>, account: AccountId) {
 #[tauri::command(async)]
 pub fn live_open_output(live: State<'_, Live>, tab: TabId, path: String) -> Result<(), String> {
     live.open_output(tab, &path).map_err(|e| e.to_string())
+}
+
+/// A written file and its `HEAD` version for the file pane; any path the chat didn't write is refused.
+#[tauri::command(async)]
+pub fn live_read_output(
+    live: State<'_, Live>,
+    tab: TabId,
+    path: String,
+) -> Result<FileView, String> {
+    let git = crate::programs::Finder::from_env()
+        .find("git")
+        .map(crate::panel::git::Git::new);
+    let head = |file: &std::path::Path| git.as_ref().and_then(|g| g.show_head(file));
+    live.read_output(tab, &path, head)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command(async)]
+pub fn live_output_stamp(live: State<'_, Live>, tab: TabId, path: String) -> Option<u64> {
+    live.output_stamp(tab, &path)
 }
 
 /// Applies to Claude tabs started after the change.
