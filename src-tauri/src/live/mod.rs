@@ -279,15 +279,17 @@ fn listen(core: &Arc<Core>) -> io::Result<()> {
                 continue;
             }
             let core = Arc::clone(&core);
-            let open = Arc::clone(&open);
+            let done = Arc::clone(&open);
             // A helper that never finishes its line holds only its own thread.
             let started = thread::Builder::new().spawn(move || {
                 if let Some(line) = read_line(stream) {
                     core.receive(line);
                 }
-                open.fetch_sub(1, Ordering::AcqRel);
+                done.fetch_sub(1, Ordering::AcqRel);
             });
             if started.is_err() {
+                // The thread never ran, so its slot is given back here.
+                open.fetch_sub(1, Ordering::AcqRel);
                 eprintln!("live: no thread for a report");
             }
         }

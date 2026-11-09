@@ -9,6 +9,8 @@ use crate::live::event::{Status, Window};
 use crate::saved::TabId;
 
 pub const DEFAULT_WARN_AT: u8 = 85;
+// Reports of one 5-hour window may round its reset differently; the next window is hours away.
+const SAME_WINDOW_S: u64 = 10 * 60;
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -103,8 +105,18 @@ pub struct Warner {
 impl Warner {
     /// True the first time this account's window reaches `warn_at`; the window's reset time keys it.
     pub fn check(&mut self, account: AccountId, tab: TabId, window: Window, warn_at: u8) -> bool {
-        if window.used < f64::from(warn_at) || self.warned.get(&account) == Some(&window.resets_at)
+        if window.used < f64::from(warn_at) {
+            return false;
+        }
+        if self
+            .warned
+            .get(&account)
+            .is_some_and(|&warned| warned.abs_diff(window.resets_at) <= SAME_WINDOW_S)
         {
+            // Same window: a banner still showing follows the newer use, a dismissed one stays gone.
+            if let Some((_, shown)) = self.open.get_mut(&account) {
+                shown.used = window.used;
+            }
             return false;
         }
         self.warned.insert(account, window.resets_at);
@@ -238,6 +250,33 @@ mod tests {
         assert!(warner.check(1, 7, at(86.0, RESET + 18_000), 85));
         // Another account has its own.
         assert!(warner.check(2, 9, at(86.0, RESET), 85));
+    }
+
+    #[test]
+    fn a_reset_time_that_drifts_a_little_is_still_the_same_window() {
+        let mut warner = Warner::default();
+        let at = |used, resets_at| Window { used, resets_at };
+
+        assert!(warner.check(1, 7, at(86.0, RESET), 85));
+        assert!(!warner.check(1, 7, at(88.0, RESET + 90), 85));
+        assert!(!warner.check(1, 7, at(91.0, RESET - SAME_WINDOW_S), 85));
+        let shown = warner.view(&Meters::default(), &[1], 85, NOW);
+        assert_eq!(shown[0].used, 91.0, "the banner follows the newer use");
+        assert!(warner.check(1, 7, at(86.0, RESET + SAME_WINDOW_S + 1), 85));
+    }
+
+    #[test]
+    fn a_dismissed_warning_stays_gone_while_use_climbs() {
+        let mut warner = Warner::default();
+        let at = |used| Window {
+            used,
+            resets_at: RESET,
+        };
+        warner.check(1, 7, at(86.0), 85);
+        warner.dismiss(1);
+
+        assert!(!warner.check(1, 7, at(97.0), 85));
+        assert!(warner.view(&Meters::default(), &[1], 85, NOW).is_empty());
     }
 
     #[test]
