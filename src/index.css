@@ -595,6 +595,7 @@ button {
 
 .hand-bar button {
   width: auto;
+  color: var(--text);
   height: 26px;
   padding: 0 12px;
   margin-top: 0;
