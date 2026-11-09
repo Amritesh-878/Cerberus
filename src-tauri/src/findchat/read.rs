@@ -278,7 +278,9 @@ pub fn epoch_ms(stamp: &str) -> Option<u64> {
     let num = |from: usize, to: usize| stamp.get(from..to)?.parse::<u64>().ok();
     let (year, month, day) = (num(0, 4)?, num(5, 7)?, num(8, 10)?);
     let (hour, minute, second) = (num(11, 13)?, num(14, 16)?, num(17, 19)?);
-    if !(1..=12).contains(&month)
+    // Before the epoch is not a real chat's time, and year 0 would underflow the calendar below.
+    if year < 1970
+        || !(1..=12).contains(&month)
         || !(1..=31).contains(&day)
         || hour > 23
         || minute > 59
@@ -498,6 +500,8 @@ pub(crate) mod tests {
         );
         assert_eq!(epoch_ms("2026-11-09T12:34:56Z"), Some(1_794_227_696_000));
         assert_eq!(epoch_ms("2026-13-09T12:34:56Z"), None);
+        assert_eq!(epoch_ms("0000-01-01T00:00:00Z"), None);
+        assert_eq!(epoch_ms("0000-02-29T00:00:00.5Z"), None);
         assert_eq!(epoch_ms("yesterday"), None);
     }
 

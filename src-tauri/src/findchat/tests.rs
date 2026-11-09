@@ -261,3 +261,85 @@ fn a_full_read_matches_the_reader_on_a_whole_chat() {
     assert_eq!(chats[0].title, "Fix the login redirect bug");
     assert_eq!(chats[0].account, None);
 }
+
+#[test]
+fn a_lone_early_match_shows_while_the_rest_are_still_read() {
+    let dir = TestDir::new();
+    let home = dir.path().join("acct");
+    let cwd = dir.path().join("w").to_string_lossy().into_owned();
+    // The match is the newest chat, so it is read first; the rest take long past the wait.
+    for i in 0..1500u32 {
+        let id = format!("{i:08x}-0000-4000-8000-000000000000");
+        put(
+            &home,
+            &cwd,
+            &id,
+            &chat("filler", &cwd, "2026-01-01T00:00:00.000Z", "nothing here"),
+        );
+    }
+    put(
+        &home,
+        &cwd,
+        ONE,
+        &chat(
+            "the one",
+            &cwd,
+            "2026-11-01T00:00:00.000Z",
+            "a quokka appears",
+        ),
+    );
+    let newest = std::time::SystemTime::now() + Duration::from_secs(60);
+    let file = home
+        .join("projects")
+        .join(slug(&cwd))
+        .join(format!("{ONE}.jsonl"));
+    fs::File::options()
+        .write(true)
+        .open(&file)
+        .unwrap()
+        .set_modified(newest)
+        .unwrap();
+    let finder = ChatFinder::with_wait(Duration::from_millis(50));
+    let (tx, rx) = mpsc::channel();
+
+    finder.search(
+        vec![Source {
+            account: None,
+            config_dir: home,
+        }],
+        "quokka",
+        HashMap::new(),
+        move |b| {
+            let _ = tx.send(b);
+        },
+    );
+    let first = rx.recv_timeout(Duration::from_secs(10)).unwrap();
+    finder.close();
+
+    assert!(matches!(first, Batch::Found { ref chats, .. } if chats[0].id == ONE));
+    // Sent mid-scan, so the close stopped the search before it could finish.
+    assert!(rx.recv_timeout(Duration::from_millis(500)).is_err());
+}
+
+#[test]
+fn a_stopped_search_adds_nothing_to_the_cache() {
+    let fx = corpus();
+    let finder = ChatFinder::default();
+    let file = fx
+        .work
+        .config_dir
+        .join("projects")
+        .join(slug(&fx.alive))
+        .join(format!("{ONE}.jsonl"));
+    let stamp = Stamp {
+        modified: 1,
+        len: 1,
+    };
+    finder.current.store(5, Ordering::Release);
+
+    let stale = finder.check(4, &file, stamp, &Query::new(""), &|| false);
+    assert!(stale.is_some(), "it still answers its own caller");
+    assert!(finder.cache().is_empty());
+    finder.check(5, &file, stamp, &Query::new(""), &|| false);
+    assert_eq!(finder.cache().len(), 1);
+}

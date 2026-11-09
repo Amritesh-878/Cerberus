@@ -111,7 +111,13 @@ export function FindChat(props: {
       } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
         event.preventDefault();
         move(event.key === "ArrowDown" ? 1 : -1);
-      } else if (event.key === "Enter" && !gone()) {
+      } else if (
+        event.key === "Enter" &&
+        !gone() &&
+        !event.isComposing &&
+        // A focused button, such as Close, does what it says instead.
+        !(event.target instanceof HTMLButtonElement)
+      ) {
         event.preventDefault();
         open(chats()[selected()]);
       } else if (event.key === "Tab" && sheet && keepInside(sheet, event)) {

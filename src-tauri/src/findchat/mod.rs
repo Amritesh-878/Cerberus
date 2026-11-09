@@ -58,13 +58,28 @@ struct Stamp {
 }
 
 /// Lives while the dialog is open; `close` drops everything it learned.
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct ChatFinder {
     current: Arc<AtomicU64>,
     cache: Arc<Mutex<HashMap<PathBuf, (Stamp, Meta)>>>,
+    wait: Duration,
+}
+
+impl Default for ChatFinder {
+    fn default() -> Self {
+        Self::with_wait(BATCH_WAIT)
+    }
 }
 
 impl ChatFinder {
+    fn with_wait(wait: Duration) -> Self {
+        Self {
+            current: Arc::default(),
+            cache: Arc::default(),
+            wait,
+        }
+    }
+
     fn cache(&self) -> MutexGuard<'_, HashMap<PathBuf, (Stamp, Meta)>> {
         self.cache.lock().unwrap_or_else(PoisonError::into_inner)
     }
@@ -121,7 +136,15 @@ impl ChatFinder {
                 return;
             }
             searched += 1;
-            let Some((meta, snippet)) = self.check(&path, stamp, query, &cancelled) else {
+            // Checked on every file, so a lone early match shows while the rest are still read.
+            if !batch.is_empty() && sent.elapsed() >= self.wait {
+                send(Batch::Found {
+                    search,
+                    chats: std::mem::take(&mut batch),
+                });
+                sent = Instant::now();
+            }
+            let Some((meta, snippet)) = self.check(search, &path, stamp, query, &cancelled) else {
                 continue;
             };
             let Some(id) = path.file_stem().and_then(|s| s.to_str()) else {
@@ -142,7 +165,7 @@ impl ChatFinder {
                 snippet,
                 open_in: open.get(id).copied(),
             });
-            if batch.len() >= BATCH || sent.elapsed() >= BATCH_WAIT {
+            if batch.len() >= BATCH || sent.elapsed() >= self.wait {
                 send(Batch::Found {
                     search,
                     chats: std::mem::take(&mut batch),
@@ -165,6 +188,7 @@ impl ChatFinder {
     /// The chat's list fields and snippet when it matches; a file that can't be read is skipped.
     fn check(
         &self,
+        search: u64,
         path: &Path,
         stamp: Stamp,
         query: &Query,
@@ -183,8 +207,11 @@ impl ChatFinder {
         let bytes = fs::read(path).ok()?;
         let listed = known.unwrap_or_else(|| {
             let quick = meta(&bytes);
-            self.cache()
-                .insert(path.to_path_buf(), (stamp, quick.clone()));
+            let mut cache = self.cache();
+            // Under the lock `close` clears with, so a search it stopped can't refill the cache after.
+            if self.current.load(Ordering::Acquire) == search {
+                cache.insert(path.to_path_buf(), (stamp, quick.clone()));
+            }
             quick
         });
         if query.is_empty() {

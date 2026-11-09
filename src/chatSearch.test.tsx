@@ -235,6 +235,58 @@ test("a chat the core won't resume leaves no tab behind and says why", async () 
   );
 });
 
+test("a refused open of a chat from a new folder takes its new project away too", async () => {
+  const find = findCore(() => {
+    throw new Error("that chat is not in this tab's folder on its account");
+  });
+  const root = await renderApp(() => SAVED, find.core);
+  press("F", { ctrlKey: true, shiftKey: true });
+  await settle();
+  answer(find, 0, [
+    {
+      ...ELSEWHERE,
+      folder: String.raw`D:\other
+epo`,
+    },
+  ]);
+  await settle();
+
+  press("Enter");
+  await settle();
+  await settle();
+
+  expect(root.querySelector(".find-chat .error")).not.toBeNull();
+  expect(sidebarTitles(root)).toEqual(["planner"]);
+  expect(JSON.stringify(find.of("tree_save").at(-1))).not.toContain("repo");
+});
+
+test("Enter on a focused button or while composing opens no chat", async () => {
+  const find = findCore();
+  const root = await openDialog(find);
+  const close = root.querySelector<HTMLButtonElement>(
+    '.find-head [aria-label="Close"]',
+  );
+  if (!close) throw new Error("no Close button");
+
+  close.focus();
+  close.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+  );
+  root
+    .querySelector(".find-chat input")
+    ?.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Enter",
+        bubbles: true,
+        isComposing: true,
+      }),
+    );
+  await settle();
+
+  expect(find.of("chat_resume")).toEqual([]);
+  expect(sidebarTitles(root)).toEqual(["planner"]);
+});
+
 test("typing searches again, and an older search's results are dropped", async () => {
   const find = findCore();
   const root = await openDialog(find);

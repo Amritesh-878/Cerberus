@@ -556,6 +556,7 @@ export function App() {
     if (!tab || own === undefined)
       throw new Error("Claude Code is not installed");
     const [withProject, projectId] = projectFor(tree(), folder ?? own);
+    const madeProject = !tree().projects.some((p) => p.id === projectId);
     const [added, id] = addTab(withProject, { projectId, parentId: null }, tab);
     setRun(id, 0);
     // The default name, since a tab's name is saved to disk and the chat's title is transcript text.
@@ -569,7 +570,9 @@ export function App() {
         setTree(setFolders(tree(), id, folder, []));
       }
     } catch (error) {
-      setTree(closeTab(tree(), id));
+      // A project made for this chat goes with it, rather than staying behind empty.
+      const left = closeTab(tree(), id);
+      setTree(madeProject ? removeProject(left, projectId) : left);
       throw error;
     }
     setRun(id, 1);
