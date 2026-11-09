@@ -220,12 +220,15 @@ mod tests {
     fn a_timeout_ends_what_a_wrapper_started() {
         let dir = crate::accounts::testdir::TestDir::new();
         let pid_file = dir.path().join("pid.txt");
+        let exe = std::env::current_exe().unwrap();
         let mut command = Command::new("cmd");
         // This test binary as the wrapped program, since PowerShell can take longer to start than any timeout here.
         command
             .arg("/c")
-            .arg(std::env::current_exe().unwrap())
+            // From its own folder, since cmd drops the quotes around a path like `Program Files (x86)`; `.\` works even where cmd skips the current folder.
+            .arg(std::path::Path::new(".").join(exe.file_name().unwrap()))
             .args(["--exact", "run::tests::wrapper_test_child", "--nocapture"])
+            .current_dir(exe.parent().unwrap())
             .env(PID_FILE, &pid_file);
 
         let result = run(command, Duration::from_secs(10));
