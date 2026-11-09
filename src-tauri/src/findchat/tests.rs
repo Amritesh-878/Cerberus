@@ -319,15 +319,19 @@ fn a_lone_early_match_shows_while_the_rest_are_still_read() {
     let dir = TestDir::new();
     let home = dir.path().join("acct");
     let cwd = dir.path().join("w").to_string_lossy().into_owned();
-    // The match is the newest chat, so it is read first; the rest take long past the wait.
+    // The match is the newest chat, so it is read first, and the rest outlast the wait by far.
+    let filler = format!(
+        "{}
+{}",
+        chat("filler", &cwd, "2026-01-01T00:00:00.000Z", "nothing here"),
+        format_args!(
+            r#"{{"type":"user","message":{{"content":[{{"type":"tool_result","content":"{}"}}]}}}}"#,
+            "quokka ".repeat(2000)
+        )
+    );
     for i in 0..1500u32 {
         let id = format!("{i:08x}-0000-4000-8000-000000000000");
-        put(
-            &home,
-            &cwd,
-            &id,
-            &chat("filler", &cwd, "2026-01-01T00:00:00.000Z", "nothing here"),
-        );
+        put(&home, &cwd, &id, &filler);
     }
     put(
         &home,
@@ -351,7 +355,8 @@ fn a_lone_early_match_shows_while_the_rest_are_still_read() {
         .unwrap()
         .set_modified(newest)
         .unwrap();
-    let finder = ChatFinder::with_wait(Duration::from_millis(50));
+    // A tool result's word gets past the raw check, so every filler is parsed in full.
+    let finder = ChatFinder::with_wait(Duration::from_millis(20));
     let (tx, rx) = mpsc::channel();
 
     finder.search(
