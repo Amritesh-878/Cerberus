@@ -60,9 +60,9 @@ SHA-256 so you can check a download.
   sidebar: restarted when they stop, started with Cerberus if you like, with their address one
   click away.
 - **Live cards.** The shown chat's context use with a **Compact** button that types `/compact` for
-  you, the files it wrote (a click opens one), its background shells and subagents, each account's
-  5-hour and 7-day use, and a warning near the limit that offers to continue the chat on another
-  account, once you confirm.
+  you, the files it wrote (a click shows one beside the chat, with a diff against git), its
+  background shells and subagents, each account's 5-hour and 7-day use, and a warning near the
+  limit that offers to continue the chat on another account, once you confirm.
 - **Find a chat** on any of your accounts, by title, folder or what was said, and open it in its own
   folder on its own account.
 - **`cerberus open`** jumps to a tab from any terminal (below).
