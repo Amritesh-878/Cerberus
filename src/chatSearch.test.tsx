@@ -44,6 +44,8 @@ const OPEN: FoundChat = {
   folder: ALPHA,
   folderExists: true,
   last: Date.parse("2026-11-08T10:00:00Z"),
+  hits: 0,
+  exact: 0,
   snippet: null,
   openIn: 3,
 };
@@ -55,6 +57,8 @@ const ELSEWHERE: FoundChat = {
   folder: String.raw`C:\code\alpha\api`,
   folderExists: true,
   last: Date.parse("2026-11-09T10:00:00Z"),
+  hits: 0,
+  exact: 0,
   snippet: "…the api tests now pass…",
   openIn: null,
 };
@@ -310,6 +314,17 @@ test("the helpers: merging, the holding project and the day", () => {
     ELSEWHERE.id,
     OPEN.id,
   ]);
+  const typed = (chat: FoundChat, hits: number, exact: number) => ({
+    ...chat,
+    hits,
+    exact,
+  });
+  expect(
+    merged(
+      [typed(ELSEWHERE, 1, 1), typed(GONE, 2, 1)],
+      [typed(OPEN, 2, 2), typed(GONE, 2, 1)],
+    ).map((c) => c.id),
+  ).toEqual([OPEN.id, GONE.id, ELSEWHERE.id]);
   const tree = {
     ...emptyTree(),
     projects: [

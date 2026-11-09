@@ -1,5 +1,8 @@
 //! One transcript read for Find a chat: its title, folder and last time, and whether a query matches.
 
+use std::cmp::Reverse;
+
+use memchr::memmem;
 use serde::Deserialize;
 
 /// A line longer than this is a paste or an image, not a message worth searching; it is skipped.
@@ -8,7 +11,10 @@ const MOST_TITLE: usize = 100;
 /// Characters of text kept on each side of a match.
 const SNIPPET_SIDE: usize = 40;
 
-/// The words of a search, lower case; every one must match somewhere in the chat.
+/// A typed word this long, of ASCII letters and digits, also matches a word one edit away.
+pub const TYPO_FROM: usize = 5;
+
+/// The words of a search, lower case; a chat ranks by how many of them it matches.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Query {
     words: Vec<String>,
@@ -24,14 +30,32 @@ impl Query {
     pub fn is_empty(&self) -> bool {
         self.words.is_empty()
     }
+}
 
-    /// Each word's runs of ASCII letters and digits, which JSON never escapes, for the raw file check.
-    pub fn plain_words(&self) -> impl Iterator<Item = &str> {
-        self.words.iter().flat_map(|w| {
-            w.split(|c: char| !c.is_ascii_alphanumeric())
-                .filter(|piece| piece.len() >= 2)
-        })
-    }
+/// A word's runs of ASCII letters and digits, which JSON never escapes, for the raw file check.
+fn plain_pieces(word: &str) -> impl Iterator<Item = &str> {
+    word.split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|piece| piece.len() >= 2)
+}
+
+// Words with other characters (paths, accents) stay exact, which keeps the raw file check sound.
+fn forgives(word: &str) -> bool {
+    word.len() >= TYPO_FROM && word.bytes().all(|b| b.is_ascii_alphanumeric())
+}
+
+/// How well a chat matched: how many words it has at all, then how many of those exactly.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Rank {
+    pub words: u32,
+    pub exact: u32,
+}
+
+// Ordered so the better of two hits is the larger.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Hit {
+    Missing,
+    Typo,
+    Exact,
 }
 
 /// What the list shows for a chat before anything is typed.
@@ -46,8 +70,10 @@ pub struct Meta {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Read {
     pub meta: Meta,
+    /// An empty query matches every chat, any other one needs a word.
     pub matched: bool,
-    /// One line of message text around the first word's match.
+    pub rank: Rank,
+    /// One line of message text around the best match: exact over typo, then the earlier word.
     pub snippet: Option<String>,
 }
 
@@ -128,15 +154,81 @@ pub fn meta(bytes: &[u8]) -> Meta {
     meta
 }
 
-/// Whether every plain word is somewhere in the raw file, any case; a file without one can't match.
-pub fn holds_all(bytes: &[u8], query: &Query) -> bool {
-    let words: Vec<&str> = query.plain_words().collect();
-    if words.is_empty() {
+/// Whether any word could match the raw file, exactly or by one edit; a file where none can is skipped.
+pub fn holds_any(bytes: &[u8], query: &Query) -> bool {
+    if query.is_empty() {
         return true;
     }
     let lower = bytes.to_ascii_lowercase();
-    // A file that isn't UTF-8 is left to the full read, which skips its broken lines.
-    std::str::from_utf8(&lower).map_or(true, |text| words.iter().all(|w| text.contains(w)))
+    query.words.iter().any(|word| {
+        // A word without a plain piece can't be checked here, so it lets the file through.
+        plain_pieces(word).all(|piece| memmem::find(&lower, piece.as_bytes()).is_some())
+            || (forgives(word) && near(&lower, word.as_bytes()))
+    })
+}
+
+/// Whether `lower` holds a run within one edit of `word`; each edit leaves one of its halves whole.
+fn near(lower: &[u8], word: &[u8]) -> bool {
+    let half = word.len() / 2;
+    let (left, right) = (&word[..half], &word[half + 1..]);
+    let sizes = word.len() - 1..=word.len() + 1;
+    memmem::find_iter(lower, left).any(|start| {
+        sizes.clone().any(|size| {
+            lower
+                .get(start..start + size)
+                .is_some_and(|run| one_edit(word, run))
+        })
+    }) || memmem::find_iter(lower, right).any(|at| {
+        let end = at + right.len();
+        sizes.clone().any(|size| {
+            end.checked_sub(size)
+                .is_some_and(|start| one_edit(word, &lower[start..end]))
+        })
+    })
+}
+
+/// Equal, or one insert, delete, substitution or swap of two neighbours apart.
+fn one_edit(a: &[u8], b: &[u8]) -> bool {
+    let (short, long) = if a.len() <= b.len() { (a, b) } else { (b, a) };
+    if long.len() - short.len() > 1 {
+        return false;
+    }
+    let same = short.iter().zip(long).take_while(|(x, y)| x == y).count();
+    if same == short.len() {
+        return true;
+    }
+    if short.len() < long.len() {
+        return short[same..] == long[same + 1..];
+    }
+    let swapped = same + 1 < short.len()
+        && short[same] == long[same + 1]
+        && short[same + 1] == long[same]
+        && short[same + 2..] == long[same + 2..];
+    swapped || short[same + 1..] == long[same + 1..]
+}
+
+/// Where in `text` a word of its own (a run of ASCII letters and digits) is one edit from `word`.
+fn typo_at(text: &str, word: &str) -> Option<usize> {
+    let bytes = text.as_bytes();
+    let mut at = 0;
+    while at < bytes.len() {
+        if !bytes[at].is_ascii_alphanumeric() {
+            at += 1;
+            continue;
+        }
+        let end = bytes[at..]
+            .iter()
+            .position(|b| !b.is_ascii_alphanumeric())
+            .map_or(bytes.len(), |len| at + len);
+        let run = &bytes[at..end];
+        if run.len().abs_diff(word.len()) <= 1
+            && one_edit(word.as_bytes(), &run.to_ascii_lowercase())
+        {
+            return Some(at);
+        }
+        at = end;
+    }
+    None
 }
 
 fn record(line: &[u8]) -> Option<RecordIn> {
@@ -150,7 +242,7 @@ fn record(line: &[u8]) -> Option<RecordIn> {
 pub fn read(bytes: &[u8], query: &Query, cancelled: &dyn Fn() -> bool) -> Option<Read> {
     let mut meta = Meta::default();
     let mut first_user: Option<String> = None;
-    let mut found = vec![false; query.words.len()];
+    let mut found = vec![Hit::Missing; query.words.len()];
     let mut snippet = None;
     for line in bytes.split(|&b| b == b'\n') {
         if cancelled() {
@@ -183,7 +275,7 @@ pub fn read(bytes: &[u8], query: &Query, cancelled: &dyn Fn() -> bool) -> Option
                     if kind == "user" && first_user.is_none() && !is_command(&text) {
                         first_user = one_line(&text);
                     }
-                    see(&text, &query.words, &mut found, &mut snippet);
+                    see(&text, &query.words, &mut found, Some(&mut snippet));
                 }
             }
             _ => {}
@@ -196,11 +288,20 @@ pub fn read(bytes: &[u8], query: &Query, cancelled: &dyn Fn() -> bool) -> Option
         .into_iter()
         .flatten()
     {
-        mark(&field.to_lowercase(), &query.words, &mut found);
+        see(&field, &query.words, &mut found, None);
     }
+    let count = |least: Hit| {
+        let n = found.iter().filter(|&&hit| hit >= least).count();
+        u32::try_from(n).unwrap_or(u32::MAX)
+    };
+    let rank = Rank {
+        words: count(Hit::Typo),
+        exact: count(Hit::Exact),
+    };
     Some(Read {
-        matched: found.iter().all(|&f| f),
-        snippet: if query.is_empty() { None } else { snippet },
+        matched: query.is_empty() || rank.words > 0,
+        rank,
+        snippet: snippet.map(|(_, line)| line),
         meta,
     })
 }
@@ -223,31 +324,43 @@ fn is_command(text: &str) -> bool {
     start.starts_with("<command-") || start.starts_with("<local-command")
 }
 
-fn see(text: &str, words: &[String], found: &mut [bool], snippet: &mut Option<String>) {
+/// The best snippet so far and the hit that made it: exact over typo, then the earlier word.
+type Snip = Option<((Hit, Reverse<usize>), String)>;
+
+/// Marks each word `text` holds, and gives the snippet to a better hit than it has when one is asked.
+fn see(text: &str, words: &[String], found: &mut [Hit], mut snippet: Option<&mut Snip>) {
     if words.is_empty() {
         return;
     }
     let lower = text.to_lowercase();
-    mark(&lower, words, found);
-    if snippet.is_none()
-        && let Some(at) = words.first().and_then(|w| lower.find(w.as_str()))
-    {
-        *snippet = Some(around(text, &lower, at));
-    }
-}
-
-fn mark(lower: &str, words: &[String], found: &mut [bool]) {
-    for (word, seen) in words.iter().zip(found.iter_mut()) {
-        if !*seen && lower.contains(word.as_str()) {
-            *seen = true;
+    for (index, (word, hit)) in words.iter().zip(found.iter_mut()).enumerate() {
+        if *hit == Hit::Exact {
+            continue;
+        }
+        // Lower-casing can change byte lengths, so a match is placed by characters before it.
+        let (now, before) = if let Some(at) = lower.find(word.as_str()) {
+            (Hit::Exact, lower.get(..at))
+        } else if *hit == Hit::Missing
+            && forgives(word)
+            && let Some(at) = typo_at(text, word)
+        {
+            (Hit::Typo, text.get(..at))
+        } else {
+            continue;
+        };
+        *hit = now;
+        if let Some(best) = snippet.as_deref_mut() {
+            let key = (now, Reverse(index));
+            if best.as_ref().is_none_or(|(was, _)| key > *was) {
+                let chars = before.map_or(0, |b| b.chars().count());
+                *best = Some((key, around(text, chars)));
+            }
         }
     }
 }
 
-/// About `SNIPPET_SIDE` characters each side of `at` in `lower`, cut from the original text on one line.
-fn around(text: &str, lower: &str, at: usize) -> String {
-    // Lower-casing can change byte lengths, so the cut is made by characters in the lower-cased copy.
-    let before = lower[..at].chars().count();
+/// About `SNIPPET_SIDE` characters each side of the one `before` characters in, on one line.
+fn around(text: &str, before: usize) -> String {
     let chars: Vec<char> = text.chars().collect();
     let start = before.saturating_sub(SNIPPET_SIDE).min(chars.len());
     let end = (before + SNIPPET_SIDE * 2).min(chars.len());
@@ -366,16 +479,89 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn every_word_must_match_in_any_message_title_or_folder_case_blind() {
-        assert!(
-            read_fake("LOGIN dashboard").matched,
+    fn words_count_in_any_message_title_or_folder_case_blind() {
+        let rank = |query: &str| read_fake(query).rank;
+
+        assert_eq!(
+            rank("LOGIN dashboard"),
+            Rank { words: 2, exact: 2 },
             "words from two messages"
         );
-        assert!(
-            read_fake("alpha callback").matched,
+        assert_eq!(
+            rank("alpha callback"),
+            Rank { words: 2, exact: 2 },
             "a folder word and a message word"
         );
-        assert!(!read_fake("login giraffe").matched);
+        assert!(!read_fake("giraffe").matched);
+        assert_eq!(rank("giraffe"), Rank::default());
+    }
+
+    #[test]
+    fn one_wrong_word_keeps_the_chat_with_fewer_words() {
+        let found = read_fake("login giraffe dashboard");
+
+        assert!(found.matched);
+        assert_eq!(found.rank, Rank { words: 2, exact: 2 });
+    }
+
+    #[test]
+    fn one_edit_is_an_insert_a_delete_a_substitution_or_a_swap() {
+        let near = |a: &str, b: &str| one_edit(a.as_bytes(), b.as_bytes());
+
+        assert!(near("ledger", "ledger"));
+        assert!(
+            near("ledger", "ledgers") && near("ledger", "xledger") && near("ledger", "ledgxer")
+        );
+        assert!(near("ledger", "ledge") && near("ledger", "edger") && near("ledger", "leger"));
+        assert!(near("ledger", "ledgar") && near("ledger", "xedger") && near("ledger", "ledgex"));
+        assert!(near("ledger", "eldger") && near("ledger", "ledgre") && near("ledger", "lexger"));
+        assert!(!near("ledger", "ledgerss"), "two inserts");
+        assert!(!near("ledger", "lxdgxr"), "two substitutions");
+        assert!(!near("ledger", "edlgre"), "two swaps");
+        assert!(
+            !near("ledger", "lgdeer"),
+            "a swap of letters that aren't neighbours"
+        );
+    }
+
+    #[test]
+    fn a_word_of_five_or_more_letters_also_finds_a_word_one_edit_away() {
+        assert_eq!(
+            read_fake("redirct").rank,
+            Rank { words: 1, exact: 0 },
+            "a delete"
+        );
+        assert!(read_fake("dashbaord").matched, "a swap");
+        assert!(read_fake("callbacks").matched, "an insert");
+        assert!(read_fake("lagin").matched, "a substitution at five letters");
+        assert!(!read_fake("logn").matched, "four letters stay exact");
+        assert!(!read_fake("atuh").matched, "four letters stay exact");
+        assert!(
+            !read_fake("auth.tz").matched,
+            "a word with punctuation stays exact"
+        );
+        assert!(!read_fake("rdirct").matched, "two edits");
+    }
+
+    #[test]
+    fn an_exact_match_ranks_and_shows_above_a_typo() {
+        let typo = read_fake("dashbord callback");
+
+        assert_eq!(typo.rank, Rank { words: 2, exact: 1 });
+        assert!(typo.rank < read_fake("dashboard callback").rank);
+        assert_eq!(
+            typo.snippet.as_deref(),
+            Some("…the redirect in auth.ts and changed the callback url."),
+            "the exact word's line, though the typo is the first word"
+        );
+        assert_eq!(
+            read_fake("dashbord").snippet.as_deref(),
+            Some("Done. The login page now returns to the dashboard.")
+        );
+        assert_eq!(
+            read_fake("loginn redirect").snippet.as_deref(),
+            Some("Fix the login redirect bug more detail here")
+        );
     }
 
     #[test]
@@ -464,23 +650,53 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn the_raw_check_needs_every_plain_word_in_any_case() {
-        assert!(holds_all(
-            FAKE_CHAT.as_bytes(),
-            &Query::new("LOGIN Dashboard")
-        ));
-        assert!(!holds_all(
-            FAKE_CHAT.as_bytes(),
-            &Query::new("login giraffe")
-        ));
-        assert!(!holds_all(
-            FAKE_CHAT.as_bytes(),
-            &Query::new("zzzz-nothing")
-        ));
+    fn the_raw_check_lets_through_a_file_that_could_hold_any_word() {
+        let holds = |query: &str| holds_any(FAKE_CHAT.as_bytes(), &Query::new(query));
+
+        assert!(holds("LOGIN Dashboard"));
+        assert!(holds("giraffe login"), "one word is enough");
+        assert!(holds("dashbaord"), "a word one edit away");
+        assert!(!holds("giraffe"));
         assert!(
-            holds_all(FAKE_CHAT.as_bytes(), &Query::new(r"c:\code\alpha")),
-            "a folder with backslashes"
+            !holds("zzzz-nothing"),
+            "every plain piece of a word is needed"
         );
+        assert!(!holds("dshbaord"), "two edits away");
+        assert!(holds(r"c:\code\alpha"), "a folder with backslashes");
+    }
+
+    #[test]
+    fn the_raw_check_never_skips_a_file_one_edit_matches() {
+        let word = "authentication";
+        let mut typos = Vec::new();
+        for at in 0..=word.len() {
+            let (head, tail) = word.split_at(at);
+            typos.push(format!("{head}x{tail}"));
+            if !tail.is_empty() {
+                typos.push(format!("{head}{}", &tail[1..]));
+                typos.push(format!("{head}z{}", &tail[1..]));
+            }
+            if tail.len() >= 2 {
+                let mut swapped: Vec<u8> = word.bytes().collect();
+                swapped.swap(at, at + 1);
+                typos.push(String::from_utf8(swapped).unwrap());
+            }
+        }
+        // JSON puts escapes and quotes right against a word in the raw file.
+        for text in [
+            "Fixed the Authentication flow",
+            "line one\\nauthentication",
+            "say \\\"authentication\\\" twice",
+            "\\u00e9authentication\\t",
+        ] {
+            let chat = format!(r#"{{"type":"user","message":{{"content":"{text}"}}}}"#);
+            for typo in &typos {
+                let query = Query::new(typo);
+                let found = read(chat.as_bytes(), &query, &never).unwrap();
+                assert!(found.matched, "{typo} in {text}");
+                assert!(holds_any(chat.as_bytes(), &query), "{typo} in {text}");
+            }
+        }
     }
 
     #[test]
@@ -506,12 +722,13 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn plain_words_are_the_ones_a_raw_file_check_can_use() {
-        let query = Query::new("Login c:\\code naïve 42 zzzz-nothing");
+    fn plain_pieces_are_the_ones_a_raw_file_check_can_use() {
+        let pieces = |word| plain_pieces(word).collect::<Vec<_>>();
 
-        assert_eq!(
-            query.plain_words().collect::<Vec<_>>(),
-            ["login", "code", "na", "ve", "42", "zzzz", "nothing"]
-        );
+        assert_eq!(pieces("login"), ["login"]);
+        assert_eq!(pieces(r"c:\code"), ["code"]);
+        assert_eq!(pieces("naïve"), ["na", "ve"]);
+        assert_eq!(pieces("zzzz-nothing"), ["zzzz", "nothing"]);
+        assert!(pieces("a").is_empty());
     }
 }

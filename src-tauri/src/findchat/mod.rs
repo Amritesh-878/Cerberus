@@ -3,6 +3,7 @@
 pub mod app;
 pub mod read;
 
+use std::cmp::Ordering as Order;
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -14,7 +15,7 @@ use std::time::{Duration, Instant, UNIX_EPOCH};
 use serde::Serialize;
 
 use crate::accounts::AccountId;
-use crate::findchat::read::{Meta, Query, holds_all, meta, read};
+use crate::findchat::read::{Meta, Query, Rank, holds_any, meta, read};
 use crate::saved::TabId;
 
 /// Results go out in batches this big, or sooner when this long has passed.
@@ -39,9 +40,20 @@ pub struct Found {
     /// The recorded folder is still there, so the chat can resume in it.
     pub folder_exists: bool,
     pub last: u64,
+    /// How many typed words the chat matched, exactly or by one edit.
+    pub hits: u32,
+    /// How many of those matched exactly.
+    pub exact: u32,
     pub snippet: Option<String>,
     /// A tab that already has this chat.
     pub open_in: Option<TabId>,
+}
+
+impl Found {
+    /// The list's order, which the dialog keeps as batches merge: more words, more exact, then newest.
+    pub fn order(&self, other: &Self) -> Order {
+        (other.hits, other.exact, other.last).cmp(&(self.hits, self.exact, self.last))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -49,6 +61,14 @@ pub struct Found {
 pub enum Batch {
     Found { search: u64, chats: Vec<Found> },
     Done { search: u64, searched: usize },
+}
+
+impl Batch {
+    /// A batch already in the list's order, so the dialog's merge only interleaves it.
+    fn found(search: u64, mut chats: Vec<Found>) -> Self {
+        chats.sort_by(Found::order);
+        Self::Found { search, chats }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -138,13 +158,11 @@ impl ChatFinder {
             searched += 1;
             // Checked on every file, so a lone early match shows while the rest are still read.
             if !batch.is_empty() && sent.elapsed() >= self.wait {
-                send(Batch::Found {
-                    search,
-                    chats: std::mem::take(&mut batch),
-                });
+                send(Batch::found(search, std::mem::take(&mut batch)));
                 sent = Instant::now();
             }
-            let Some((meta, snippet)) = self.check(search, &path, stamp, query, &cancelled) else {
+            let Some((meta, rank, snippet)) = self.check(search, &path, stamp, query, &cancelled)
+            else {
                 continue;
             };
             let Some(id) = path.file_stem().and_then(|s| s.to_str()) else {
@@ -162,14 +180,13 @@ impl ChatFinder {
                 folder: meta.folder,
                 folder_exists,
                 last: meta.last.unwrap_or(stamp.modified),
+                hits: rank.words,
+                exact: rank.exact,
                 snippet,
                 open_in: open.get(id).copied(),
             });
             if batch.len() >= BATCH || sent.elapsed() >= self.wait {
-                send(Batch::Found {
-                    search,
-                    chats: std::mem::take(&mut batch),
-                });
+                send(Batch::found(search, std::mem::take(&mut batch)));
                 sent = Instant::now();
             }
         }
@@ -177,15 +194,12 @@ impl ChatFinder {
             return;
         }
         if !batch.is_empty() {
-            send(Batch::Found {
-                search,
-                chats: batch,
-            });
+            send(Batch::found(search, batch));
         }
         send(Batch::Done { search, searched });
     }
 
-    /// The chat's list fields and snippet when it matches; a file that can't be read is skipped.
+    /// The chat's list fields, rank and snippet when it matches; a file that can't be read is skipped.
     fn check(
         &self,
         search: u64,
@@ -193,7 +207,7 @@ impl ChatFinder {
         stamp: Stamp,
         query: &Query,
         cancelled: &dyn Fn() -> bool,
-    ) -> Option<(Meta, Option<String>)> {
+    ) -> Option<(Meta, Rank, Option<String>)> {
         let known = self
             .cache()
             .get(path)
@@ -202,7 +216,7 @@ impl ChatFinder {
         if query.is_empty()
             && let Some(meta) = known
         {
-            return Some((meta, None));
+            return Some((meta, Rank::default(), None));
         }
         let bytes = fs::read(path).ok()?;
         let listed = known.unwrap_or_else(|| {
@@ -215,14 +229,14 @@ impl ChatFinder {
             quick
         });
         if query.is_empty() {
-            return Some((listed, None));
+            return Some((listed, Rank::default(), None));
         }
-        // Most files lack a word, and this check is far cheaper than parsing their records.
-        if !holds_all(&bytes, query) {
+        // Most files hold no word, and this check is far cheaper than parsing their records.
+        if !holds_any(&bytes, query) {
             return None;
         }
         let found = read(&bytes, query, cancelled)?;
-        found.matched.then_some((listed, found.snippet))
+        found.matched.then_some((listed, found.rank, found.snippet))
     }
 }
 

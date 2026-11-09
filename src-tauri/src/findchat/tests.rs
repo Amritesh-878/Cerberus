@@ -180,13 +180,58 @@ fn words_find_a_chat_on_any_account_with_a_line_around_the_match() {
 
     let train = search(&finder, sources.clone(), "TRAIN booked", HashMap::new());
     let both = search(&finder, sources.clone(), "alpha", HashMap::new());
-    let none = search(&finder, sources, "booked login", HashMap::new());
+    let none = search(&finder, sources, "giraffe zebu", HashMap::new());
 
     assert_eq!(train.len(), 1);
     assert_eq!(train[0].id, THREE);
     assert_eq!(train[0].snippet.as_deref(), Some("Booked the train."));
     assert_eq!(both.len(), 2, "the folder name matches both chats in it");
     assert!(none.is_empty());
+}
+
+/// Runs one search and returns its chats in the list's order, as the dialog shows them.
+fn ranked(finder: &ChatFinder, sources: Vec<Source>, query: &str) -> Vec<(String, u32, u32)> {
+    let mut chats = search(finder, sources, query, HashMap::new());
+    chats.sort_by(Found::order);
+    chats.into_iter().map(|c| (c.id, c.hits, c.exact)).collect()
+}
+
+#[test]
+fn a_chat_matching_more_words_comes_first_and_ties_go_newest_first() {
+    let fx = corpus();
+    let finder = ChatFinder::default();
+    let sources = vec![fx.work.clone(), fx.home.clone()];
+
+    let more = ranked(&finder, sources.clone(), "notes login redirect");
+    let tie = ranked(&finder, sources, "train login");
+
+    assert_eq!(
+        more,
+        [(ONE.to_owned(), 2, 2), (TWO.to_owned(), 1, 1)],
+        "the older chat with two words before the newer one with one"
+    );
+    assert_eq!(
+        tie,
+        [(ONE.to_owned(), 1, 1), (THREE.to_owned(), 1, 1)],
+        "one word each, so the newest first"
+    );
+}
+
+#[test]
+fn a_misremembered_word_keeps_the_chat_below_an_exact_one() {
+    let fx = corpus();
+    let finder = ChatFinder::default();
+    let sources = vec![fx.work.clone(), fx.home.clone()];
+
+    let wrong = ranked(&finder, sources.clone(), "fix login giraffe");
+    let typo = ranked(&finder, sources, "relaese booked");
+
+    assert_eq!(wrong, [(ONE.to_owned(), 2, 2)]);
+    assert_eq!(
+        typo,
+        [(THREE.to_owned(), 1, 1), (TWO.to_owned(), 1, 0)],
+        "the older exact match before the newer typo"
+    );
 }
 
 #[test]
@@ -196,9 +241,16 @@ fn a_tool_result_secret_never_matches_or_reaches_a_result() {
     let sources = vec![fx.work.clone(), fx.home.clone()];
 
     let listed = search(&finder, sources.clone(), "", HashMap::new());
-    let secret = search(&finder, sources, "fake-secret-result", HashMap::new());
+    let secret = search(
+        &finder,
+        sources.clone(),
+        "fake-secret-result",
+        HashMap::new(),
+    );
+    let typo = search(&finder, sources, "secrett resullt", HashMap::new());
 
     assert!(secret.is_empty());
+    assert!(typo.is_empty(), "a word one edit from the secret");
     assert!(
         !serde_json::to_string(&listed)
             .unwrap()

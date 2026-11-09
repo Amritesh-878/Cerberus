@@ -12,6 +12,10 @@ export interface FoundChat {
   folderExists: boolean;
   /** Milliseconds since the epoch of its last message. */
   last: number;
+  /** How many typed words it matched, exactly or by one edit. */
+  hits: number;
+  /** How many of those matched exactly. */
+  exact: number;
   snippet: string | null;
   /** A tab that already has this chat. */
   openIn: TabId | null;
@@ -41,7 +45,7 @@ export function resumeFound(tab: TabId, session: string): Promise<void> {
   return invoke("chat_resume", { tab, session });
 }
 
-/** Adds a batch to the list, newest first, one row per chat and account. */
+/** Adds a batch to the list, one row per chat and account: more words, more exact, then newest. */
 export function merged(
   list: readonly FoundChat[],
   more: readonly FoundChat[],
@@ -49,7 +53,7 @@ export function merged(
   const key = (c: FoundChat) => `${String(c.account)}/${c.id}`;
   const seen = new Set(more.map(key));
   return [...list.filter((c) => !seen.has(key(c))), ...more].sort(
-    (a, b) => b.last - a.last,
+    (a, b) => b.hits - a.hits || b.exact - a.exact || b.last - a.last,
   );
 }
 
