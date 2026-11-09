@@ -201,7 +201,11 @@ export function TerminalView(props: {
             props.onState(state);
           },
           chat: (chat) => {
-            if (!disposed) props.onChat?.(chat);
+            if (disposed) return;
+            // A new chat in the shell makes the old one's notice stale.
+            if (chat.chat === "started" && notice() === ENDED)
+              setNotice(undefined);
+            props.onChat?.(chat);
           },
         },
         tab,

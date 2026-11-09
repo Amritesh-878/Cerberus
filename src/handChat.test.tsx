@@ -210,6 +210,26 @@ test("an ended tab running a new claude by hand goes back to its ended chat if t
   expect(menuItems(root)[0]).toBe("Resume chat");
 });
 
+test("a claude started in an ended tab's shell clears the ended notice", async () => {
+  const app = core([3]);
+  const root = await renderApp(() => SAVED, {
+    ...app.core,
+    pty_spawn: (args: unknown) => {
+      app.pty.spawned.push(args);
+      return { id: app.pty.spawned.length, resume: "ended" };
+    },
+  });
+  await open(root, "planner");
+  expect(root.querySelector(".terminal-notice")?.textContent).toBe(
+    "The chat ended. Resume chat is in the tab's menu.",
+  );
+
+  emit(app.pty.spawned, 0, { chat: "started", cwd: null });
+  await settle();
+
+  expect(root.querySelector(".terminal-notice")).toBeNull();
+});
+
 test("Reopen as Claude tab stops the shell, waits for the core, then starts the chat as a Claude tab", async () => {
   const app = core();
   const root = await renderApp(() => SAVED, app.core);
