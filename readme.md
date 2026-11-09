@@ -57,8 +57,9 @@ SHA-256 so you can check a download.
 - **Messages between accounts.** A chat can message a chat on another of your accounts. Each
   message waits in a popup for you to approve, edit or reject, and both chats then show side by side.
 - **Live cards.** The shown chat's context use with a **Compact** button that types `/compact` for
-  you, each account's 5-hour and 7-day use, and a warning near the limit that offers to continue the
-  chat on another account, once you confirm.
+  you, the files it wrote (a click opens one), its background shells and subagents, each account's
+  5-hour and 7-day use, and a warning near the limit that offers to continue the chat on another
+  account, once you confirm.
 - **`cerberus open`** jumps to a tab from any terminal (below).
 
 More detail on each, and how it works: [`docs/guide.md`](docs/guide.md).

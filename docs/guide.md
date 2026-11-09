@@ -131,6 +131,13 @@ folded cards, starred skills and dismissed PRs are kept in `profiles.json`.
   opens **Edit environment** (below).
 - **Context:** how full the shown chat's context window is, and its model. **Compact** types
   `/compact` into the chat's input; nothing is sent until you press Enter. See Live cards below.
+- **Outputs:** the files the shown chat wrote or edited, newest first, each once, with its folder
+  relative to the tab's. A click opens the file in VS Code (or the app Windows or macOS opens it
+  with when VS Code isn't installed).
+- **Background tasks:** the chat's background shells and subagents still running, with how long each
+  has run (counted from when Cerberus first saw it, since Claude Code gives no start time), and how
+  many have finished. Claude Code offers no way to stop one from outside the chat, so there is no stop
+  button; ask the chat, or use its own `/tasks`.
 - **Usage:** one row per account with its 5-hour and 7-day plan use and when each resets, from the
   newest reply of any tab on that account. "Unknown" until a tab on the account gets a reply; an
   account signed in with an API key never reports one.
@@ -197,12 +204,18 @@ The gear on the Environment card edits the tab on screen. Nothing changes until 
 ### Live cards
 
 Each Claude tab is started with `--settings` pointing at a small file of Cerberus's own (in the app
-data folder, `live/tab-<id>.json`) that sets one key, `statusLine`. Claude Code runs that status
+data folder, `live/tab-<id>.json`) that sets `statusLine` and `hooks`. Claude Code runs the status
 line command, the `cerberus-live` helper shipped beside the app, after each reply, and hands it the
 status line's JSON. The helper sends the app only the session id, model name, context percentage,
 and the 5-hour and 7-day used percentages and reset times. Prompts, file paths, costs and the
 transcript path in that JSON are skipped, never kept or logged. Your settings files are never
 written.
+
+The same helper runs as a hook, in the background so the chat never waits on it, after each Write,
+Edit, MultiEdit or NotebookEdit, when a turn ends, and when a subagent starts or stops. From those it
+keeps only the written file's path, and each background task's id, kind (shell or subagent), state and
+subagent type. Commands, file contents, task descriptions, prompts and replies are skipped. Hooks
+add to any you have; they never replace yours.
 
 If you have a status line of your own, it still runs and shows: Cerberus's command passes the same
 JSON on to it unchanged, and keeps its `padding` and `refreshInterval`. On Windows without Git Bash,
