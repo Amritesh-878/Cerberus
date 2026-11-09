@@ -1,6 +1,7 @@
 //! Live cards: each Claude tab's status line reports context and limits to the app over a pipe.
 
 pub mod event;
+pub mod files;
 pub mod helper;
 mod hooks;
 mod meters;

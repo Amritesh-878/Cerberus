@@ -60,6 +60,21 @@ impl Git {
         })
     }
 
+    /// The file's committed version, raw; `None` outside a repo, for an untracked file, or on any failure.
+    pub fn show_head(&self, file: &Path) -> Option<Vec<u8>> {
+        let folder = file.parent()?;
+        let name = file.file_name()?.to_str()?;
+        let mut command = Command::new(&self.program);
+        // `./` makes the path relative to the file's own folder, so no repo root has to be worked out.
+        command
+            .args(["show", &format!("HEAD:./{name}")])
+            .current_dir(folder)
+            .env("GIT_OPTIONAL_LOCKS", "0")
+            .env("GIT_TERMINAL_PROMPT", "0");
+        let ran = run(command, TIMEOUT).ok()?;
+        ran.success.then_some(ran.stdout)
+    }
+
     /// The repo holding `folder` and its branch, or `None` when it is not in one.
     pub fn head(&self, folder: &Path) -> Option<Head> {
         if let Some(out) = self.output(
@@ -253,6 +268,65 @@ mod tests {
 
     fn lines(n: usize, word: &str) -> String {
         (0..n).map(|i| format!("{word} {i}\n")).collect()
+    }
+
+    #[test]
+    fn the_head_version_is_found_for_tracked_files_only() {
+        let dir = TestDir::new();
+        let repo = dir.path().join("repo");
+        fs::create_dir_all(repo.join("src")).unwrap();
+        sh(&repo, &["init", "-q"]);
+        fs::write(
+            repo.join("src/app.ts"),
+            "one
+",
+        )
+        .unwrap();
+        fs::write(
+            repo.join("gone.ts"),
+            "kept
+",
+        )
+        .unwrap();
+        sh(&repo, &["add", "."]);
+        sh(&repo, &["commit", "-q", "-m", "first"]);
+        fs::write(
+            repo.join("src/app.ts"),
+            "two
+",
+        )
+        .unwrap();
+        fs::write(
+            repo.join("src/new.ts"),
+            "fresh
+",
+        )
+        .unwrap();
+        fs::remove_file(repo.join("gone.ts")).unwrap();
+        let outside = dir.path().join("loose.txt");
+        fs::write(
+            &outside, "x
+",
+        )
+        .unwrap();
+
+        assert_eq!(
+            git().show_head(&repo.join("src/app.ts")).as_deref(),
+            Some(
+                &b"one
+"[..]
+            )
+        );
+        assert_eq!(git().show_head(&repo.join("src/new.ts")), None, "untracked");
+        assert_eq!(
+            git().show_head(&repo.join("gone.ts")).as_deref(),
+            Some(
+                &b"kept
+"[..]
+            ),
+            "deleted"
+        );
+        assert_eq!(git().show_head(&outside), None, "outside a repo");
     }
 
     #[test]
