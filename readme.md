@@ -56,9 +56,13 @@ SHA-256 so you can check a download.
   its `claude` would load, plugin servers included.
 - **Messages between accounts.** A chat can message a chat on another of your accounts. Each
   message waits in a popup for you to approve, edit or reject, and both chats then show side by side.
+- **Services.** Tunnels and dev servers that keep running without a tab, at the foot of the
+  sidebar: restarted when they stop, started with Cerberus if you like, with their address one
+  click away.
 - **Live cards.** The shown chat's context use with a **Compact** button that types `/compact` for
-  you, each account's 5-hour and 7-day use, and a warning near the limit that offers to continue the
-  chat on another account, once you confirm.
+  you, the files it wrote (a click opens one), its background shells and subagents, each account's
+  5-hour and 7-day use, and a warning near the limit that offers to continue the chat on another
+  account, once you confirm.
 - **Find a chat** on any of your accounts, by title, folder or what was said, and open it in its own
   folder on its own account.
 - **`cerberus open`** jumps to a tab from any terminal (below).
@@ -75,10 +79,11 @@ More detail on each, and how it works: [`docs/guide.md`](docs/guide.md).
 | Next chat waiting on you | Ctrl+Shift+A | Cmd+Shift+A |
 | Right panel | Ctrl+Shift+B | Cmd+Shift+B |
 | Find a chat | Ctrl+Shift+F | Cmd+Shift+F |
+| Collapse or expand the sidebar | Ctrl+Shift+E | Cmd+Shift+E |
 | Rename | F2 | F2 |
 | New line in a Claude Code message | Shift+Enter | Shift+Enter |
 
-They leave Claude Code's own keys alone (Ctrl+T, Ctrl+B, Ctrl+C, Ctrl+V, Alt+V, Shift+Tab). Paste an image
+They leave Claude Code's own keys alone (Ctrl+T, Ctrl+B, Ctrl+E, Ctrl+C, Ctrl+V, Alt+V, Shift+Tab). Paste an image
 into Claude Code with Alt+V on Windows, or Cmd+V on macOS. In a shell tab, Shift+Enter is Enter.
 
 In a terminal on macOS, the editing keys of Terminal.app:

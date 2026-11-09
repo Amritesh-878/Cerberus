@@ -2,9 +2,9 @@ mod gh;
 mod git;
 mod mcp;
 mod plugins;
-mod reveal;
+pub(crate) mod reveal;
 mod skills;
-mod vscode;
+pub(crate) mod vscode;
 
 use std::path::{Path, PathBuf};
 use std::time::Instant;

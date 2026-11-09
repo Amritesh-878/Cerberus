@@ -60,6 +60,7 @@ export type Shortcut =
   | "nextWaiting"
   | "panel"
   | "findChat"
+  | "sidebar"
   | "shortcuts";
 
 type Chords = readonly (readonly [Shortcut, string])[];
@@ -75,6 +76,8 @@ const OTHER_CHORDS: Chords = [
   ["panel", "Ctrl+Shift+B"],
   // Ctrl+F stays with the terminal; Find a chat takes it only with Shift.
   ["findChat", "Ctrl+Shift+F"],
+  // Ctrl+E is the end of the line in Claude Code's input, so the sidebar takes it only with Shift.
+  ["sidebar", "Ctrl+Shift+E"],
   // Ctrl+/ stays with the terminal, where editors and shells use it.
   ["shortcuts", "Ctrl+Shift+/"],
 ];
@@ -90,6 +93,7 @@ const MAC_CHORDS: Chords = [
   ["closeTab", "Cmd+W"],
   ["panel", "Cmd+Shift+B"],
   ["findChat", "Cmd+Shift+F"],
+  ["sidebar", "Cmd+Shift+E"],
   ["shortcuts", "Cmd+/"],
 ];
 
@@ -211,6 +215,7 @@ const SHEET_ROWS: readonly (readonly [Shortcut, string])[] = [
   ["nextWaiting", "Next chat waiting on you"],
   ["panel", "Show or hide the right panel"],
   ["findChat", "Find a chat on any account"],
+  ["sidebar", "Collapse or expand the sidebar"],
   ["shortcuts", "Show or hide this sheet"],
 ];
 

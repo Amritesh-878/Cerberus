@@ -13,7 +13,7 @@ import {
   SAVED,
   settle,
 } from "./harness";
-import { current, type LiveView, warningText } from "./live";
+import { current, elapsedText, type LiveView, warningText } from "./live";
 import type { SavedTree } from "./saved";
 
 const desktop = vi.hoisted(() => ({ sent: [] as unknown[] }));
@@ -101,6 +101,9 @@ const VIEW: LiveView = {
       context: 42.5,
       model: "Opus 5.5",
       keptTheirs: false,
+      outputs: [],
+      tasks: [],
+      finished: 0,
     },
   ],
   meters: [
@@ -245,7 +248,85 @@ test("the core's warning event sends one desktop notification naming the account
   );
 });
 
-test("the warning text and a window past its reset", () => {
+test("the outputs card lists written files and opens one through the core", async () => {
+  const live = liveCore();
+  const opened: unknown[] = [];
+  const root = await renderApp(live.profiles, {
+    ...live.core,
+    live_open_output: (args: unknown) => {
+      opened.push(args);
+      return null;
+    },
+  });
+  await open(root, "planner");
+  await emitEvent("live", {
+    ...VIEW,
+    tabs: [
+      {
+        ...VIEW.tabs[0],
+        outputs: [
+          {
+            name: "app.ts",
+            folder: "src",
+            path: String.raw`C:\codelpha\srcpp.ts`,
+            at: 2,
+          },
+          {
+            name: "readme.md",
+            folder: "",
+            path: String.raw`C:\codelpha
+eadme.md`,
+            at: 1,
+          },
+        ],
+      },
+    ],
+  });
+  await settle();
+
+  const rows = [...card(root, "Outputs").querySelectorAll(".card-row")];
+  expect(rows.map((r) => r.textContent)).toEqual(["app.tssrc", "readme.md"]);
+  (rows[0] as HTMLButtonElement).click();
+  await settle();
+  expect(opened).toEqual([{ tab: 3, path: String.raw`C:\codelpha\srcpp.ts` }]);
+});
+
+test("the tasks card shows what runs and for how long, a finished count, and no stop button", async () => {
+  const live = liveCore();
+  const root = await renderApp(live.profiles, live.core);
+  await open(root, "planner");
+  const since = Date.now() - 75_000;
+  await emitEvent("live", {
+    ...VIEW,
+    tabs: [
+      {
+        ...VIEW.tabs[0],
+        tasks: [
+          { id: "b1", kind: "shell", label: "shell", since },
+          { id: "a1", kind: "subagent", label: "general-purpose", since },
+        ],
+        finished: 3,
+      },
+    ],
+  });
+  await settle();
+
+  const tasks = card(root, "Background tasks");
+  expect(tasks.querySelector(".card-meta")?.textContent).toBe("2 running");
+  const rows = [...tasks.querySelectorAll(".card-row")].map(
+    (r) => r.textContent,
+  );
+  expect(rows[0]).toMatch(/^shell1m 1[4-6]s$/);
+  expect(rows[1]).toMatch(/^general-purposesubagent1m 1[4-6]s$/);
+  expect(tasks.textContent).toContain("3 finished");
+  expect(tasks.querySelector("button:not(.card-title)")).toBeNull();
+});
+
+test("the warning text, elapsed time and a window past its reset", () => {
+  expect(elapsedText(45_000)).toBe("45s");
+  expect(elapsedText(192_000)).toBe("3m 12s");
+  expect(elapsedText(3_840_000)).toBe("1h 04m");
+
   expect(warningText("work", { used: 86.6, resetsAt: 0 }, "en-US")).toMatch(
     /^work is at 87%, resets \d{1,2}:\d{2}(am|pm)$/,
   );

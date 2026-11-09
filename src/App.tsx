@@ -25,6 +25,7 @@ import {
   pickFolder,
   type Profiles,
   resetProfiles,
+  setSidebarCollapsed,
   setSidebarWidth,
   setSplitShare,
   statusText,
@@ -91,6 +92,19 @@ import { ShortcutsSheet } from "./ShortcutsSheet";
 import type { TabDragEvents } from "./tabDrag";
 import { SidebarEdge, SplitEdge } from "./SidebarEdge";
 import { menuAccount, type MenuPlace, TabMenu } from "./TabMenu";
+import { ServiceForm } from "./ServiceForm";
+import { ServiceOutput } from "./ServiceOutput";
+import {
+  act as actOnService,
+  addService,
+  createServicesFeed,
+  foldServices,
+  openServiceUrl,
+  type ServiceId,
+  type ServiceRow,
+  updateService,
+} from "./services";
+import { ServicesSection } from "./ServicesSection";
 import { TerminalView } from "./Terminal";
 import {
   addProject,
@@ -111,6 +125,13 @@ import {
   type Tree,
 } from "./tree";
 import { Walkthrough } from "./Walkthrough";
+import {
+  panelOverlays,
+  RAIL_BELOW,
+  RAIL_WIDTH,
+  sidebarMode,
+} from "./sidebarLayout";
+import { SidebarRail } from "./SidebarRail";
 import { SIDEBAR_DEFAULT, SPLIT_DEFAULT } from "./widths";
 
 type Page = "walkthrough" | "accounts";
@@ -190,6 +211,68 @@ export function App() {
     changed,
   });
   const [drawer, setDrawer] = createSignal(false);
+  const [windowWidth, setWindowWidth] = createSignal(innerWidth);
+  onMount(() => {
+    const onResize = () => setWindowWidth(innerWidth);
+    addEventListener("resize", onResize);
+    onCleanup(() => {
+      removeEventListener("resize", onResize);
+    });
+  });
+  // The click's choice, ahead of the saved profiles while its save is on the way.
+  const [collapsedNow, setCollapsedNow] = createSignal<boolean>();
+  const collapsed = () =>
+    collapsedNow() ?? profiles()?.sidebarCollapsed ?? false;
+  // Opened by hand in a window too narrow for the sidebar; never saved.
+  const [narrowOpen, setNarrowOpen] = createSignal(false);
+  createEffect(() => {
+    if (windowWidth() >= RAIL_BELOW) setNarrowOpen(false);
+  });
+  const mode = () => sidebarMode(windowWidth(), collapsed(), narrowOpen());
+  let collapseSaves = 0;
+  const setCollapsed = (next: boolean) => {
+    if (windowWidth() < RAIL_BELOW) {
+      setNarrowOpen(!next);
+      return;
+    }
+    setCollapsedNow(next);
+    collapseSaves += 1;
+    const mine = collapseSaves;
+    setSidebarCollapsed(next)
+      .then(changed, (error: unknown) => {
+        console.error("sidebar state not saved:", error);
+      })
+      .finally(() => {
+        // Only the latest click lets go, so an earlier save settling cannot flick the sidebar back.
+        if (mine === collapseSaves) setCollapsedNow(undefined);
+      });
+  };
+  const toggleSidebar = () => {
+    if (mode() === "drawer") setDrawer((open) => !open);
+    else setCollapsed(mode() === "open");
+  };
+  // Raised on each rail click, so a second click on the same project reveals it again.
+  const [revealed, setRevealed] = createSignal<{
+    project: ProjectId;
+    n: number;
+  }>();
+  const openProject = (project: ProjectId) => {
+    setCollapsed(false);
+    setRevealed((now) => ({ project, n: (now?.n ?? 0) + 1 }));
+  };
+  const sidebarPx = () => {
+    const now = mode();
+    if (now === "drawer") return 0;
+    if (now === "rail") return RAIL_WIDTH;
+    return Math.min(sidebarWidth.value(), windowWidth() / 2);
+  };
+  const panelOver = () =>
+    panel.open() &&
+    panelOverlays(
+      windowWidth(),
+      sidebarPx(),
+      Math.max(240, Math.min(panel.width(), (windowWidth() * 2) / 5)),
+    );
   const [tabsClosed, setTabsClosed] = createSignal(0);
   const [board, setBoard] = createSignal<Board>(new Map());
   // Tabs whose chat ended; the core runs the shell in them until Resume chat.
@@ -289,6 +372,38 @@ export function App() {
   };
   const messaging = createMessaging();
   const split = createSplit(shown);
+  // A service's output shown beside the tab on screen, in place of a split of two tabs.
+  const services = createServicesFeed();
+  const [viewing, setViewing] = createSignal<ServiceId>();
+  const [serviceForm, setServiceForm] = createSignal<{
+    editing?: ServiceRow;
+  }>();
+  const viewed = () => {
+    const id = viewing();
+    return services.view().services.find((s) => s.id === id);
+  };
+  const beside = () => viewed() !== undefined && shown() !== undefined;
+  // A string, since the first service's id is 0 and a keyed Show treats 0 as nothing to show.
+  const viewedKey = createMemo(() => {
+    const service = viewed();
+    return service === undefined ? undefined : String(service.id);
+  });
+  createEffect(
+    on(split.showing, (pair) => {
+      if (pair) setViewing(undefined);
+    }),
+  );
+  // A page such as Accounts takes the whole stage, so the output would cover it.
+  createEffect(
+    on(page, (open) => {
+      if (open !== undefined) setViewing(undefined);
+    }),
+  );
+  const onServiceError = (error: unknown) => {
+    const id = shown();
+    if (id !== undefined) setAlert(id, String(error));
+    else console.error("service:", error);
+  };
   let stage: HTMLDivElement | undefined;
   // Set while a tab is dragged out of the sidebar; `over` once it would split on release.
   const [dropping, setDropping] = createSignal<{ over: boolean }>();
@@ -680,6 +795,10 @@ export function App() {
         if (!inSetup()) setFinding((open) => !open);
         return;
       }
+      if (shortcut === "sidebar") {
+        if (!inSetup()) toggleSidebar();
+        return;
+      }
       if (inSetup() && shortcut !== "closeTab") return;
       if (shortcut === "nextTab" || shortcut === "previousTab") {
         const id = stepTab(tree(), shown(), shortcut === "nextTab" ? 1 : -1);
@@ -791,18 +910,30 @@ export function App() {
         {(loaded) => (
           <div
             class="app"
-            classList={{ drawer: drawer() }}
+            classList={{
+              drawer: drawer(),
+              "sidebar-rail": mode() === "rail" && !inSetup(),
+              "panel-over": panelOver(),
+            }}
             style={{
-              "--sidebar-width": `${String(sidebarWidth.value())}px`,
+              "--sidebar-width": `${String(
+                mode() === "rail" && !inSetup()
+                  ? RAIL_WIDTH
+                  : sidebarWidth.value(),
+              )}px`,
             }}
           >
-            <SidebarEdge
-              width={sidebarWidth.value()}
-              onWidth={sidebarWidth.drag}
-              onDone={sidebarWidth.save}
-            />
+            <Show when={mode() !== "rail" || inSetup()}>
+              <SidebarEdge
+                width={sidebarWidth.value()}
+                onWidth={sidebarWidth.drag}
+                onDone={sidebarWidth.save}
+              />
+            </Show>
             <Sidebar
               locked={inSetup()}
+              opened={revealed()}
+              onCollapse={toggleSidebar}
               tree={tree()}
               profiles={loaded()}
               statuses={statuses}
@@ -835,7 +966,45 @@ export function App() {
                 setFinding(true);
                 setDrawer(false);
               }}
+              services={
+                <ServicesSection
+                  view={services.view()}
+                  onFold={(folded) => {
+                    foldServices(folded).then(services.set, onServiceError);
+                  }}
+                  onAdd={() => setServiceForm({})}
+                  onAct={(id, action) => {
+                    if (action === "remove" && viewing() === id)
+                      setViewing(undefined);
+                    actOnService(action, id).then(services.set, onServiceError);
+                  }}
+                  onOutput={(id) => {
+                    split.close();
+                    setViewing(id);
+                    setDrawer(false);
+                  }}
+                  onEdit={(service) => setServiceForm({ editing: service })}
+                  onOpenUrl={(id) => {
+                    openServiceUrl(id).catch(onServiceError);
+                  }}
+                />
+              }
             />
+            <Show when={mode() === "rail" && !inSetup()}>
+              <SidebarRail
+                projects={tree().projects}
+                active={shownTab()?.projectId ?? undefined}
+                waiting={(project) =>
+                  tree().tabs.some(
+                    (t) =>
+                      t.projectId === project &&
+                      markOf(board(), t.id)?.kind === "waiting",
+                  )
+                }
+                onExpand={toggleSidebar}
+                onOpenProject={openProject}
+              />
+            </Show>
             <Show when={drawer()}>
               <div class="scrim" onClick={() => setDrawer(false)} />
             </Show>
@@ -1068,7 +1237,9 @@ export function App() {
                           class="tab-view"
                           classList={{
                             shown: shown() === id || split.has(id),
-                            "split-left": split.side(id) === "left",
+                            "split-left":
+                              split.side(id) === "left" ||
+                              (beside() && shown() === id),
                             "split-right": split.side(id) === "right",
                           }}
                           onPointerDown={() => {
@@ -1188,7 +1359,30 @@ export function App() {
                     </Show>
                   )}
                 </For>
-                <Show when={split.showing()}>
+                <Show when={viewedKey()} keyed>
+                  {(key) => (
+                    <div
+                      class="tab-view shown service-view"
+                      classList={{ "split-right": beside() }}
+                    >
+                      <div class="service-bar">
+                        <span class="split-title">{viewed()?.name} output</span>
+                        <span class="spacer" />
+                        <button
+                          type="button"
+                          class="secondary"
+                          onClick={() => {
+                            setViewing(undefined);
+                          }}
+                        >
+                          Close
+                        </button>
+                      </div>
+                      <ServiceOutput service={Number(key)} />
+                    </div>
+                  )}
+                </Show>
+                <Show when={split.showing() || beside()}>
                   <SplitEdge
                     width={splitShare.value()}
                     area={() => stage?.getBoundingClientRect()}
@@ -1265,6 +1459,8 @@ export function App() {
             <Show when={panel.open() && !inSetup()}>
               <Panel
                 tab={shownTab()}
+                overlay={panelOver()}
+                onClose={panel.toggle}
                 profiles={loaded()}
                 statuses={statuses}
                 state={panel}
@@ -1305,6 +1501,29 @@ export function App() {
                 onOpen={openFound}
                 onClose={() => setFinding(false)}
               />
+            </Show>
+            <Show when={serviceForm()}>
+              {(form) => (
+                <ServiceForm
+                  editing={form().editing}
+                  shells={(programList() ?? []).filter(
+                    (p) => p.isShell && p.program !== null,
+                  )}
+                  onSave={(draft) => {
+                    const editing = form().editing;
+                    return (
+                      editing
+                        ? updateService(editing.id, draft)
+                        : addService(draft)
+                    ).then((view) => {
+                      services.set(view);
+                    });
+                  }}
+                  onClose={() => {
+                    setServiceForm(undefined);
+                  }}
+                />
+              )}
             </Show>
             <Show when={sheet()}>
               <ShortcutsSheet onClose={() => setSheet(false)} />

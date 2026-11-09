@@ -4,6 +4,7 @@ import {
   createSignal,
   For,
   Index,
+  type JSX,
   Match,
   on,
   Show,
@@ -30,6 +31,7 @@ import {
   PlusIcon,
   ProgramIcon,
   SearchIcon,
+  SidebarIcon,
 } from "./icons";
 import { RENAME_KEY } from "./keys";
 import type { Statuses } from "./statuses";
@@ -49,6 +51,8 @@ import {
 
 export function Sidebar(props: {
   tree: Tree;
+  /** The Services section, shown above the footer. */
+  services?: JSX.Element;
   profiles: Profiles;
   statuses: Statuses;
   active: TabId | undefined;
@@ -73,6 +77,9 @@ export function Sidebar(props: {
   onFindChat?: () => void;
   /** Setup is running, so only its own tabs show and nothing here can leave it. */
   locked: boolean;
+  /** A project picked on the rail, unfolded and scrolled to; `n` repeats a pick of the same one. */
+  opened?: { project: ProjectId; n: number };
+  onCollapse?: () => void;
   /** Where a tab dragged out of the list goes; absent, rows don't drag. */
   onDragTab?: (id: TabId) => TabDragEvents | undefined;
 }) {
@@ -116,6 +123,25 @@ export function Sidebar(props: {
     setFolded(next);
   };
 
+  createEffect(
+    on(
+      () => props.opened,
+      (pick) => {
+        if (!pick) return;
+        setFolded((now) => {
+          const next = new Set(now);
+          next.delete(pick.project);
+          return next;
+        });
+        queueMicrotask(() => {
+          document
+            .querySelector(`[data-project="${String(pick.project)}"]`)
+            ?.scrollIntoView({ block: "nearest" });
+        });
+      },
+    ),
+  );
+
   return (
     <aside class="sidebar">
       <Show when={!props.locked}>
@@ -130,6 +156,19 @@ export function Sidebar(props: {
               onInput={(event) => setSearch(event.currentTarget.value)}
             />
           </label>
+          <Show when={props.onCollapse}>
+            <button
+              type="button"
+              class="icon-button sidebar-collapse"
+              aria-label="Collapse the sidebar"
+              title="Collapse the sidebar"
+              onClick={() => {
+                props.onCollapse?.();
+              }}
+            >
+              <SidebarIcon />
+            </button>
+          </Show>
         </div>
       </Show>
       <nav class="tree" aria-label="Tabs">
@@ -144,7 +183,7 @@ export function Sidebar(props: {
           }
         >
           {(group) => (
-            <section>
+            <section data-project={group().project?.id}>
               <ProjectHeader
                 group={group()}
                 folded={isFolded(group())}
@@ -259,6 +298,7 @@ export function Sidebar(props: {
           />
         )}
       </Show>
+      <Show when={!props.locked}>{props.services}</Show>
       <footer class="sidebar-foot" hidden={props.locked}>
         <button
           type="button"

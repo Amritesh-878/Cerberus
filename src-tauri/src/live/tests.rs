@@ -257,3 +257,90 @@ fn off_registers_nothing() {
     );
     assert_eq!(live.view(), View::default());
 }
+
+fn hook(env: &Env, input: &str) {
+    let mut out = Vec::new();
+    helper::run(&[helper::HOOK.to_owned()], input.as_bytes(), &mut out, env);
+    assert!(
+        out.is_empty(),
+        "a hook prints nothing, so it changes nothing in Claude Code"
+    );
+}
+
+#[test]
+fn hooks_fill_the_tabs_outputs_and_tasks_with_no_dropped_field_anywhere() {
+    let fx = start(85);
+    let ticket = fx
+        .live
+        .register(7, 2, fx.dir.path(), fx.dir.path())
+        .unwrap();
+    let written = fx.dir.path().join("out.txt");
+    let write = crate::live::hooks::tests::FAKE_WRITE.replace(
+        // The fixture's JSON escapes each backslash, so the real path is escaped the same way.
+        r#"C:\\work\\out.txt"#,
+        serde_json::to_string(&written.to_string_lossy())
+            .unwrap()
+            .trim_matches('"'),
+    );
+
+    hook(&env_of(&ticket), &write);
+    next_view_where(&fx.views, |v| !v.tabs[0].outputs.is_empty());
+    hook(&env_of(&ticket), crate::live::hooks::tests::FAKE_STOP);
+    let view = next_view_where(&fx.views, |v| v.tabs[0].tasks.len() == 2);
+
+    let tab = &view.tabs[0];
+    assert_eq!(tab.outputs[0].name, "out.txt");
+    assert_eq!(tab.outputs[0].folder, "");
+    assert_eq!(
+        tab.tasks
+            .iter()
+            .map(|t| t.label.as_str())
+            .collect::<Vec<_>>(),
+        // Seen in one report, so they share a start and sort by id.
+        ["general-purpose", "shell"]
+    );
+    let settings = std::fs::read_to_string(fx.dir.path().join("live").join("tab-7.json")).unwrap();
+    for text in [serde_json::to_string(&view).unwrap(), settings.clone()] {
+        assert!(!text.contains("FAKE-SECRET"), "{text}");
+    }
+    let settings: serde_json::Value = serde_json::from_str(&settings).unwrap();
+    assert_eq!(
+        settings["hooks"]["Stop"][0]["hooks"][0]["command"],
+        "'/app/cerberus-live' hook"
+    );
+    assert!(settings.get("statusLine").is_some());
+}
+
+#[test]
+fn only_a_file_the_chat_wrote_can_be_opened_and_a_closed_tabs_tasks_end() {
+    let fx = start(85);
+    let ticket = fx
+        .live
+        .register(7, 2, fx.dir.path(), fx.dir.path())
+        .unwrap();
+    hook(&env_of(&ticket), crate::live::hooks::tests::FAKE_STOP);
+    next_view_where(&fx.views, |v| v.tabs[0].tasks.len() == 2);
+
+    let refused = fx
+        .live
+        .open_output(7, &fx.dir.path().join("secret.txt").to_string_lossy());
+
+    assert_eq!(refused.unwrap_err().kind(), std::io::ErrorKind::NotFound);
+    fx.live.closed(&ticket.token);
+    let again = fx
+        .live
+        .register(7, 2, fx.dir.path(), fx.dir.path())
+        .unwrap();
+    let view = next_view_where(&fx.views, |v| !v.tabs.is_empty());
+    assert!(view.tabs[0].tasks.is_empty());
+    assert_eq!(view.tabs[0].finished, 2);
+    assert!(again.arg.is_some());
+}
+
+#[test]
+fn without_an_editor_a_written_file_is_shown_in_its_folder_never_run() {
+    let script = Path::new("/work/tools/run.cmd");
+
+    assert_eq!(shown_instead(script).unwrap(), Path::new("/work/tools"));
+    assert!(shown_instead(Path::new("run.cmd")).is_err());
+}
