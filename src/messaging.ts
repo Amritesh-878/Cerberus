@@ -10,12 +10,14 @@ export interface PendingMessage {
   text: string;
 }
 
-/** `prefillOnly`: approved messages are typed into the tab for the user to send; `off`: its helper never started. */
+/** `prefillOnly`: approved messages are typed into the tab for the user to send; `off`: its helper never started or ended. */
 export type MessagesNote = "prefillOnly" | "off";
 
 export interface BridgeSnapshot {
   pending: PendingMessage[];
   notes: { tab: number; note: MessagesNote }[];
+  /** Recent messages dropped because the chat that sent them is gone. */
+  senderGone: number[];
 }
 
 export type Decision = { kind: "approve"; text: string } | { kind: "reject" };
@@ -51,7 +53,7 @@ export const NOTE_TEXT: Record<MessagesNote, { label: string; title: string }> =
     off: {
       label: "messages off",
       title:
-        "This tab's message helper didn't start, so it can't send or receive messages between accounts.",
+        "This tab's message helper didn't start or has ended, so it can't send or receive messages between accounts.",
     },
   };
 
@@ -60,6 +62,7 @@ export function createMessaging() {
   const [snapshot, setSnapshot] = createSignal<BridgeSnapshot>({
     pending: [],
     notes: [],
+    senderGone: [],
   });
   onMount(() => {
     // An event that lands first is newer than the snapshot asked for, so it wins.
@@ -88,6 +91,7 @@ export function createMessaging() {
     /** The latest report, a new object on every change. */
     snapshot,
     pending: () => snapshot().pending,
+    senderGone: () => snapshot().senderGone,
     note: (tab: number | undefined): MessagesNote | undefined =>
       tab === undefined
         ? undefined

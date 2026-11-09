@@ -289,10 +289,12 @@ tab message a Claude Code tab on another of your accounts, and every message wai
   [Projects and tabs](#projects-and-tabs): hidden while another tab shows, back with either of its
   tabs, until **Close split** or either tab closes. The reply takes the same road and the same popup.
 - **Cancelling.** Esc in the sending chat stops its call and the message leaves the popup. A closed
-  target tab or a restart ends a waiting message, and the sending chat is told it wasn't sent.
+  target tab or a restart ends a waiting message, and the sending chat is told it wasn't sent. If
+  the sending chat closes or its helper ends (killed or crashed), its message leaves the popup, which
+  says the sending chat is gone.
 - **Notes.** A tab whose messages can only be typed in shows "messages: prefill only" in the top
   bar: a Claude Code version Cerberus hasn't tested, or macOS, where inbox delivery isn't checked
-  yet. "messages off" means the tab's helper didn't start within 10 seconds.
+  yet. "messages off" means the tab's helper didn't start within 10 seconds, or ended.
 - **Turning it off.** **Accounts > Messages between accounts.** Off, Claude Code tabs start exactly
   as before. A change applies to Claude Code tabs started after it. Your own MCP servers load either
   way.

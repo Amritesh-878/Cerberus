@@ -1245,6 +1245,7 @@ export function App() {
             </Show>
             <Approvals
               pending={messaging.pending()}
+              senderGone={messaging.senderGone()}
               name={tabName}
               decide={decide}
               typeIn={typeIn}

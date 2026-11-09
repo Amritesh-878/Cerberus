@@ -202,24 +202,37 @@ mod tests {
     }
 
     #[cfg(windows)]
+    const PID_FILE: &str = "CERBERUS_RUN_TEST_PID_FILE";
+
+    /// Runs only as the wrapped program a test below starts: it writes its pid first thing, then hangs.
+    #[cfg(windows)]
+    #[test]
+    fn wrapper_test_child() {
+        let Some(pid_file) = std::env::var_os(PID_FILE) else {
+            return;
+        };
+        std::fs::write(pid_file, std::process::id().to_string()).unwrap();
+        thread::sleep(Duration::from_secs(30));
+    }
+
+    #[cfg(windows)]
     #[test]
     fn a_timeout_ends_what_a_wrapper_started() {
         let dir = crate::accounts::testdir::TestDir::new();
         let pid_file = dir.path().join("pid.txt");
+        let exe = std::env::current_exe().unwrap();
         let mut command = Command::new("cmd");
-        command.args([
-            "/c",
-            "powershell",
-            "-NoProfile",
-            "-Command",
-            &format!(
-                "$PID | Set-Content '{}'; Start-Sleep -Seconds 30",
-                pid_file.display()
-            ),
-        ]);
+        // This test binary as the wrapped program, since PowerShell can take longer to start than any timeout here.
+        // `/s` strips only the outer quotes, and cmd expands a variable once, so no path character is reread.
+        std::os::windows::process::CommandExt::raw_arg(
+            &mut command,
+            r#"/v:off /s /c ""%CERBERUS_RUN_TEST_EXE%" --exact run::tests::wrapper_test_child --nocapture""#,
+        );
+        command
+            .env("CERBERUS_RUN_TEST_EXE", &exe)
+            .env(PID_FILE, &pid_file);
 
-        // Long enough for a cold CI runner to start PowerShell and write its pid.
-        let result = run(command, Duration::from_secs(20));
+        let result = run(command, Duration::from_secs(10));
 
         assert!(matches!(result, Err(RunError::TimedOut(_))));
         let pid = std::fs::read_to_string(&pid_file).unwrap();

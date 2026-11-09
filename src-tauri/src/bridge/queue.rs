@@ -27,6 +27,11 @@ pub struct PendingView {
     pub text: String,
 }
 
+/// The helper run a call id came from: helpers send `<run>:<id>`.
+pub fn run_of(call: &str) -> Option<&str> {
+    call.split_once(':').map(|(run, _)| run)
+}
+
 pub struct Queue<T> {
     next_id: u64,
     items: VecDeque<Pending<T>>,
@@ -84,7 +89,17 @@ impl<T> Queue<T> {
         let (gone, kept) = self
             .items
             .drain(..)
-            .partition(|p| p.from == tab && !p.call.starts_with(&format!("{run}:")));
+            .partition(|p| p.from == tab && run_of(&p.call) != Some(run));
+        self.items = kept;
+        gone.into()
+    }
+
+    /// Takes out every message helper run `run` of a tab sent, since nobody is left to hear the outcome.
+    pub fn drop_run(&mut self, tab: TabId, run: &str) -> Vec<Pending<T>> {
+        let (gone, kept) = self
+            .items
+            .drain(..)
+            .partition(|p| p.from == tab && run_of(&p.call) == Some(run));
         self.items = kept;
         gone.into()
     }
@@ -162,6 +177,36 @@ mod tests {
 
         assert_eq!(gone, ["from 1"]);
         assert_eq!(ids(&queue), [to, new]);
+    }
+
+    #[test]
+    fn an_ended_run_takes_only_its_own_messages() {
+        let mut queue = Queue::default();
+        queue.push(
+            1,
+            2,
+            "dead:1".to_owned(),
+            "from the dead run".to_owned(),
+            (),
+        );
+        let live = queue.push(
+            1,
+            2,
+            "live:1".to_owned(),
+            "from the live run".to_owned(),
+            (),
+        );
+        let other = queue.push(3, 2, "dead:2".to_owned(), "another tab".to_owned(), ());
+        let to = queue.push(2, 1, "x:1".to_owned(), "to 1".to_owned(), ());
+
+        let gone: Vec<String> = queue
+            .drop_run(1, "dead")
+            .into_iter()
+            .map(|p| p.text)
+            .collect();
+
+        assert_eq!(gone, ["from the dead run"]);
+        assert_eq!(ids(&queue), [live, other, to]);
     }
 
     #[test]

@@ -44,6 +44,33 @@ pub fn finish(pipe: &File) -> io::Result<()> {
     pipe.sync_all()
 }
 
+/// The process at the client end of a pipe, held open so its exit can be waited on.
+pub struct Peer(OwnedHandle);
+
+impl Peer {
+    /// Watches the process itself, since a read pending on a synchronous pipe would hold up every write on it.
+    pub fn of(pipe: &File) -> io::Result<Self> {
+        use windows_sys::Win32::System::Pipes::GetNamedPipeClientProcessId;
+        use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_SYNCHRONIZE};
+        let mut pid = 0u32;
+        if unsafe { GetNamedPipeClientProcessId(pipe.as_raw_handle(), &raw mut pid) } == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        let process = unsafe { OpenProcess(PROCESS_SYNCHRONIZE, 0, pid) };
+        if process.is_null() {
+            return Err(io::Error::last_os_error());
+        }
+        // A valid handle that nothing else owns, closed when the watch ends.
+        Ok(Self(unsafe { OwnedHandle::from_raw_handle(process) }))
+    }
+
+    /// Blocks until the client process has exited.
+    pub fn gone(self) {
+        use windows_sys::Win32::System::Threading::{INFINITE, WaitForSingleObject};
+        unsafe { WaitForSingleObject(self.0.as_raw_handle(), INFINITE) };
+    }
+}
+
 /// The next pipe instance, made before a client is handed out so the name never goes missing.
 pub struct Listener {
     name: String,

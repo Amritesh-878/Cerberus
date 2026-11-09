@@ -541,10 +541,12 @@ mod tests {
     }
 
     static TREE_HELD: AtomicBool = AtomicBool::new(false);
+    static TREE_POLLED: AtomicBool = AtomicBool::new(false);
 
     type Event = fn(&RunningTabs, TabId);
 
     fn below_while_held(_: u32) -> Vec<u32> {
+        TREE_POLLED.store(true, Ordering::SeqCst);
         if TREE_HELD.load(Ordering::SeqCst) {
             vec![99]
         } else {
@@ -563,15 +565,29 @@ mod tests {
         world.running.ended(2);
         let during_the_wait = |events: &[Event]| {
             TREE_HELD.store(true, Ordering::SeqCst);
+            TREE_POLLED.store(false, Ordering::SeqCst);
             thread::scope(|scope| {
                 scope.spawn(|| {
+                    // The events wait for the tree wait to begin, not for a guess at how long that takes.
+                    let begun = Instant::now() + Duration::from_secs(20);
+                    while !TREE_POLLED.load(Ordering::SeqCst) && Instant::now() < begun {
+                        thread::sleep(Duration::from_millis(1));
+                    }
                     for event in events {
-                        thread::sleep(Duration::from_millis(30));
                         event(&world.running, 2);
                     }
                     TREE_HELD.store(false, Ordering::SeqCst);
                 });
-                world.continue_to(1, true)
+                // Far past any scheduling delay, since the hold ends on its own once the events are in.
+                continue_within(
+                    &world.saved,
+                    &world.accounts,
+                    &world.running,
+                    |_| Ok(true),
+                    2,
+                    1,
+                    Duration::from_secs(20),
+                )
             })
         };
 
