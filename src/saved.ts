@@ -45,6 +45,11 @@ export function resumeChat(tab: TabId): Promise<void> {
   return invoke("resume_chat", { tab });
 }
 
+/** Waits until the stopped tab's shell and the `claude` started in it have ended; the caller then starts it as a Claude tab. */
+export function reopenAsClaude(tab: TabId): Promise<void> {
+  return invoke("reopen_as_claude", { tab });
+}
+
 /** Hears each change in whether the disk holds the latest tree: the error, or `null` once it does. */
 export function onWriteStatus(
   handler: (error: string | null) => void,

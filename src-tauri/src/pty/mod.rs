@@ -234,6 +234,11 @@ impl PtyManager {
         self.session(id).ok()?.pid
     }
 
+    /// False once the program ended or Cerberus closed it.
+    pub fn is_open(&self, id: SessionId) -> bool {
+        lock(&self.sessions).contains_key(&id)
+    }
+
     pub fn kill_all(&self) {
         let sessions: Vec<_> = lock(&self.sessions).drain().map(|(_, s)| s).collect();
         sessions.iter().for_each(|session| end(session));

@@ -1,6 +1,7 @@
 pub mod carry;
 mod limit;
 pub mod procs;
+pub mod shell;
 mod watch;
 
 use std::fs;
@@ -30,6 +31,8 @@ pub struct SessionFile {
     pub status: Status,
     /// When the process started, in milliseconds since 1970.
     pub started_at: Option<u64>,
+    /// False for a session no one types into, such as `claude -p`; a file from an older CLI that does not say counts as one.
+    pub interactive: bool,
 }
 
 #[derive(Deserialize)]
@@ -39,6 +42,8 @@ struct RawSessionFile {
     cwd: Option<String>,
     status: Option<String>,
     started_at: Option<f64>,
+    kind: Option<String>,
+    entrypoint: Option<String>,
 }
 
 /// `None` for a file that is not a session object; a field that is missing or odd reads as unknown.
@@ -56,6 +61,12 @@ pub fn parse_session_file(bytes: &[u8]) -> Option<SessionFile> {
             .started_at
             .filter(|ms| ms.is_finite() && *ms >= 0.0)
             .map(|ms| ms as u64),
+        // `claude -p` registers as kind "interactive" with entrypoint "sdk-cli" (2.1.319), so both are read.
+        interactive: raw.kind.as_deref().is_none_or(|kind| kind == "interactive")
+            && raw
+                .entrypoint
+                .as_deref()
+                .is_none_or(|entry| !entry.starts_with("sdk")),
     })
 }
 
@@ -181,6 +192,7 @@ mod tests {
                 cwd: Some(r"C:\work\app".to_owned()),
                 status: Status::Busy,
                 started_at: None,
+                interactive: true,
             })
         );
     }
@@ -203,6 +215,7 @@ mod tests {
                 cwd: None,
                 status: Status::Unknown,
                 started_at: None,
+                interactive: true,
             })
         );
     }
@@ -220,6 +233,19 @@ mod tests {
             parse_session_file(fractional).unwrap().started_at,
             Some(1_793_286_414_170)
         );
+    }
+
+    #[test]
+    fn a_print_run_or_another_kind_is_not_interactive_and_an_older_file_is() {
+        let typed = br#"{"status":"idle","kind":"interactive","entrypoint":"cli"}"#;
+        let print = br#"{"status":"busy","kind":"interactive","entrypoint":"sdk-cli"}"#;
+        let other = br#"{"status":"busy","kind":"background","entrypoint":"cli"}"#;
+        let older = br#"{"status":"idle"}"#;
+
+        assert!(parse_session_file(typed).unwrap().interactive);
+        assert!(!parse_session_file(print).unwrap().interactive);
+        assert!(!parse_session_file(other).unwrap().interactive);
+        assert!(parse_session_file(older).unwrap().interactive);
     }
 
     #[test]

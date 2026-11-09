@@ -575,6 +575,33 @@ button {
   border-radius: 4px;
 }
 
+/* A chat started by hand in a shell tab: it can't send messages until it reopens as a Claude tab. */
+.hand-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px 4px 12px;
+  font-size: 12px;
+  color: var(--dim);
+  border-bottom: 1px solid var(--line);
+}
+
+.hand-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.hand-bar button {
+  width: auto;
+  color: var(--text);
+  height: 26px;
+  padding: 0 12px;
+  margin-top: 0;
+  font-size: 12px;
+}
+
 .stage {
   position: relative;
   flex: 1;
