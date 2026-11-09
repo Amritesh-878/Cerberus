@@ -56,6 +56,9 @@ SHA-256 so you can check a download.
   its `claude` would load, plugin servers included.
 - **Messages between accounts.** A chat can message a chat on another of your accounts. Each
   message waits in a popup for you to approve, edit or reject, and both chats then show side by side.
+- **Services.** Tunnels and dev servers that keep running without a tab, at the foot of the
+  sidebar: restarted when they stop, started with Cerberus if you like, with their address one
+  click away.
 - **Live cards.** The shown chat's context use with a **Compact** button that types `/compact` for
   you, each account's 5-hour and 7-day use, and a warning near the limit that offers to continue the
   chat on another account, once you confirm.

@@ -2512,6 +2512,281 @@ button.card-row:focus-visible,
   background: var(--hover);
 }
 
+/* Services: background programs at the foot of the sidebar, their form and their output. */
+.services {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  max-height: 40%;
+  padding: 4px 6px 6px;
+  border-top: 1px solid var(--line);
+}
+
+.services-head {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.services-title {
+  display: flex;
+  flex: 1;
+  gap: 6px;
+  align-items: center;
+  height: 30px;
+  padding: 0 6px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--dim);
+  cursor: pointer;
+  background: none;
+  border: 0;
+  border-radius: 6px;
+}
+
+.services-title:hover {
+  color: var(--text);
+}
+
+.services-title:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.services-title svg {
+  flex: none;
+  color: var(--faint);
+  transition: transform 120ms ease-out;
+}
+
+.services.folded .services-title svg {
+  transform: rotate(-90deg);
+}
+
+.services-count {
+  margin-left: auto;
+  font-weight: 400;
+  color: var(--faint);
+}
+
+.services-list {
+  min-height: 0;
+  padding: 0;
+  margin: 0;
+  overflow: hidden auto;
+  list-style: none;
+}
+
+.services-empty {
+  padding: 2px 8px 6px;
+  font-size: 12px;
+  color: var(--faint);
+}
+
+/* The address wraps onto its own line under the name, so a long one never squeezes it. */
+.service-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 6px;
+  align-items: center;
+  min-width: 0;
+  min-height: 30px;
+  padding: 0 0 0 10px;
+  border-radius: 6px;
+}
+
+.service-row:hover {
+  background: var(--hover);
+}
+
+.service-dot.running {
+  background: var(--added);
+}
+
+.service-dot.starting,
+.service-dot.restarting {
+  background: #d9b357;
+}
+
+.service-dot.crashed {
+  background: var(--removed);
+}
+
+.service-dot.stopped {
+  background: none;
+  box-shadow: inset 0 0 0 1.5px var(--faint);
+}
+
+.service-name {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+  font: inherit;
+  color: var(--text);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  background: none;
+  border: 0;
+}
+
+.service-row[data-phase="stopped"] .service-name {
+  color: var(--dim);
+}
+
+.service-name:focus-visible,
+.service-chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.service-url {
+  box-sizing: border-box;
+  display: flex;
+  flex: 1 0 100%;
+  gap: 4px;
+  min-width: 0;
+  padding: 0 0 6px 13px;
+}
+
+.service-chip {
+  flex: none;
+  height: 20px;
+  padding: 0 6px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--dim);
+  white-space: nowrap;
+  cursor: pointer;
+  background: var(--selected);
+  border: 0;
+  border-radius: 4px;
+}
+
+.service-chip:hover {
+  color: var(--text);
+}
+
+.service-chip.link {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.service-more {
+  opacity: 0;
+}
+
+.service-row:hover .service-more,
+.service-more:focus-visible,
+.service-more[aria-expanded="true"] {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .service-more {
+    opacity: 1;
+  }
+}
+
+.service-menu {
+  width: 200px;
+}
+
+.service-view {
+  z-index: 2;
+  flex-direction: column;
+  background: var(--bg);
+}
+
+.service-view.split-right {
+  left: var(--split-share, 50%);
+  border-left: 1px solid var(--line);
+}
+
+.service-bar {
+  display: flex;
+  flex: none;
+  gap: 12px;
+  align-items: center;
+  padding: 4px 12px;
+  font-size: 12px;
+  color: var(--dim);
+  border-bottom: 1px solid var(--line);
+}
+
+.service-bar button {
+  width: auto;
+  height: 26px;
+  padding: 0 12px;
+  margin-top: 0;
+  font-size: 12px;
+}
+
+@media (width <= 720px) {
+  .service-view.split-right {
+    top: 50%;
+    left: 0;
+    border-top: 1px solid var(--line);
+    border-left: none;
+  }
+}
+
+.service-presets,
+.service-port {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 12px;
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.service-port label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.service-port input {
+  width: 72px;
+}
+
+.service-form .service-command {
+  font-family: "Cascadia Mono", Consolas, monospace;
+}
+
+.service-form select {
+  box-sizing: border-box;
+  width: 100%;
+  height: 30px;
+  padding: 0 8px;
+  font: inherit;
+  color: var(--text);
+  background: #111;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.service-check {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 6px 0;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.service-check input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+
 /* Live cards: context, usage, the threshold and the low-limit warning. */
 .card-action.text {
   width: auto;
