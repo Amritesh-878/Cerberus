@@ -245,8 +245,7 @@ test("a refused open of a chat from a new folder takes its new project away too"
   answer(find, 0, [
     {
       ...ELSEWHERE,
-      folder: String.raw`D:\other
-epo`,
+      folder: String.raw`D:\other\repo`,
     },
   ]);
   await settle();
@@ -272,15 +271,13 @@ test("Enter on a focused button or while composing opens no chat", async () => {
   close.dispatchEvent(
     new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
   );
-  root
-    .querySelector(".find-chat input")
-    ?.dispatchEvent(
-      new KeyboardEvent("keydown", {
-        key: "Enter",
-        bubbles: true,
-        isComposing: true,
-      }),
-    );
+  root.querySelector(".find-chat input")?.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: "Enter",
+      bubbles: true,
+      isComposing: true,
+    }),
+  );
   await settle();
 
   expect(find.of("chat_resume")).toEqual([]);
