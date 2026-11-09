@@ -1,6 +1,7 @@
 //! A file the chat wrote, read for the file pane: its text and its `HEAD` version, never anything else.
 
-use std::fs;
+use std::fs::{self, File};
+use std::io::{self, Read};
 use std::path::Path;
 use std::time::UNIX_EPOCH;
 
@@ -38,8 +39,15 @@ pub fn view(path: &Path, head: impl FnOnce(&Path) -> Option<Vec<u8>>) -> FileVie
     if info.len() > MOST_FILE {
         return FileView::TooBig { size: info.len() };
     }
-    let Ok(bytes) = fs::read(path) else {
-        return FileView::Gone;
+    // The file can grow after the metadata was read, so the read itself stops past the limit.
+    let bytes = match read_at_most(path, MOST_FILE) {
+        Ok(Some(bytes)) => bytes,
+        Ok(None) => {
+            return FileView::TooBig {
+                size: info.len().max(MOST_FILE + 1),
+            };
+        }
+        Err(_) => return FileView::Gone,
     };
     let Some(text) = text_of(bytes) else {
         return FileView::Binary;
@@ -48,6 +56,13 @@ pub fn view(path: &Path, head: impl FnOnce(&Path) -> Option<Vec<u8>>) -> FileVie
         .filter(|b| b.len() as u64 <= MOST_FILE)
         .and_then(text_of);
     FileView::Text { text, base }
+}
+
+/// The file's bytes, or `None` when it holds more than `most`; never reads past `most + 1`.
+fn read_at_most(path: &Path, most: u64) -> io::Result<Option<Vec<u8>>> {
+    let mut bytes = Vec::new();
+    File::open(path)?.take(most + 1).read_to_end(&mut bytes)?;
+    Ok((bytes.len() as u64 <= most).then_some(bytes))
 }
 
 /// When the file last changed, so the pane reloads only on a change; `None` when it is gone.
@@ -148,6 +163,19 @@ mod tests {
 
         assert!(matches!(binary, FileView::Text { base: None, .. }));
         assert!(matches!(huge, FileView::Text { base: None, .. }));
+    }
+
+    #[test]
+    fn a_read_stops_past_the_limit() {
+        let dir = TestDir::new();
+        let file = dir.path().join("a.txt");
+        fs::write(&file, "abcd").unwrap();
+
+        assert_eq!(
+            read_at_most(&file, 4).unwrap().as_deref(),
+            Some(&b"abcd"[..])
+        );
+        assert_eq!(read_at_most(&file, 3).unwrap(), None);
     }
 
     #[test]

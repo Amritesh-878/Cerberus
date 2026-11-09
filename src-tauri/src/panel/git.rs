@@ -60,14 +60,34 @@ impl Git {
         })
     }
 
-    /// The file's committed version, raw; `None` outside a repo, for an untracked file, or on any failure.
-    pub fn show_head(&self, file: &Path) -> Option<Vec<u8>> {
+    /// The file's committed version, raw; `None` outside a repo, for an untracked file, over `most` bytes, or on any failure.
+    pub fn show_head(&self, file: &Path, most: u64) -> Option<Vec<u8>> {
         let folder = file.parent()?;
         let name = file.file_name()?.to_str()?;
-        let mut command = Command::new(&self.program);
         // `./` makes the path relative to the file's own folder, so no repo root has to be worked out.
+        let listed = self.in_folder(
+            folder,
+            &["ls-tree", "-l", "HEAD", "--", &format!("./{name}")],
+        )?;
+        let listed = String::from_utf8(listed).ok()?;
+        let mut fields = listed.split_whitespace();
+        let (_mode, kind, id, size) = (
+            fields.next()?,
+            fields.next()?,
+            fields.next()?,
+            fields.next()?,
+        );
+        // The size comes first, so a huge committed version is never read; the id names exactly that blob.
+        if kind != "blob" || size.parse::<u64>().ok()? > most {
+            return None;
+        }
+        self.in_folder(folder, &["cat-file", "blob", id])
+    }
+
+    fn in_folder(&self, folder: &Path, args: &[&str]) -> Option<Vec<u8>> {
+        let mut command = Command::new(&self.program);
         command
-            .args(["show", &format!("HEAD:./{name}")])
+            .args(args)
             .current_dir(folder)
             .env("GIT_OPTIONAL_LOCKS", "0")
             .env("GIT_TERMINAL_PROMPT", "0");
@@ -276,57 +296,39 @@ mod tests {
         let repo = dir.path().join("repo");
         fs::create_dir_all(repo.join("src")).unwrap();
         sh(&repo, &["init", "-q"]);
-        fs::write(
-            repo.join("src/app.ts"),
-            "one
-",
-        )
-        .unwrap();
-        fs::write(
-            repo.join("gone.ts"),
-            "kept
-",
-        )
-        .unwrap();
+        fs::write(repo.join("src/app.ts"), "one\n").unwrap();
+        fs::write(repo.join("gone.ts"), "kept\n").unwrap();
         sh(&repo, &["add", "."]);
         sh(&repo, &["commit", "-q", "-m", "first"]);
-        fs::write(
-            repo.join("src/app.ts"),
-            "two
-",
-        )
-        .unwrap();
-        fs::write(
-            repo.join("src/new.ts"),
-            "fresh
-",
-        )
-        .unwrap();
+        fs::write(repo.join("src/app.ts"), "two\n").unwrap();
+        fs::write(repo.join("src/new.ts"), "fresh\n").unwrap();
         fs::remove_file(repo.join("gone.ts")).unwrap();
         let outside = dir.path().join("loose.txt");
-        fs::write(
-            &outside, "x
-",
-        )
-        .unwrap();
+        fs::write(&outside, "x\n").unwrap();
+        let app = repo.join("src/app.ts");
 
+        assert_eq!(git().show_head(&app, 100).as_deref(), Some(&b"one\n"[..]));
         assert_eq!(
-            git().show_head(&repo.join("src/app.ts")).as_deref(),
-            Some(
-                &b"one
-"[..]
-            )
+            git().show_head(&repo.join("src/new.ts"), 100),
+            None,
+            "untracked"
         );
-        assert_eq!(git().show_head(&repo.join("src/new.ts")), None, "untracked");
         assert_eq!(
-            git().show_head(&repo.join("gone.ts")).as_deref(),
-            Some(
-                &b"kept
-"[..]
-            ),
+            git().show_head(&repo.join("gone.ts"), 100).as_deref(),
+            Some(&b"kept\n"[..]),
             "deleted"
         );
-        assert_eq!(git().show_head(&outside), None, "outside a repo");
+        assert_eq!(git().show_head(&outside, 100), None, "outside a repo");
+        assert_eq!(
+            git().show_head(&app, 4).as_deref(),
+            Some(&b"one\n"[..]),
+            "at the limit"
+        );
+        assert_eq!(
+            git().show_head(&app, 3),
+            None,
+            "over the limit, so never read"
+        );
     }
 
     #[test]

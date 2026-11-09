@@ -63,7 +63,10 @@ pub fn live_read_output(
     let git = crate::programs::Finder::from_env()
         .find("git")
         .map(crate::panel::git::Git::new);
-    let head = |file: &std::path::Path| git.as_ref().and_then(|g| g.show_head(file));
+    let head = |file: &std::path::Path| {
+        git.as_ref()
+            .and_then(|g| g.show_head(file, crate::live::files::MOST_FILE))
+    };
     live.read_output(tab, &path, head)
         .map_err(|e| e.to_string())
 }
