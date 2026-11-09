@@ -31,6 +31,8 @@ beforeEach(() => {
 afterEach(cleanup);
 
 const ALPHA = String.raw`C:\code\alpha`;
+const APP_PATH = String.raw`C:\code\alpha\src\app.ts`;
+const README_PATH = String.raw`C:\code\alpha\readme.md`;
 // Far ahead, so no window has reset by the time a test reads it.
 const RESET = 4_102_444_800;
 
@@ -248,7 +250,7 @@ test("the core's warning event sends one desktop notification naming the account
   );
 });
 
-test("the outputs card lists written files and opens one through the core", async () => {
+test("the outputs card lists written files, and its menu opens one through the core", async () => {
   const live = liveCore();
   const opened: unknown[] = [];
   const root = await renderApp(live.profiles, {
@@ -268,14 +270,13 @@ test("the outputs card lists written files and opens one through the core", asyn
           {
             name: "app.ts",
             folder: "src",
-            path: String.raw`C:\codelpha\srcpp.ts`,
+            path: APP_PATH,
             at: 2,
           },
           {
             name: "readme.md",
             folder: "",
-            path: String.raw`C:\codelpha
-eadme.md`,
+            path: README_PATH,
             at: 1,
           },
         ],
@@ -286,9 +287,11 @@ eadme.md`,
 
   const rows = [...card(root, "Outputs").querySelectorAll(".card-row")];
   expect(rows.map((r) => r.textContent)).toEqual(["app.tssrc", "readme.md"]);
-  (rows[0] as HTMLButtonElement).click();
+  rows[0]?.querySelector<HTMLButtonElement>('[aria-haspopup="menu"]')?.click();
   await settle();
-  expect(opened).toEqual([{ tab: 3, path: String.raw`C:\codelpha\srcpp.ts` }]);
+  click(root, "Open in VS Code");
+  await settle();
+  expect(opened).toEqual([{ tab: 3, path: APP_PATH }]);
 });
 
 test("the tasks card shows what runs and for how long, a finished count, and no stop button", async () => {

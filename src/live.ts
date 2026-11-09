@@ -61,6 +61,24 @@ export function openOutput(tab: TabId, path: string): Promise<void> {
   return invoke("live_open_output", { tab, path });
 }
 
+/** A file the chat wrote as the core read it for the file pane. */
+export type FileView =
+  /** `base` is the `HEAD` version; `null` outside a repo or for an untracked file. */
+  | { kind: "text"; text: string; base: string | null }
+  | { kind: "tooBig"; size: number }
+  | { kind: "binary" }
+  | { kind: "gone" };
+
+/** Reads a file the tab's chat wrote, with its `HEAD` version; the core refuses any other path. */
+export function readOutput(tab: TabId, path: string): Promise<FileView> {
+  return invoke("live_read_output", { tab, path });
+}
+
+/** Changes whenever the file does; `null` when it is gone or not the chat's. */
+export function outputStamp(tab: TabId, path: string): Promise<string | null> {
+  return invoke("live_output_stamp", { tab, path });
+}
+
 export interface Meter {
   account: AccountId;
   fiveHour: LiveWindow | null;
