@@ -393,4 +393,10 @@ test("the rail's dot and summary for a set of services", () => {
   expect(servicesSummary([row("running"), row("stopped")])).toBe(
     "1 of 2 running",
   );
+  expect(servicesSummary([row("restarting")])).toBe(
+    "0 of 1 running, 1 restarting",
+  );
+  expect(
+    servicesSummary([row("starting"), row("crashed"), row("restarting")]),
+  ).toBe("0 of 3 running, 1 crashed, 1 restarting, 1 starting");
 });

@@ -83,12 +83,17 @@ export function overallPhase(
   return ATTENTION.find((phase) => services.some((s) => s.phase === phase));
 }
 
-/** "2 of 3 running, 1 crashed", for the rail icon's label. */
+/** "2 of 3 running, 1 restarting", for the rail icon's label; every state that needs a look is named. */
 export function servicesSummary(services: readonly ServiceRow[]): string {
-  const running = services.filter((s) => s.phase === "running").length;
-  const crashed = services.filter((s) => s.phase === "crashed").length;
-  const base = `${String(running)} of ${String(services.length)} running`;
-  return crashed > 0 ? `${base}, ${String(crashed)} crashed` : base;
+  const count = (phase: Phase) =>
+    services.filter((s) => s.phase === phase).length;
+  const named = (["crashed", "restarting", "starting"] as const)
+    .filter((phase) => count(phase) > 0)
+    .map((phase) => `${String(count(phase))} ${phase}`);
+  return [
+    `${String(count("running"))} of ${String(services.length)} running`,
+    ...named,
+  ].join(", ");
 }
 
 /** A valid TCP port as typed, or `undefined`. */
