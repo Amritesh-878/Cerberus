@@ -166,10 +166,13 @@ impl Services {
             let mut state = self.inner.state();
             let service = state.saved.checked(draft, None)?;
             let id = service.id;
-            state.saved.services.push(service);
-            state.saved.next_id = id + 1;
+            let mut saved = state.saved.clone();
+            saved.services.push(service);
+            saved.next_id = id + 1;
+            // Saved first, so a failed write leaves nothing in memory that a restart would drop.
+            self.inner.store.save(&saved)?;
+            state.saved = saved;
             state.runs.insert(id, Run::new());
-            self.inner.store.save(&state.saved)?;
         }
         Ok(self.inner.changed())
     }
@@ -185,8 +188,11 @@ impl Services {
                 .iter()
                 .position(|s| s.id == id)
                 .ok_or(StoreError::Gone)?;
-            state.saved.services[at] = service;
-            self.inner.store.save(&state.saved)?;
+            let mut saved = state.saved.clone();
+            saved.services[at] = service;
+            // A failed write keeps the old command, so no restart runs one that isn't saved.
+            self.inner.store.save(&saved)?;
+            state.saved = saved;
             state
                 .runs
                 .get(&id)
@@ -198,18 +204,24 @@ impl Services {
         Ok(self.inner.changed())
     }
 
+    /// Saved first: a failed write leaves the service listed and running as it was.
     pub fn remove(&self, id: ServiceId) -> Result<View, StoreError> {
+        {
+            let mut state = self.inner.state();
+            let mut saved = state.saved.clone();
+            saved.services.retain(|s| s.id != id);
+            if saved.services.len() == state.saved.services.len() {
+                return Err(StoreError::Gone);
+            }
+            self.inner.store.save(&saved)?;
+            state.saved = saved;
+        }
+        // Gone from the saved list, so no pending restart can start it again.
         self.inner.stop(id);
         {
             let mut state = self.inner.state();
-            let before = state.saved.services.len();
-            state.saved.services.retain(|s| s.id != id);
-            if state.saved.services.len() == before {
-                return Err(StoreError::Gone);
-            }
             state.runs.remove(&id);
             state.watchers.retain(|_, (service, _)| *service != id);
-            self.inner.store.save(&state.saved)?;
         }
         Ok(self.inner.changed())
     }
@@ -275,8 +287,10 @@ impl Services {
     pub fn fold(&self, folded: bool) -> Result<View, StoreError> {
         {
             let mut state = self.inner.state();
-            state.saved.folded = folded;
-            self.inner.store.save(&state.saved)?;
+            let mut saved = state.saved.clone();
+            saved.folded = folded;
+            self.inner.store.save(&saved)?;
+            state.saved = saved;
         }
         Ok(self.inner.changed())
     }

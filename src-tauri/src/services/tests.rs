@@ -215,3 +215,38 @@ fn removing_a_service_stops_it_and_forgets_it() {
     wait_for("the child to end", || gone(child));
     assert!(matches!(services.start(0), Err(StoreError::Gone)));
 }
+
+#[test]
+fn a_change_that_cannot_be_saved_changes_nothing() {
+    let dir = TestDir::new();
+    let (services, _) = services(&dir);
+    services.add(&draft(STAYS_UP, false)).unwrap();
+    services.start(0).unwrap();
+    wait_for("the child", || !children(&services, 0).is_empty());
+    let child = children(&services, 0)[0];
+    // A folder where the file goes makes every later write fail, on both platforms.
+    std::fs::remove_file(dir.path().join("services.json")).unwrap();
+    std::fs::create_dir(dir.path().join("services.json")).unwrap();
+    let mut other = draft("echo two", false);
+    other.name = "two".into();
+    let mut renamed = draft("echo changed", false);
+    renamed.name = "renamed".into();
+
+    assert!(services.add(&other).is_err());
+    assert!(services.update(0, &renamed).is_err());
+    assert!(services.remove(0).is_err());
+    assert!(services.fold(true).is_err());
+
+    let view = services.view();
+    assert_eq!(view.services.len(), 1);
+    assert_eq!(view.services[0].name, "stand-in");
+    assert_eq!(services.command(0).unwrap(), STAYS_UP);
+    assert!(!view.folded);
+    assert!(is_running(child), "a failed remove leaves it running");
+    assert!(
+        matches!(services.add(&other), Err(StoreError::Io(_))),
+        "the name is still free, only the write failed"
+    );
+    services.stop(0).unwrap();
+    wait_for("the child to end", || gone(child));
+}
