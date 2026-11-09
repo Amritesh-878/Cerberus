@@ -33,12 +33,17 @@ export interface Size {
   rows: number;
 }
 
+/** A `claude` started by hand in a shell tab: `cwd` is its folder when the core found one, and `saved` says its chat can be resumed. */
+export type HandChat =
+  { chat: "started"; cwd: string | null } | { chat: "ended"; saved: boolean };
+
 export interface SessionHandlers {
   output: (bytes: Uint8Array) => void;
   /** `ended`: a Claude chat ended by itself, so the core runs the shell when the tab starts again. */
   exit: (code: number | null, ended: boolean) => void;
-  /** A Claude tab's chat state; other programs report none. */
+  /** A Claude tab's chat state, or that of a `claude` started in a shell tab; other programs report none. */
   state?: (state: LiveState) => void;
+  chat?: (chat: HandChat) => void;
 }
 
 interface Exited {
@@ -75,17 +80,21 @@ export class PtySession {
     handlers: SessionHandlers,
     tab: number | null = null,
   ) {
-    const events = new Channel<ArrayBuffer | Exited | LiveState>((event) => {
-      if (event instanceof ArrayBuffer) {
-        handlers.output(new Uint8Array(event));
-      } else if ("state" in event) {
-        // The session-file watcher can report once more after the exit; an ended tab stays done.
-        if (!this.#ended) handlers.state?.(event);
-      } else {
-        this.#ended = true;
-        handlers.exit(event.exitCode, event.ended ?? false);
-      }
-    });
+    const events = new Channel<ArrayBuffer | Exited | LiveState | HandChat>(
+      (event) => {
+        if (event instanceof ArrayBuffer) {
+          handlers.output(new Uint8Array(event));
+        } else if ("state" in event) {
+          // The session-file watcher can report once more after the exit; an ended tab stays done.
+          if (!this.#ended) handlers.state?.(event);
+        } else if ("chat" in event) {
+          if (!this.#ended) handlers.chat?.(event);
+        } else {
+          this.#ended = true;
+          handlers.exit(event.exitCode, event.ended ?? false);
+        }
+      },
+    );
     const { account, ...request } = spec;
     const spawned = invoke<Spawned>("pty_spawn", {
       request: { ...request, ...size },
