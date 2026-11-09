@@ -2511,3 +2511,106 @@ button.card-row:focus-visible,
   color: var(--text);
   background: var(--hover);
 }
+
+/* Live cards: context, usage, the threshold and the low-limit warning. */
+.card-action.text {
+  width: auto;
+  padding: 0 8px;
+  font: inherit;
+  font-size: 12px;
+}
+
+.card-action.text:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.card-action.text:disabled:hover {
+  color: var(--dim);
+  background: none;
+}
+
+.meter {
+  flex: 1 1 auto;
+  min-width: 48px;
+  height: 6px;
+  margin: 6px 0;
+  overflow: hidden;
+  background: var(--selected);
+  border-radius: 3px;
+}
+
+.meter span {
+  display: block;
+  height: 100%;
+  background: var(--dim);
+  border-radius: 3px;
+}
+
+.meter.high span {
+  background: var(--accent);
+}
+
+.usage-account + .usage-account {
+  margin-top: 8px;
+}
+
+.usage-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.usage-line {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.usage-name {
+  flex: 0 0 44px;
+}
+
+.usage-line .meter {
+  margin: 0;
+}
+
+.usage-meta,
+.usage-unknown {
+  white-space: nowrap;
+}
+
+.usage-unknown {
+  color: var(--faint);
+}
+
+.setting-switch label.setting-number {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 2px 0 4px 21px;
+  font-size: 12px;
+  color: var(--dim);
+  cursor: default;
+}
+
+.setting-switch .setting-number input {
+  width: 52px;
+  margin: 0;
+  font: inherit;
+  cursor: text;
+}
+
+.live-warning {
+  flex-wrap: wrap;
+}
+
+.live-warning .faint {
+  color: var(--dim);
+}

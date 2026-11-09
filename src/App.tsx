@@ -58,7 +58,9 @@ import {
   NOTE_TEXT,
   typeIn,
 } from "./messaging";
-import { createNotifier } from "./notify";
+import { createLiveFeed, dismissWarning, warningText } from "./live";
+import { LiveBanner } from "./LiveBanner";
+import { createNotifier, sendWarning } from "./notify";
 import { type Anchor, onScreen, type Side } from "./place";
 import { followOpenRequests } from "./open";
 import { Panel } from "./Panel";
@@ -161,7 +163,12 @@ export function App() {
   const [active, setActive] = createSignal<TabId>();
   const [opening, setOpening] = createSignal<Opening>();
   // Holds the tab it opened for, so switching tabs while it is open cannot move another chat.
-  const [pillMenu, setPillMenu] = createSignal<{ at: MenuPlace; tab: TabId }>();
+  // `chosen` opens the menu at its confirm step, as a warning's Continue on does.
+  const [pillMenu, setPillMenu] = createSignal<{
+    at: MenuPlace;
+    tab: TabId;
+    chosen?: Account;
+  }>();
   const [sheet, setSheet] = createSignal(false);
   const sidebarWidth = createSavedWidth({
     saved: () => profiles()?.sidebarWidth,
@@ -393,6 +400,16 @@ export function App() {
       setOpening(undefined);
       select(id);
     },
+  });
+  const live = createLiveFeed((warning) => {
+    if (!alertsSetting.on()) return;
+    const name =
+      profiles()?.accounts.find((a) => a.id === warning.account)?.name ??
+      "An account";
+    sendWarning(
+      { title: "Usage limit", body: warningText(name, warning) },
+      warning.tab,
+    );
   });
 
   // The account each moving tab's chat is going to, shown on its row and pane until it restarts.
@@ -928,6 +945,24 @@ export function App() {
                   </div>
                 )}
               </Show>
+              <LiveBanner
+                warnings={live().warnings}
+                profiles={loaded()}
+                statuses={statuses}
+                tabTitle={(id) => tabById(id)?.title}
+                onContinue={(id, account, box) => {
+                  setPillMenu({
+                    at: { x: box.left, y: box.bottom },
+                    tab: id,
+                    chosen: account,
+                  });
+                }}
+                onDismiss={(account) => {
+                  dismissWarning(account).catch((error: unknown) => {
+                    console.error("could not dismiss the warning:", error);
+                  });
+                }}
+              />
               <Show when={byHandShown()} keyed>
                 {(id) => (
                   <HandNote
@@ -1178,6 +1213,7 @@ export function App() {
                 onCreatePr={createPr}
                 onType={typeIntoChat}
                 links={messaging.snapshot()}
+                live={live()}
                 onEditEnvironment={() => {
                   const id = shown();
                   if (id !== undefined && !applying().has(id)) setEditing(id);
@@ -1230,6 +1266,7 @@ export function App() {
               {(tab) => (
                 <TabMenu
                   title={tab().title}
+                  chosen={pillMenu()?.chosen}
                   account={menuAccount(
                     loaded().accounts.find(
                       (a) => a.id === tab().launch.account?.id,

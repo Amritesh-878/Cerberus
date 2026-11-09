@@ -23,6 +23,7 @@ test("each switch is a short name over a one-line description, and says once whe
     { name: "Desktop alerts", lines: 1, applies: 0 },
     { name: "Suggestions from history", lines: 2, applies: 1 },
     { name: "Messages between accounts", lines: 2, applies: 1 },
+    { name: "Live cards", lines: 2, applies: 1 },
   ]);
 });
 

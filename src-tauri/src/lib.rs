@@ -1,9 +1,11 @@
 mod accounts;
 mod bridge;
+mod cards;
 mod cli_link;
 mod commands;
 mod handover;
 mod job;
+mod live;
 #[cfg(unix)]
 mod login_path;
 mod menu;
@@ -26,6 +28,7 @@ use crate::accounts::Accounts;
 use crate::bridge::Bridge;
 use crate::bridge::spawn::Messages;
 use crate::handover::RunningTabs;
+use crate::live::Live;
 use crate::panel::PrCache;
 use crate::pty::PtyManager;
 use crate::saved::Saved;
@@ -39,6 +42,17 @@ pub fn mcp_server() {
         std::io::stdin().lock(),
         std::io::stdout(),
         bridge::mcp::Env::from_process(),
+    );
+}
+
+/// The `cerberus-live` helper's whole life: one status line update, passed on and reported.
+pub fn live_helper() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    live::helper::run(
+        &args,
+        std::io::stdin().lock(),
+        std::io::stdout().lock(),
+        &live::helper::Env::from_process(),
     );
 }
 
@@ -73,6 +87,7 @@ pub fn run() {
                     Bridge::off()
                 });
             app.manage(bridge);
+            app.manage(start_live(app.handle(), &paths.app_data_dir()?));
             let handle = app.handle().clone();
             let report = move |failure: Option<&str>| {
                 // Fails only once the window is gone, and then nobody is left to show it.
@@ -135,6 +150,10 @@ pub fn run() {
             panel::panel_connectors,
             panel::panel_skills,
             messages::set_messages,
+            cards::live_view,
+            cards::live_dismiss,
+            cards::set_live,
+            cards::set_warn_at,
             messages::bridge_snapshot,
             messages::bridge_decide,
             messages::bridge_discard,
@@ -152,4 +171,22 @@ pub fn run() {
             job::spare_children_on_exit();
         }
     });
+}
+
+// Without the helper or its pipe the cards stay empty, and every tab starts as it did before.
+fn start_live(app: &tauri::AppHandle, data_dir: &std::path::Path) -> Live {
+    let Some(helper) = live::helper_path() else {
+        eprintln!("live cards are off: the cerberus-live helper is missing");
+        return Live::off();
+    };
+    Live::start(
+        data_dir,
+        helper,
+        live::claude_shell(),
+        cards::AppSink(app.clone()),
+    )
+    .unwrap_or_else(|e| {
+        eprintln!("live cards are off: {e}");
+        Live::off()
+    })
 }

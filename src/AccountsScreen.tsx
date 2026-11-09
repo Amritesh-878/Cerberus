@@ -12,6 +12,7 @@ import {
 } from "./accounts";
 import { installCli, type Linked } from "./cli";
 import { PLATFORM } from "./keys";
+import { LiveSetting } from "./LiveSetting";
 import { MessagesSetting } from "./MessagesSetting";
 import type { ProgramChoice } from "./pty";
 import type { Statuses } from "./statuses";
@@ -73,6 +74,7 @@ export function AccountsScreen(props: {
         profiles={props.profiles}
         onProfiles={props.onProfiles}
       />
+      <LiveSetting profiles={props.profiles} onProfiles={props.onProfiles} />
       <Show when={PLATFORM === "mac"}>
         <h3>Command line</h3>
         <CliInstall />

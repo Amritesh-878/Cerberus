@@ -79,6 +79,7 @@ jobs:
           test -x "$app/Contents/MacOS/cerberus"
           test -x "$app/Contents/MacOS/cerberus-cli"
           test -x "$app/Contents/MacOS/cerberus-mcp"
+          test -x "$app/Contents/MacOS/cerberus-live"
           hdiutil detach "$RUNNER_TEMP/dmg"
 
       - name: Hash the installer
