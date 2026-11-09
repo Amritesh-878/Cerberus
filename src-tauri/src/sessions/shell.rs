@@ -138,6 +138,12 @@ pub fn watch_shell(
         loop {
             let gap = if following.is_some() { FOLLOW } else { LOOK };
             if !matches!(stop.recv_timeout(gap), Err(RecvTimeoutError::Timeout)) {
+                // A first message sent just before the shell closed still makes the chat resumable.
+                if let Some((_, follower)) = &mut following
+                    && let (Some(id), _) = follower.finish()
+                {
+                    report.session(&id);
+                }
                 return;
             }
             let Some((pid, follower)) = &mut following else {
@@ -165,12 +171,12 @@ pub fn watch_shell(
                 }
                 continue;
             }
-            if !report.open() {
-                return;
-            }
             let (unsaved, saved) = follower.finish();
             if let Some(id) = unsaved {
                 report.session(&id);
+            }
+            if !report.open() {
+                return;
             }
             report.chat(&HandChat::Ended { saved });
             // A file left by a `claude` that crashed must not be found again.

@@ -365,6 +365,56 @@ fn a_chat_closed_with_its_shell_by_cerberus_is_not_ended() {
 }
 
 #[test]
+fn a_first_message_just_before_cerberus_closes_the_shell_is_still_saved() {
+    let dir = TestDir::new();
+    let seen = Seen::new(None);
+    let (stop, stopped) = mpsc::channel::<()>();
+    let watcher = watch_shell(
+        shell_on(dir.path(), now_ms() - 1_000, child),
+        stopped,
+        seen.clone(),
+    )
+    .unwrap();
+    write_session(dir.path(), CLAUDE, dir.path(), "busy");
+    seen.wait_for(|e| has(e, "working"));
+
+    seen.open.store(false, Ordering::SeqCst);
+    write_transcript(dir.path(), dir.path());
+    fs::remove_file(dir.path().join("sessions").join(format!("{CLAUDE}.json"))).unwrap();
+    let events = seen.wait_for(|e| has(e, "session"));
+    drop(stop);
+    watcher.join().unwrap();
+
+    assert!(has(&events, &format!("session {SESSION}")), "{events:?}");
+    assert!(!has(&events, "ended"), "{events:?}");
+}
+
+#[test]
+fn a_first_message_just_before_the_watcher_stops_is_still_saved() {
+    let dir = TestDir::new();
+    let seen = Seen::new(None);
+    let (stop, stopped) = mpsc::channel::<()>();
+    let watcher = watch_shell(
+        shell_on(dir.path(), now_ms() - 1_000, child),
+        stopped,
+        seen.clone(),
+    )
+    .unwrap();
+    write_session(dir.path(), CLAUDE, dir.path(), "busy");
+    seen.wait_for(|e| has(e, "working"));
+
+    write_transcript(dir.path(), dir.path());
+    drop(stop);
+    watcher.join().unwrap();
+
+    assert!(
+        has(&seen.events(), &format!("session {SESSION}")),
+        "{:?}",
+        seen.events()
+    );
+}
+
+#[test]
 fn a_folder_that_does_not_exist_is_not_handed_on() {
     let dir = TestDir::new();
     let file = SessionFile {
