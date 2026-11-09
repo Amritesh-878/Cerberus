@@ -107,7 +107,7 @@ test("the collapse button folds the sidebar to a rail of projects and saves it",
   clickLabel(root, "Collapse the sidebar");
   await settle();
 
-  expect(root.querySelector(".app")?.classList.contains("rail")).toBe(true);
+  expect(root.querySelector(".app")?.classList.contains("sidebar-rail")).toBe(true);
   expect(railProjects(root)).toEqual(["alpha", "notes site"]);
   expect(
     [...root.querySelectorAll(".rail-project")].map((b) => b.textContent),

@@ -2621,7 +2621,7 @@ button.card-row:focus-visible,
 }
 
 /* The collapsed sidebar: a rail of project icons. */
-.app.rail .sidebar {
+.app.sidebar-rail .sidebar {
   display: none;
 }
 

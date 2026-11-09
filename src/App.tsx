@@ -808,7 +808,7 @@ export function App() {
             class="app"
             classList={{
               drawer: drawer(),
-              rail: mode() === "rail" && !inSetup(),
+              "sidebar-rail": mode() === "rail" && !inSetup(),
               "panel-over": panelOver(),
             }}
             style={{
