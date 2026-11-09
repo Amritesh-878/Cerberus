@@ -19,6 +19,7 @@ const PROFILES: Profiles = {
   startFolder: null,
   sidebarWidth: null,
   splitShare: null,
+  sidebarCollapsed: false,
   panel: {
     open: false,
     width: null,

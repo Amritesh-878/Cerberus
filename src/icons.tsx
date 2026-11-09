@@ -179,6 +179,17 @@ export function PanelIcon() {
   );
 }
 
+/** The panel icon mirrored: a window with its left column marked, for the sidebar. */
+export function SidebarIcon() {
+  return (
+    <Stroke
+      d="M3.5 3h9A1.5 1.5 0 0 1 14 4.5v7a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 11.5v-7A1.5 1.5 0 0 1 3.5 3M6 3v10"
+      size={16}
+      width={1.4}
+    />
+  );
+}
+
 export function BranchIcon() {
   return (
     <Stroke

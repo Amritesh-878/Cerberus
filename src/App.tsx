@@ -25,6 +25,7 @@ import {
   pickFolder,
   type Profiles,
   resetProfiles,
+  setSidebarCollapsed,
   setSidebarWidth,
   setSplitShare,
   statusText,
@@ -104,6 +105,13 @@ import {
   type Tree,
 } from "./tree";
 import { Walkthrough } from "./Walkthrough";
+import {
+  panelOverlays,
+  RAIL_BELOW,
+  RAIL_WIDTH,
+  sidebarMode,
+} from "./sidebarLayout";
+import { SidebarRail } from "./SidebarRail";
 import { SIDEBAR_DEFAULT, SPLIT_DEFAULT } from "./widths";
 
 type Page = "walkthrough" | "accounts";
@@ -183,6 +191,64 @@ export function App() {
     changed,
   });
   const [drawer, setDrawer] = createSignal(false);
+  const [windowWidth, setWindowWidth] = createSignal(innerWidth);
+  onMount(() => {
+    const onResize = () => setWindowWidth(innerWidth);
+    addEventListener("resize", onResize);
+    onCleanup(() => {
+      removeEventListener("resize", onResize);
+    });
+  });
+  // The click's choice, ahead of the saved profiles while its save is on the way.
+  const [collapsedNow, setCollapsedNow] = createSignal<boolean>();
+  const collapsed = () =>
+    collapsedNow() ?? profiles()?.sidebarCollapsed ?? false;
+  // Opened by hand in a window too narrow for the sidebar; never saved.
+  const [narrowOpen, setNarrowOpen] = createSignal(false);
+  createEffect(() => {
+    if (windowWidth() >= RAIL_BELOW) setNarrowOpen(false);
+  });
+  const mode = () => sidebarMode(windowWidth(), collapsed(), narrowOpen());
+  const setCollapsed = (next: boolean) => {
+    if (windowWidth() < RAIL_BELOW) {
+      setNarrowOpen(!next);
+      return;
+    }
+    setCollapsedNow(next);
+    setSidebarCollapsed(next)
+      .then(changed, (error: unknown) => {
+        console.error("sidebar state not saved:", error);
+      })
+      .finally(() => {
+        setCollapsedNow(undefined);
+      });
+  };
+  const toggleSidebar = () => {
+    if (mode() === "drawer") setDrawer((open) => !open);
+    else setCollapsed(mode() === "open");
+  };
+  // Raised on each rail click, so a second click on the same project reveals it again.
+  const [revealed, setRevealed] = createSignal<{
+    project: ProjectId;
+    n: number;
+  }>();
+  const openProject = (project: ProjectId) => {
+    setCollapsed(false);
+    setRevealed((now) => ({ project, n: (now?.n ?? 0) + 1 }));
+  };
+  const sidebarPx = () => {
+    const now = mode();
+    if (now === "drawer") return 0;
+    if (now === "rail") return RAIL_WIDTH;
+    return Math.min(sidebarWidth.value(), windowWidth() / 2);
+  };
+  const panelOver = () =>
+    panel.open() &&
+    panelOverlays(
+      windowWidth(),
+      sidebarPx(),
+      Math.max(240, Math.min(panel.width(), (windowWidth() * 2) / 5)),
+    );
   const [tabsClosed, setTabsClosed] = createSignal(0);
   const [board, setBoard] = createSignal<Board>(new Map());
   // Tabs whose chat ended; the core runs the shell in them until Resume chat.
@@ -625,6 +691,10 @@ export function App() {
         if (!inSetup()) panel.toggle();
         return;
       }
+      if (shortcut === "sidebar") {
+        if (!inSetup()) toggleSidebar();
+        return;
+      }
       if (inSetup() && shortcut !== "closeTab") return;
       if (shortcut === "nextTab" || shortcut === "previousTab") {
         const id = stepTab(tree(), shown(), shortcut === "nextTab" ? 1 : -1);
@@ -736,18 +806,30 @@ export function App() {
         {(loaded) => (
           <div
             class="app"
-            classList={{ drawer: drawer() }}
+            classList={{
+              drawer: drawer(),
+              rail: mode() === "rail" && !inSetup(),
+              "panel-over": panelOver(),
+            }}
             style={{
-              "--sidebar-width": `${String(sidebarWidth.value())}px`,
+              "--sidebar-width": `${String(
+                mode() === "rail" && !inSetup()
+                  ? RAIL_WIDTH
+                  : sidebarWidth.value(),
+              )}px`,
             }}
           >
-            <SidebarEdge
-              width={sidebarWidth.value()}
-              onWidth={sidebarWidth.drag}
-              onDone={sidebarWidth.save}
-            />
+            <Show when={mode() !== "rail" || inSetup()}>
+              <SidebarEdge
+                width={sidebarWidth.value()}
+                onWidth={sidebarWidth.drag}
+                onDone={sidebarWidth.save}
+              />
+            </Show>
             <Sidebar
               locked={inSetup()}
+              opened={revealed()}
+              onCollapse={toggleSidebar}
               tree={tree()}
               profiles={loaded()}
               statuses={statuses}
@@ -777,6 +859,21 @@ export function App() {
                 setDrawer(false);
               }}
             />
+            <Show when={mode() === "rail" && !inSetup()}>
+              <SidebarRail
+                projects={tree().projects}
+                active={shownTab()?.projectId ?? undefined}
+                waiting={(project) =>
+                  tree().tabs.some(
+                    (t) =>
+                      t.projectId === project &&
+                      markOf(board(), t.id)?.kind === "waiting",
+                  )
+                }
+                onExpand={toggleSidebar}
+                onOpenProject={openProject}
+              />
+            </Show>
             <Show when={drawer()}>
               <div class="scrim" onClick={() => setDrawer(false)} />
             </Show>
@@ -1206,6 +1303,8 @@ export function App() {
             <Show when={panel.open() && !inSetup()}>
               <Panel
                 tab={shownTab()}
+                overlay={panelOver()}
+                onClose={panel.toggle}
                 profiles={loaded()}
                 statuses={statuses}
                 state={panel}

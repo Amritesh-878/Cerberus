@@ -46,6 +46,7 @@ export const EMPTY: Profiles = {
   startFolder: null,
   sidebarWidth: null,
   splitShare: null,
+  sidebarCollapsed: false,
   panel: {
     open: false,
     width: null,
@@ -73,6 +74,7 @@ export const SAVED: Profiles = {
   startFolder: null,
   sidebarWidth: null,
   splitShare: null,
+  sidebarCollapsed: false,
   panel: {
     open: false,
     width: null,

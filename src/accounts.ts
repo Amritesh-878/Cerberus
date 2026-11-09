@@ -43,6 +43,8 @@ export interface Profiles {
   panel: PanelPrefs;
   /** The left chat's share of a split in thousandths; `null` keeps half and half. */
   splitShare: number | null;
+  /** The sidebar is folded to its rail; a narrow window folds it without saving. */
+  sidebarCollapsed: boolean;
   /** Desktop notifications when a chat in another tab needs you. */
   alerts: boolean;
   /** Shell tabs suggest from history as you type, through each shell's own feature. */
@@ -140,6 +142,10 @@ export function setStartFolder(folder: string | null): Promise<Profiles> {
 
 export function setSidebarWidth(width: number): Promise<Profiles> {
   return invoke<Profiles>("set_sidebar_width", { width });
+}
+
+export function setSidebarCollapsed(collapsed: boolean): Promise<Profiles> {
+  return invoke<Profiles>("set_sidebar_collapsed", { collapsed });
 }
 
 export function setSplitShare(share: number): Promise<Profiles> {
