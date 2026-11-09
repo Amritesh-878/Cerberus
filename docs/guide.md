@@ -72,6 +72,21 @@ Claude Code's tables count an emoji such as ✅ as two columns, and so does Cerb
 borders line up. When a tab's size changes (the window, the sidebar, a split), Cerberus tells the
 program the new size once it settles, so Claude Code redraws once at the new width.
 
+### Collapsing the sidebar
+
+The button beside the search box, or Ctrl+Shift+E (Cmd+Shift+E on macOS), folds the sidebar to a
+thin rail: one icon per project (its initials), a dot on a project where a chat is waiting on you,
+and an expand button at the top. Clicking a project's icon opens the sidebar with that project
+unfolded. Collapsed or open is saved in `profiles.json`, and the width it opens to stays as you
+dragged it. The rail starts no drags; drag a tab to split from the open sidebar.
+
+Below 960 pixels wide the sidebar folds to the rail by itself, and opening it there lasts until the
+window grows again; your own choice is kept for wider windows. Below 720 it becomes a drawer behind
+the menu button, as before.
+
+When the right panel would leave the chat less than about 60 columns, it opens over the chat
+instead of beside it, with a close button in its own bar.
+
 ## Restarts and resuming
 
 Projects and tabs are saved as you change them, in `tree.db` in the app's data folder. After a
@@ -320,6 +335,36 @@ The message text stays in memory: Cerberus never logs it or saves it. Delivery i
 the token Claude Code gives its own child processes; Cerberus reads no credentials, key files or
 transcripts for it.
 
+## Services
+
+A service is a background program Cerberus keeps running for you, such as a cloudflared tunnel or
+a dev server, without a tab of its own. They are listed under **Services** at the foot of the
+sidebar; click the title to fold the list (kept across restarts).
+
+- **+** adds one: a name, the command, a folder (your home folder if none), a shell (the Shell
+  setting's unless you pick one), **Start with Cerberus** and **Restart if it stops** (on by
+  default). **Start from** fills the form: **cloudflared tunnel** asks for a local port and fills
+  `cloudflared tunnel --url http://localhost:<port>`; **Dev server** fills `npm run dev`.
+- Each row has a dot for its state: green running, amber starting or restarting, red crashed,
+  hollow stopped. Its **⋯** menu has Start or Stop, Restart, Show output, Edit and Remove (which
+  asks first, and stops it).
+- **The address**: for a tunnel, the first `https://….trycloudflare.com` it prints; for anything
+  else, the first `http://localhost:<port>` or `http://127.0.0.1:<port>`. Click it to open it in
+  the browser, or **Copy** it. A restart finds it again.
+- **Show output** (or a click on the name) shows what it printed beside the tab on screen, read
+  only. The last ~5,000 lines are kept in memory only: never written to disk or logs, and gone when
+  Cerberus closes.
+- **Restart if it stops**: after an exit you didn't ask for, it starts again in 1 s, then 2, 4, up
+  to 30 s. Five exits within two minutes mark it **crashed**, with a **Restart** button, and it
+  isn't tried again until you click.
+
+A service runs in a hidden terminal, in the chosen shell and folder, with the same `PATH` a shell
+tab gets. Stop ends everything it started, not just its shell (its own job object on Windows, its
+process group on macOS). **Closing Cerberus stops every service**, as it ends tabs; the ones marked
+**Start with Cerberus** start again the next time it opens. Services are kept in `services.json`
+in the app's data folder, the commands with them, so a token in a command is stored there as a
+tab's variables are in `tree.db`; it never appears in the list, logs or error messages.
+
 ## `cerberus open`
 
 The project matches by name, then the same name in any case, then its folder's name; the tab by
@@ -402,6 +447,7 @@ start on macOS.
 | Saved tabs (`tree.db`) | same folder | same folder |
 | zsh suggestion files (`shell/zsh`) | same folder | same folder |
 | MCP config for messages between accounts (`mcp.json`) | `%APPDATA%\com.cerberus.terminal` | `~/Library/Application Support/com.cerberus.terminal` |
+| Services (`services.json`) | same folder | same folder |
 | Status line settings for live cards (`live/tab-<id>.json`) | same folder | same folder |
 
 Uninstalling on Windows keeps this folder unless you tick the box to delete the app data. An

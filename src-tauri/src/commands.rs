@@ -484,6 +484,14 @@ pub fn set_sidebar_width(
 }
 
 #[tauri::command(async)]
+pub fn set_sidebar_collapsed(
+    accounts: State<'_, Accounts>,
+    collapsed: bool,
+) -> Result<Profiles, AccountsError> {
+    accounts.set_sidebar_collapsed(collapsed)
+}
+
+#[tauri::command(async)]
 pub fn set_split_share(
     accounts: State<'_, Accounts>,
     share: u32,

@@ -5,6 +5,7 @@ import { Card, Note, Row } from "./Cards";
 import {
   AccountDot,
   BranchIcon,
+  CloseIcon,
   CodeIcon,
   DiffIcon,
   FolderIcon,
@@ -73,6 +74,9 @@ export function Panel(props: {
   links: unknown;
   live: LiveView;
   onEditEnvironment: () => void;
+  /** Over the chat, since beside it the chat would be too narrow; it then has its own close button. */
+  overlay?: boolean;
+  onClose?: () => void;
 }) {
   const target = (): Target | undefined => {
     const tab = props.tab;
@@ -148,6 +152,22 @@ export function Panel(props: {
           props.state.save();
         }}
       />
+      <Show when={props.overlay}>
+        <div class="panel-over-bar">
+          <span>Tab details</span>
+          <button
+            type="button"
+            class="icon-button"
+            aria-label="Close the panel"
+            title="Close the panel"
+            onClick={() => {
+              props.onClose?.();
+            }}
+          >
+            <CloseIcon />
+          </button>
+        </div>
+      </Show>
       <div class="panel-cards">
         <Show
           when={props.tab}
