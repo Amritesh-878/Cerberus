@@ -5,9 +5,11 @@ import { cleanup, click, field, renderApp, SAVED, settle } from "./harness";
 import {
   BLANK,
   devServerDraft,
+  overallPhase,
   portOf,
   type ServiceRow,
   type ServicesView,
+  servicesSummary,
   tunnelDraft,
 } from "./services";
 import { menuItems, shortUrl } from "./ServicesSection";
@@ -340,4 +342,55 @@ test("the helpers behind the form and the rows", () => {
   expect(shortUrl("http://localhost:5173/")).toBe("localhost:5173");
   expect(menuItems("crashed")).toEqual(["start", "output", "edit", "remove"]);
   expect(menuItems("restarting")[0]).toBe("stop");
+});
+
+test("the collapsed rail shows one services icon with the dot that most needs a look", async () => {
+  const { core, of } = servicesCore();
+  const collapsed = { ...SAVED, sidebarCollapsed: true };
+  const root = await renderApp(() => collapsed, {
+    ...core,
+    services_view: () => ({ ...VIEW, folded: true }),
+    set_sidebar_collapsed: (args: unknown) => ({
+      ...collapsed,
+      sidebarCollapsed: field(args, "collapsed") as boolean,
+      revision: 1,
+    }),
+  });
+
+  const icon = root.querySelector<HTMLButtonElement>(".rail-services");
+  expect(icon?.getAttribute("aria-label")).toBe(
+    "Services, 1 of 3 running, 1 crashed",
+  );
+  expect(icon?.querySelector(".dot")?.classList.contains("crashed")).toBe(true);
+  icon?.click();
+  await settle();
+
+  expect(root.querySelector(".rail")).toBeNull();
+  expect(of("services_fold")).toEqual([{ folded: false }]);
+});
+
+test("with no services the rail shows no services icon", async () => {
+  const { core } = servicesCore();
+  const root = await renderApp(() => ({ ...SAVED, sidebarCollapsed: true }), {
+    ...core,
+    services_view: () => ({ folded: false, services: [] }),
+  });
+
+  expect(root.querySelector(".rail")).not.toBeNull();
+  expect(root.querySelector(".rail-services")).toBeNull();
+});
+
+test("the rail's dot and summary for a set of services", () => {
+  const row = (phase: ServiceRow["phase"]): ServiceRow => ({
+    ...TUNNEL,
+    phase,
+  });
+
+  expect(overallPhase([])).toBeUndefined();
+  expect(overallPhase([row("stopped"), row("running")])).toBe("running");
+  expect(overallPhase([row("running"), row("restarting")])).toBe("restarting");
+  expect(overallPhase([row("starting"), row("crashed")])).toBe("crashed");
+  expect(servicesSummary([row("running"), row("stopped")])).toBe(
+    "1 of 2 running",
+  );
 });

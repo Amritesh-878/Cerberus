@@ -2981,3 +2981,14 @@ button.card-row:focus-visible,
   color: var(--dim);
   border-bottom: 1px solid var(--line);
 }
+
+/* The services' icon sits at the foot of the rail, below the projects. */
+.rail-services {
+  margin-top: auto;
+  color: var(--dim);
+}
+
+.rail-services .dot {
+  width: 7px;
+  height: 7px;
+}

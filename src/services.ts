@@ -67,6 +67,30 @@ export function isOn(phase: Phase): boolean {
   return phase === "starting" || phase === "running" || phase === "restarting";
 }
 
+// The state that most needs a look comes first.
+const ATTENTION: readonly Phase[] = [
+  "crashed",
+  "restarting",
+  "starting",
+  "running",
+  "stopped",
+];
+
+/** The rail's one dot for every service; `undefined` when there are none. */
+export function overallPhase(
+  services: readonly ServiceRow[],
+): Phase | undefined {
+  return ATTENTION.find((phase) => services.some((s) => s.phase === phase));
+}
+
+/** "2 of 3 running, 1 crashed", for the rail icon's label. */
+export function servicesSummary(services: readonly ServiceRow[]): string {
+  const running = services.filter((s) => s.phase === "running").length;
+  const crashed = services.filter((s) => s.phase === "crashed").length;
+  const base = `${String(running)} of ${String(services.length)} running`;
+  return crashed > 0 ? `${base}, ${String(crashed)} crashed` : base;
+}
+
 /** A valid TCP port as typed, or `undefined`. */
 export function portOf(text: string): number | undefined {
   const port = Number(text.trim());
