@@ -316,6 +316,12 @@ export function App() {
       if (pair) setViewing(undefined);
     }),
   );
+  // A page such as Accounts takes the whole stage, so the output would cover it.
+  createEffect(
+    on(page, (open) => {
+      if (open !== undefined) setViewing(undefined);
+    }),
+  );
   const onServiceError = (error: unknown) => {
     const id = shown();
     if (id !== undefined) setAlert(id, String(error));

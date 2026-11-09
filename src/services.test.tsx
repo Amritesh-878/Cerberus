@@ -313,6 +313,22 @@ test("a click on a service shows its output, and Close stops watching", async ()
   expect(of("service_unwatch")).toEqual([{ watch: 7 }]);
 });
 
+test("opening Accounts closes a service's output, so the page shows", async () => {
+  const { core } = servicesCore();
+  const root = await renderApp(() => SAVED, core);
+  row(root, "tunnel")
+    .querySelector<HTMLButtonElement>(".service-name")
+    ?.click();
+  await settle();
+  expect(root.querySelector(".service-view")).not.toBeNull();
+
+  root.querySelector<HTMLButtonElement>('[aria-label="Accounts"]')?.click();
+  await settle();
+
+  expect(root.querySelector(".service-view")).toBeNull();
+  expect(root.querySelector(".page")?.hasAttribute("hidden")).toBe(false);
+});
+
 test("the helpers behind the form and the rows", () => {
   expect(portOf("5173")).toBe(5173);
   expect(portOf(" 80 ")).toBe(80);
