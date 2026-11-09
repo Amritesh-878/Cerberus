@@ -16,7 +16,14 @@ export interface Account {
 
 /** The right panel's cards that fold to their title. */
 export type PanelCard =
-  "environment" | "context" | "usage" | "changes" | "connectors" | "skills";
+  | "environment"
+  | "context"
+  | "usage"
+  | "outputs"
+  | "tasks"
+  | "changes"
+  | "connectors"
+  | "skills";
 
 export interface PanelPrefs {
   open: boolean;
