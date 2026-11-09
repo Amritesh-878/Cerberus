@@ -190,6 +190,17 @@ export function SidebarIcon() {
   );
 }
 
+/** Two stacked boxes, a server rack, for background services. */
+export function ServicesIcon() {
+  return (
+    <Stroke
+      d="M3.5 2.5h9a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1M3.5 8.5h9a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1M5 5h.5M5 11h.5"
+      size={16}
+      width={1.4}
+    />
+  );
+}
+
 export function BranchIcon() {
   return (
     <Stroke

@@ -3191,3 +3191,14 @@ button.card-row:focus-visible,
   height: 28px;
   padding: 0 12px;
 }
+
+/* The services' icon sits at the foot of the rail, below the projects. */
+.rail-services {
+  margin-top: auto;
+  color: var(--dim);
+}
+
+.rail-services .dot {
+  width: 7px;
+  height: 7px;
+}
