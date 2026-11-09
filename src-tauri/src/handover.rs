@@ -8,7 +8,7 @@ use serde::{Serialize, Serializer};
 use crate::accounts::{AccountId, Accounts, AccountsError};
 use crate::saved::{Saved, TabId};
 use crate::sessions::carry::{CarryError, copy_chat, copy_to_folder};
-use crate::sessions::procs;
+use crate::sessions::procs::Probes;
 
 // Long enough for a closed tab's `claude` to finish exiting, short enough to answer a click.
 const EXIT_WAIT: Duration = Duration::from_secs(5);
@@ -52,12 +52,6 @@ struct TabProcs {
     watchers: Vec<JoinHandle<()>>,
 }
 
-/// What Windows says about processes, as plain functions so tests can stand in for it.
-pub struct Probes {
-    pub below: fn(u32) -> Vec<u32>,
-    pub is_running: fn(u32) -> bool,
-}
-
 /// Each tab's programs and watchers, so a chat is never copied while anything may still write to it.
 pub struct RunningTabs {
     tabs: Mutex<HashMap<TabId, TabProcs>>,
@@ -68,10 +62,7 @@ pub struct RunningTabs {
 
 impl Default for RunningTabs {
     fn default() -> Self {
-        Self::with(Probes {
-            below: procs::descendants,
-            is_running: procs::is_running,
-        })
+        Self::with(Probes::SYSTEM)
     }
 }
 
@@ -222,6 +213,27 @@ fn continue_within(
         .unwrap_or_else(|| accounts.home().to_string_lossy().into_owned());
     copy_chat(&from, &to, &cwd, &id, &running.probes.is_running)?;
     // The chat goes on under the new account, so the tab resumes it there instead of opening the shell.
+    saved.set_ended(tab, false);
+    Ok(())
+}
+
+/// Readies a stopped tab to resume its chat as a Claude tab once its shell, and the `claude` started in it, have ended.
+pub fn reopen_chat(saved: &Saved, running: &RunningTabs, tab: TabId) -> Result<(), ContinueError> {
+    reopen_within(saved, running, tab, EXIT_WAIT)
+}
+
+fn reopen_within(
+    saved: &Saved,
+    running: &RunningTabs,
+    tab: TabId,
+    wait: Duration,
+) -> Result<(), ContinueError> {
+    let _moving = running.begin_move(tab).ok_or(ContinueError::Busy)?;
+    // Two `claude` processes on one chat would both write its file.
+    if !running.settle(tab, wait) {
+        return Err(ContinueError::Running);
+    }
+    // A chat that ended just before the shell closed is the one the user asked to reopen.
     saved.set_ended(tab, false);
     Ok(())
 }
@@ -430,6 +442,22 @@ mod tests {
         assert!(matches!(moving("relative"), Err(ContinueError::NoFolder)));
         world.running.started(2);
         assert!(matches!(moving(&plans), Err(ContinueError::Running)));
+    }
+
+    #[test]
+    fn a_reopen_waits_for_the_shell_and_its_chat_then_resumes_even_an_ended_chat() {
+        let world = world();
+        world.saved.set_ended(2, true);
+        world.running.started(2);
+        let reopen = || reopen_within(&world.saved, &world.running, 2, Duration::from_millis(50));
+
+        assert!(matches!(reopen(), Err(ContinueError::Running)));
+        assert!(world.saved.is_ended(2));
+        world.running.ended(2);
+        reopen().unwrap();
+
+        assert!(!world.saved.is_ended(2));
+        assert_eq!(world.saved.session_of(2).as_deref(), Some(ID));
     }
 
     #[test]

@@ -43,7 +43,8 @@ SHA-256 so you can check a download.
 - **A board of every chat.** Each row shows whether its chat is working, waiting on you, or paused
   until a usage reset. A desktop notification tells you when a chat in another tab needs you.
 - **A shell when a chat ends.** After `/exit` the tab becomes a shell in the same folder.
-  **Resume chat** in its menu brings the chat back.
+  **Resume chat** in its menu brings the chat back. Type `claude` in a shell tab and the tab follows
+  that chat as a Claude Code tab until it exits.
 - **Move a chat to another of your accounts**, from the tab's right-click menu.
 - **Two tabs side by side.** Drag a tab from the sidebar onto the right half of the chat; drag the
   line between them to resize.
