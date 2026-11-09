@@ -277,9 +277,15 @@ searches every account's chats at once:
 
 - Before you type, it lists every chat, newest first. Each row has the chat's title (its summary,
   else its first message), its account, its folder, and when its last message was.
-- Words match anywhere, in any case, and every word must match: in the title, the folder or the text
-  of what you and Claude wrote. Tool calls, their output and Claude's thinking are not searched. A
-  row then shows a line around the match.
+- Words match anywhere, in any case: in the title, the folder or the text of what you and Claude
+  wrote. Tool calls, their output and Claude's thinking are not searched.
+- A chat needs only one of your words to show. Chats that match more of them come first, then the
+  newest, so one word you misremember only moves a chat down the list.
+- A word of five or more letters and digits also finds a word one typo away: one letter added,
+  missing, changed, or two neighbours swapped, so `authentcation` finds `authentication`. Shorter
+  words, and words with other characters such as a path, must appear as typed. An exact match ranks
+  above a typo.
+- A row shows a line around its best match, an exact one before a typo.
 - Arrow keys move, Enter (or a click) opens, Escape closes.
 - **Opening** a chat that is already in a tab switches to that tab. Otherwise a new Claude tab starts
   on the chat's own account, in its recorded folder, inside the project that holds that folder (or a
