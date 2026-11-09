@@ -16,6 +16,10 @@ const MOST_SETTINGS: u64 = 2 * 1024 * 1024;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Shell {
     Posix,
+    #[cfg_attr(
+        not(any(windows, test)),
+        expect(dead_code, reason = "only Windows runs status lines in PowerShell")
+    )]
     PowerShell,
 }
 
