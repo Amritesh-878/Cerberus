@@ -129,6 +129,11 @@ folded cards, starred skills and dismissed PRs are kept in `profiles.json`.
 - **Environment:** the tab's account with its email and plan, the tab's folders (a click opens one
   in the file manager; an extra folder shows its branch) and the main folder's git branch. The gear
   opens **Edit environment** (below).
+- **Context:** how full the shown chat's context window is, and its model. **Compact** types
+  `/compact` into the chat's input; nothing is sent until you press Enter. See Live cards below.
+- **Usage:** one row per account with its 5-hour and 7-day plan use and when each resets, from the
+  newest reply of any tab on that account. "Unknown" until a tab on the account gets a reply; an
+  account signed in with an API key never reports one.
 - **Changes:** one row per repo among the tab's folders, the main folder's first: lines added and
   removed on the branch since it left the remote's default branch (`origin/HEAD`, else `main` or
   `master`), uncommitted and untracked files included. **Create PR**
@@ -188,6 +193,31 @@ The gear on the Environment card edits the tab on screen. Nothing changes until 
   refused. The dialog shows names only. Values are stored in plain text in `tree.db` (see below)
   and never logged or shown in an error, so keep real keys in your own secret store and reference
   them from there.
+
+### Live cards
+
+Each Claude tab is started with `--settings` pointing at a small file of Cerberus's own (in the app
+data folder, `live/tab-<id>.json`) that sets one key, `statusLine`. Claude Code runs that status
+line command, the `cerberus-live` helper shipped beside the app, after each reply, and hands it the
+status line's JSON. The helper sends the app only the session id, model name, context percentage,
+and the 5-hour and 7-day used percentages and reset times. Prompts, file paths, costs and the
+transcript path in that JSON are skipped, never kept or logged. Your settings files are never
+written.
+
+If you have a status line of your own, it still runs and shows: Cerberus's command passes the same
+JSON on to it unchanged, and keeps its `padding` and `refreshInterval`. On Windows without Git Bash,
+Claude Code runs status lines in PowerShell; there Cerberus leaves your status line alone, and the
+Context card says the chat can't report.
+
+**Warn when an account passes N% of its 5-hour limit** (Accounts, under Claude tabs; 85% by
+default) shows a banner over the chat and, with desktop alerts on, a notification: "work is at 87%,
+resets 6:40pm". It comes once per account per 5-hour window. The banner lists **Continue on
+<account>** for each signed-in account below the line; a click opens the usual Continue on confirm
+for the tab that crossed it, and nothing moves until you confirm. **Dismiss** hides it until the
+next window.
+
+The **Live cards** switch, in the same place, turns all of it off; Claude tabs started after that
+get no `--settings` and start as before.
 
 ## The session board and alerts
 
@@ -388,6 +418,7 @@ start on macOS.
 | zsh suggestion files (`shell/zsh`) | same folder | same folder |
 | MCP config for messages between accounts (`mcp.json`) | `%APPDATA%\com.cerberus.terminal` | `~/Library/Application Support/com.cerberus.terminal` |
 | Services (`services.json`) | same folder | same folder |
+| Status line settings for live cards (`live/tab-<id>.json`) | same folder | same folder |
 
 Uninstalling on Windows keeps this folder unless you tick the box to delete the app data. An
 unreadable `profiles.json` is kept as `profiles.json.bad` and the app offers to start fresh.

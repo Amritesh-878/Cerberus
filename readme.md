@@ -59,6 +59,9 @@ SHA-256 so you can check a download.
 - **Services.** Tunnels and dev servers that keep running without a tab, at the foot of the
   sidebar: restarted when they stop, started with Cerberus if you like, with their address one
   click away.
+- **Live cards.** The shown chat's context use with a **Compact** button that types `/compact` for
+  you, each account's 5-hour and 7-day use, and a warning near the limit that offers to continue the
+  chat on another account, once you confirm.
 - **`cerberus open`** jumps to a tab from any terminal (below).
 
 More detail on each, and how it works: [`docs/guide.md`](docs/guide.md).

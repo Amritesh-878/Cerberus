@@ -14,6 +14,7 @@ use crate::bridge::Bridge;
 use crate::bridge::spawn::Messages;
 use crate::cli_link::{self, LinkError, Linked};
 use crate::handover::{ContinueError, RunningTabs, continue_chat, move_to_folder, reopen_chat};
+use crate::live::Live;
 use crate::programs::{Finder, ProgramChoice, pick_shell};
 use crate::pty::{Exit, PtyError, PtyManager, SessionId, SpawnRequest};
 use crate::saved::{EnvEdit, EnvError, Loaded, Saved, SavedTree, TabId, TreeError};
@@ -121,6 +122,16 @@ pub fn pty_spawn(
         .as_deref()
         .zip(tab)
         .and_then(|(home, tab)| link_messages(&app, &accounts, &mut request, home, tab));
+    let live = Live::clone(&app.state::<Live>());
+    let live_token =
+        claude_home
+            .as_deref()
+            .zip(tab)
+            .zip(account)
+            .and_then(|((home, tab), account)| {
+                link_live(&live, &accounts, &mut request, (tab, account), (home, &cwd))
+            });
+    let (exit_live, exit_live_token) = (live.clone(), live_token.clone());
     let (output_bridge, output_token) = (bridge.clone(), token.clone());
     let (exit_bridge, exit_token) = (bridge.clone(), token.clone());
     let ended_saved = Saved::clone(&saved);
@@ -152,6 +163,9 @@ pub fn pty_spawn(
             if let Some(token) = &exit_token {
                 exit_bridge.closed(token);
             }
+            if let Some(token) = &exit_live_token {
+                exit_live.closed(token);
+            }
             // Only a flag that was kept makes the tab a shell; otherwise its next start would run `claude` again.
             let ended = chat_ended(runs_claude, exit)
                 && tab.is_some_and(|tab| ended_saved.set_ended(tab, true));
@@ -175,6 +189,9 @@ pub fn pty_spawn(
             }
             if let Some(token) = &token {
                 bridge.closed(token);
+            }
+            if let Some(token) = &live_token {
+                live.closed(token);
             }
             return Err(e.into());
         }
@@ -288,6 +305,26 @@ fn link_messages(
     }
     let ticket = app.state::<Bridge>().register(tab, home)?;
     request.args = messages.args(&request.args);
+    request.env.extend(ticket.env);
+    Some(ticket.token)
+}
+
+/// With live cards on, gives the tab its status line settings and token; off leaves the spawn as it was.
+fn link_live(
+    live: &Live,
+    accounts: &Accounts,
+    request: &mut SpawnRequest,
+    (tab, account): (TabId, AccountId),
+    (home, cwd): (&std::path::Path, &str),
+) -> Option<String> {
+    // An unreadable profiles file is reported elsewhere; the tab starts without live cards.
+    if !accounts.load().is_ok_and(|p| p.live) {
+        return None;
+    }
+    let ticket = live.register(tab, account, std::path::Path::new(cwd), home)?;
+    if let Some(arg) = ticket.arg {
+        request.args.insert(0, arg);
+    }
     request.env.extend(ticket.env);
     Some(ticket.token)
 }

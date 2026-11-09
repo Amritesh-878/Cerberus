@@ -56,6 +56,8 @@ export const EMPTY: Profiles = {
   alerts: true,
   suggestions: true,
   messages: true,
+  live: true,
+  warnAt: 85,
   retired: [],
   setup: "install",
   revision: 0,
@@ -81,6 +83,8 @@ export const SAVED: Profiles = {
   alerts: true,
   suggestions: true,
   messages: true,
+  live: true,
+  warnAt: 85,
   retired: [],
   setup: null,
   revision: 0,
@@ -106,6 +110,8 @@ export async function renderApp(
           return [];
         case "services_view":
           return { folded: false, services: [] };
+        case "live_view":
+          return { tabs: [], meters: [], warnings: [] };
         case "account_status":
           return { state: "loggedIn", summary: "user@example.com · Pro" };
         case "plugin:window|is_focused":

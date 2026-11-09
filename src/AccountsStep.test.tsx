@@ -25,6 +25,8 @@ const EMPTY: Profiles = {
   alerts: true,
   suggestions: true,
   messages: true,
+  live: true,
+  warnAt: 85,
   retired: [],
   setup: null,
   revision: 0,

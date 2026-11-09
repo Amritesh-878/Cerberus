@@ -1,15 +1,10 @@
-import { createSignal, For, type JSX, Match, Show, Switch } from "solid-js";
+import { createSignal, For, Match, Show, Switch } from "solid-js";
 
-import {
-  type AccountId,
-  type PanelCard,
-  type Profiles,
-  savedColor,
-} from "./accounts";
+import { type AccountId, type Profiles, savedColor } from "./accounts";
+import { Card, Note, Row } from "./Cards";
 import {
   AccountDot,
   BranchIcon,
-  ChevronIcon,
   CodeIcon,
   DiffIcon,
   FolderIcon,
@@ -42,79 +37,11 @@ import {
 } from "./panelFeed";
 import type { PanelState } from "./panelPrefs";
 import { type PrActions, PrList } from "./PrList";
+import type { LiveView } from "./live";
+import { ContextCard, UsageCard } from "./LiveCards";
 import { PanelEdge } from "./SidebarEdge";
 import type { Statuses } from "./statuses";
 import { folderName, type TreeTab } from "./tree";
-
-function Card(props: {
-  id: PanelCard;
-  title: string;
-  meta?: string;
-  /** One line under the title while the card is open. */
-  subtitle?: string;
-  /** A button at the right of the title, such as Edit environment. */
-  action?: JSX.Element;
-  state: PanelState;
-  children: JSX.Element;
-}) {
-  const open = () => !props.state.collapsed(props.id);
-  return (
-    <section class="card" classList={{ folded: !open() }}>
-      <h2 class="card-head">
-        <button
-          type="button"
-          class="card-title"
-          aria-expanded={open()}
-          onClick={() => {
-            props.state.toggleCard(props.id);
-          }}
-        >
-          {props.title}
-          <ChevronIcon />
-        </button>
-        <Show when={props.meta}>
-          <span class="card-meta">{props.meta}</span>
-        </Show>
-        {props.action}
-      </h2>
-      <Show when={open()}>
-        <div class="card-body">
-          <Show when={props.subtitle}>
-            <p class="card-subtitle">{props.subtitle}</p>
-          </Show>
-          {props.children}
-        </div>
-      </Show>
-    </section>
-  );
-}
-
-function Row(props: {
-  icon: JSX.Element;
-  text: string;
-  detail?: string | null;
-  meta?: JSX.Element;
-  title?: string;
-}) {
-  return (
-    <div class="card-row" title={props.title}>
-      <span class="row-icon">{props.icon}</span>
-      <span class="row-text">
-        <span class="row-main">{props.text}</span>
-        <Show when={props.detail}>
-          <span class="row-detail">{props.detail}</span>
-        </Show>
-      </span>
-      <Show when={props.meta}>
-        <span class="row-meta">{props.meta}</span>
-      </Show>
-    </div>
-  );
-}
-
-function Note(props: { children: JSX.Element }) {
-  return <p class="card-note">{props.children}</p>;
-}
 
 /** The value once loaded, so a card can show a note while loading or on an error. */
 function loadedValue<T>(loaded: Loaded<T>): T | undefined {
@@ -143,6 +70,7 @@ export function Panel(props: {
   onType: (text: string) => void;
   /** The bridge's latest report, which changes as chats link and unlink. */
   links: unknown;
+  live: LiveView;
   onEditEnvironment: () => void;
 }) {
   const target = (): Target | undefined => {
@@ -321,6 +249,22 @@ export function Panel(props: {
               {(branch) => <Row icon={<BranchIcon />} text={branch()} />}
             </Show>
           </Card>
+          <Show when={props.tab?.launch.program === "claude"}>
+            <ContextCard
+              live={props.live.tabs.find((t) => t.tab === props.tab?.id)}
+              liveOn={props.profiles.live}
+              canType={props.canType}
+              state={props.state}
+              onCompact={() => {
+                props.onType("/compact");
+              }}
+            />
+          </Show>
+          <UsageCard
+            profiles={props.profiles}
+            meters={props.live.meters}
+            state={props.state}
+          />
           <Card id="changes" title="Changes" state={props.state}>
             <ChangesBody
               folder={props.tab?.launch.spec.cwd ?? null}
