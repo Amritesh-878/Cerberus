@@ -1,14 +1,16 @@
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 
-import { ChevronIcon, MoreIcon, PlusIcon } from "./icons";
+import { ChevronIcon, MoreIcon, PlusIcon, ServicesIcon } from "./icons";
 import { placeBox } from "./place";
 import {
   type Action,
   isOn,
+  overallPhase,
   type Phase,
   phaseText,
   type ServiceRow,
   type ServicesView,
+  servicesSummary,
 } from "./services";
 
 /** The host and port, which is what tells two addresses apart in a narrow row. */
@@ -254,6 +256,31 @@ function ServiceItem(props: {
         )}
       </Show>
     </li>
+  );
+}
+
+/** The collapsed sidebar's one icon for every service, with the dot of the state that most needs a look. */
+export function ServicesRailIcon(props: {
+  view: ServicesView;
+  onOpen: () => void;
+}) {
+  return (
+    <Show when={overallPhase(props.view.services)}>
+      {(phase) => (
+        <button
+          type="button"
+          class="rail-project rail-services"
+          aria-label={`Services, ${servicesSummary(props.view.services)}`}
+          title={`Services: ${servicesSummary(props.view.services)}`}
+          onClick={() => {
+            props.onOpen();
+          }}
+        >
+          <ServicesIcon />
+          <span class={`dot service-dot rail-dot ${phase()}`} />
+        </button>
+      )}
+    </Show>
   );
 }
 

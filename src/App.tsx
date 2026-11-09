@@ -104,7 +104,7 @@ import {
   type ServiceRow,
   updateService,
 } from "./services";
-import { ServicesSection } from "./ServicesSection";
+import { ServicesRailIcon, ServicesSection } from "./ServicesSection";
 import { TerminalView } from "./Terminal";
 import {
   addProject,
@@ -1004,6 +1004,17 @@ export function App() {
                 }
                 onExpand={toggleSidebar}
                 onOpenProject={openProject}
+                extra={
+                  <ServicesRailIcon
+                    view={services.view()}
+                    onOpen={() => {
+                      setCollapsed(false);
+                      if (services.view().folded) {
+                        foldServices(false).then(services.set, onServiceError);
+                      }
+                    }}
+                  />
+                }
               />
             </Show>
             <Show when={drawer()}>
