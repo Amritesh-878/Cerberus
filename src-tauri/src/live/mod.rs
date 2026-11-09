@@ -225,7 +225,7 @@ impl Live {
     }
 
     /// Changes whenever the written file does, so the pane reloads only then.
-    pub fn output_stamp(&self, tab: TabId, path: &str) -> Option<u64> {
+    pub fn output_stamp(&self, tab: TabId, path: &str) -> Option<String> {
         self.wrote(tab, path)
             .then(|| files::stamp(Path::new(path)))
             .flatten()

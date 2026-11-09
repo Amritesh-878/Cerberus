@@ -19,7 +19,6 @@ pub enum FileView {
         text: String,
         /// The `HEAD` version; `None` outside a repo or for a file git doesn't track, so all of it is new.
         base: Option<String>,
-        modified: u64,
     },
     TooBig {
         size: u64,
@@ -48,18 +47,14 @@ pub fn view(path: &Path, head: impl FnOnce(&Path) -> Option<Vec<u8>>) -> FileVie
     let base = head(path)
         .filter(|b| b.len() as u64 <= MOST_FILE)
         .and_then(text_of);
-    FileView::Text {
-        text,
-        base,
-        modified: modified_ms(&info),
-    }
+    FileView::Text { text, base }
 }
 
 /// When the file last changed, so the pane reloads only on a change; `None` when it is gone.
-pub fn stamp(path: &Path) -> Option<u64> {
+pub fn stamp(path: &Path) -> Option<String> {
     let info = fs::metadata(path).ok()?;
-    // The size too, since a quick second write can keep the same modified time.
-    Some(modified_ms(&info) ^ info.len().rotate_left(40))
+    // The size too, since a quick second write can keep the same modified time; text, as a u64 can pass JS's 2^53.
+    Some(format!("{}-{}", modified_ms(&info), info.len()))
 }
 
 fn modified_ms(info: &fs::Metadata) -> u64 {

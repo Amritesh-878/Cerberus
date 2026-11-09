@@ -69,7 +69,7 @@ pub fn live_read_output(
 }
 
 #[tauri::command(async)]
-pub fn live_output_stamp(live: State<'_, Live>, tab: TabId, path: String) -> Option<u64> {
+pub fn live_output_stamp(live: State<'_, Live>, tab: TabId, path: String) -> Option<String> {
     live.output_stamp(tab, &path)
 }
 
