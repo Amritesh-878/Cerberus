@@ -25,7 +25,7 @@ impl serde::Serialize for FindError {
     }
 }
 
-/// Every account's folder; with no account set up, the default one that tabs then use.
+/// Every account's folder, or with no account set up, the default one that tabs then use.
 fn sources(accounts: &Accounts) -> Result<Vec<Source>, AccountsError> {
     let profiles = accounts.load()?;
     if profiles.accounts.is_empty() {
@@ -46,7 +46,7 @@ fn sources(accounts: &Accounts) -> Result<Vec<Source>, AccountsError> {
         .collect()
 }
 
-/// Searches every account's chats for `query`; results stream on `results`, and the number returned names this search.
+/// Searches every account's chats for `query`. Results stream on `results`, and the number returned names this search.
 #[tauri::command(async)]
 pub fn chat_find(
     finder: State<'_, ChatFinder>,

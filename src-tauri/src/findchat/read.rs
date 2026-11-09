@@ -5,7 +5,7 @@ use std::cmp::Reverse;
 use memchr::memmem;
 use serde::Deserialize;
 
-/// A line longer than this is a paste or an image, not a message worth searching; it is skipped.
+/// A line longer than this is a paste or an image, not a message worth searching, so it is skipped.
 pub const MOST_LINE: usize = 4 * 1024 * 1024;
 const MOST_TITLE: usize = 100;
 /// Characters of text kept on each side of a match.
@@ -14,7 +14,7 @@ const SNIPPET_SIDE: usize = 40;
 /// A typed word this long, of ASCII letters and digits, also matches a word one edit away.
 pub const TYPO_FROM: usize = 5;
 
-/// The words of a search, lower case; a chat ranks by how many of them it matches.
+/// The words of a search in lower case. A chat ranks by how many of them it matches.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Query {
     words: Vec<String>,
@@ -77,7 +77,7 @@ pub struct Read {
     pub snippet: Option<String>,
 }
 
-// Only these names are read; tool input and results, thinking and everything else are skipped unkept.
+// Only these names are read. Tool input and results, thinking and everything else are skipped unkept.
 #[derive(Deserialize)]
 struct RecordIn {
     #[serde(default, rename = "type")]
@@ -154,7 +154,7 @@ pub fn meta(bytes: &[u8]) -> Meta {
     meta
 }
 
-/// Whether any word could match the raw file, exactly or by one edit; a file where none can is skipped.
+/// Whether any word could match the raw file, exactly or by one edit. A file where none can is skipped.
 pub fn holds_any(bytes: &[u8], query: &Query) -> bool {
     if query.is_empty() {
         return true;
@@ -167,7 +167,7 @@ pub fn holds_any(bytes: &[u8], query: &Query) -> bool {
     })
 }
 
-/// Whether `lower` holds a run within one edit of `word`; each edit leaves one of its halves whole.
+/// Whether `lower` holds a run one edit from `word`, found by the half of it that one edit leaves whole.
 fn near(lower: &[u8], word: &[u8]) -> bool {
     let half = word.len() / 2;
     let (left, right) = (&word[..half], &word[half + 1..]);
@@ -238,7 +238,7 @@ fn record(line: &[u8]) -> Option<RecordIn> {
     serde_json::from_slice(line).ok()
 }
 
-/// Reads a whole transcript; `cancelled` is asked between lines so a new keystroke stops it soon.
+/// Reads a whole transcript, asking `cancelled` between lines so a new keystroke stops it soon.
 pub fn read(bytes: &[u8], query: &Query, cancelled: &dyn Fn() -> bool) -> Option<Read> {
     let mut meta = Meta::default();
     let mut first_user: Option<String> = None;
@@ -251,7 +251,7 @@ pub fn read(bytes: &[u8], query: &Query, cancelled: &dyn Fn() -> bool) -> Option
         if line.len() > MOST_LINE || line.iter().all(u8::is_ascii_whitespace) {
             continue;
         }
-        // A line that is not a record, or is cut short, is skipped; the rest of the chat still reads.
+        // A line that is not a record, or is cut short, is skipped, and the rest of the chat still reads.
         let Ok(record) = serde_json::from_slice::<RecordIn>(line) else {
             continue;
         };
@@ -382,7 +382,7 @@ fn one_line(text: &str) -> Option<String> {
     })
 }
 
-/// `2026-11-09T12:34:56.789Z` as milliseconds since the Unix epoch; any other shape is `None`.
+/// `2026-11-09T12:34:56.789Z` as milliseconds since the Unix epoch, and any other shape as `None`.
 pub fn epoch_ms(stamp: &str) -> Option<u64> {
     let b = stamp.as_bytes();
     if b.len() < 20 || b[4] != b'-' || b[7] != b'-' || b[10] != b'T' || !stamp.ends_with('Z') {

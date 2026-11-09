@@ -29,7 +29,7 @@ pub struct Source {
     pub config_dir: PathBuf,
 }
 
-/// One chat in the list; the text is the transcript's own and goes nowhere but the dialog.
+/// One chat in the list. Its text is the transcript's own and goes nowhere but the dialog.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Found {
@@ -77,7 +77,7 @@ struct Stamp {
     len: u64,
 }
 
-/// Lives while the dialog is open; `close` drops everything it learned.
+/// Lives while the dialog is open, and `close` drops everything it learned.
 #[derive(Clone)]
 pub struct ChatFinder {
     current: Arc<AtomicU64>,
@@ -104,7 +104,7 @@ impl ChatFinder {
         self.cache.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// Starts a search on its own thread and returns its number; any earlier search stops.
+    /// Starts a search on its own thread and returns its number, and any earlier search stops.
     pub fn search(
         &self,
         sources: Vec<Source>,
@@ -199,7 +199,7 @@ impl ChatFinder {
         send(Batch::Done { search, searched });
     }
 
-    /// The chat's list fields, rank and snippet when it matches; a file that can't be read is skipped.
+    /// The chat's list fields, rank and snippet when it matches. A file that can't be read is skipped.
     fn check(
         &self,
         search: u64,

@@ -281,7 +281,7 @@ fn a_new_search_stops_the_last_and_close_forgets_what_was_read() {
     let second = search(&finder, vec![fx.work.clone()], "notes", HashMap::new());
 
     assert_eq!(second.len(), 1);
-    // The first search ended early or finished first; it never reports after the second began.
+    // The first search ended early or finished first, and it never reports after the second began.
     while let Ok(batch) = rx.try_recv() {
         let number = match batch {
             Batch::Found { search, .. } | Batch::Done { search, .. } => search,
