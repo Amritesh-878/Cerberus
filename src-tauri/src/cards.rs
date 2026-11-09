@@ -4,6 +4,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::accounts::{AccountId, Accounts, AccountsError, Profiles};
 use crate::live::{DEFAULT_WARN_AT, Live, Sink, View, Warning};
+use crate::saved::TabId;
 
 pub struct AppSink(pub AppHandle);
 
@@ -43,6 +44,12 @@ pub fn live_view(live: State<'_, Live>) -> View {
 #[tauri::command(async)]
 pub fn live_dismiss(live: State<'_, Live>, account: AccountId) {
     live.dismiss(account);
+}
+
+/// Opens a file the tab's chat wrote; any other path is refused.
+#[tauri::command(async)]
+pub fn live_open_output(live: State<'_, Live>, tab: TabId, path: String) -> Result<(), String> {
+    live.open_output(tab, &path).map_err(|e| e.to_string())
 }
 
 /// Applies to Claude tabs started after the change.

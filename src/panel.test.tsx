@@ -369,6 +369,8 @@ test("Connectors sits below Skills, folded until opened, and opening it is kept"
   expect(titles).toEqual([
     "Environment",
     "Context",
+    "Outputs",
+    "Background tasks",
     "Usage",
     "Changes",
     "Skills",

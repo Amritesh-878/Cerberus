@@ -43,6 +43,7 @@ import { ContextCard, UsageCard } from "./LiveCards";
 import { PanelEdge } from "./SidebarEdge";
 import type { Statuses } from "./statuses";
 import { folderName, type TreeTab } from "./tree";
+import { OutputsCard, TasksCard } from "./WorkCards";
 
 /** The value once loaded, so a card can show a note while loading or on an error. */
 function loadedValue<T>(loaded: Loaded<T>): T | undefined {
@@ -278,6 +279,16 @@ export function Panel(props: {
               onCompact={() => {
                 props.onType("/compact");
               }}
+            />
+            <OutputsCard
+              live={props.live.tabs.find((t) => t.tab === props.tab?.id)}
+              liveOn={props.profiles.live}
+              state={props.state}
+            />
+            <TasksCard
+              live={props.live.tabs.find((t) => t.tab === props.tab?.id)}
+              liveOn={props.profiles.live}
+              state={props.state}
             />
           </Show>
           <UsageCard

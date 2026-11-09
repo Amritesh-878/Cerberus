@@ -162,6 +162,7 @@ pub fn run() {
             messages::set_messages,
             cards::live_view,
             cards::live_dismiss,
+            cards::live_open_output,
             cards::set_live,
             cards::set_warn_at,
             messages::bridge_snapshot,

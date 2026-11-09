@@ -4,7 +4,7 @@ mod mcp;
 mod plugins;
 pub(crate) mod reveal;
 mod skills;
-mod vscode;
+pub(crate) mod vscode;
 
 use std::path::{Path, PathBuf};
 use std::time::Instant;

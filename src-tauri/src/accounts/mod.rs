@@ -27,10 +27,12 @@ const MOST_DISMISSED: usize = 500;
 /// The left chat's share of a split, in thousandths, so neither side can be dragged shut.
 const SPLIT_SHARES: std::ops::RangeInclusive<u32> = 200..=800;
 /// The right panel's cards that can be collapsed; a name not here is dropped when saved.
-const PANEL_CARDS: [&str; 6] = [
+const PANEL_CARDS: [&str; 8] = [
     "environment",
     "context",
     "usage",
+    "outputs",
+    "tasks",
     "changes",
     "connectors",
     "skills",

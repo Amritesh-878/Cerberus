@@ -1,4 +1,4 @@
-//! The `--settings` file a tab's `claude` gets: one status line that feeds the app and runs his.
+//! The `--settings` file a tab's `claude` gets: a status line that runs his, and the app's hooks.
 
 use std::fs;
 use std::io;
@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
-use crate::live::helper::PASS;
+use crate::live::helper::{HOOK, PASS};
 
 // Claude Code refuses a `--settings` file over 2 MiB, so a larger file is not one it reads either.
 const MOST_SETTINGS: u64 = 2 * 1024 * 1024;
@@ -83,6 +83,28 @@ pub fn command(helper: &Path, shell: Shell, theirs: Option<&str>) -> Option<Stri
     }
 }
 
+/// The hook command; hooks add to his rather than replace them, so it needs no wrapping.
+pub fn hook_command(helper: &Path, shell: Shell) -> String {
+    match shell {
+        Shell::Posix => format!("{} {HOOK}", posix_quote(helper)),
+        Shell::PowerShell => format!("& {} {HOOK}", powershell_quote(helper)),
+    }
+}
+
+// The write tools only, so other tool calls start no process at all.
+const WRITE_MATCHER: &str = "Write|Edit|MultiEdit|NotebookEdit";
+
+fn hooks(command: &str) -> Value {
+    // Async, so Claude Code never waits on the app; its output is ignored either way.
+    let run = json!([{ "type": "command", "command": command, "async": true }]);
+    json!({
+        "PostToolUse": [{ "matcher": WRITE_MATCHER, "hooks": run }],
+        "Stop": [{ "hooks": run }],
+        "SubagentStart": [{ "hooks": run }],
+        "SubagentStop": [{ "hooks": run }],
+    })
+}
+
 fn posix_quote(path: &Path) -> String {
     // Git Bash takes `C:/…`; backslashes would need escaping it does not do inside single quotes.
     let text = path.to_string_lossy().replace('\\', "/");
@@ -93,8 +115,13 @@ fn powershell_quote(path: &Path) -> String {
     format!("'{}'", path.to_string_lossy().replace('\'', "''"))
 }
 
-/// The settings object: Cerberus's command with his display keys, so his line looks as it did.
-pub fn settings(command: &str, theirs: Option<&TheirLine>) -> Value {
+/// The settings object: the hooks, and Cerberus's status line with his display keys when it has one.
+pub fn settings(status: Option<&str>, hook: &str, theirs: Option<&TheirLine>) -> Value {
+    let mut file = Map::new();
+    file.insert("hooks".into(), hooks(hook));
+    let Some(command) = status else {
+        return Value::Object(file);
+    };
     let mut line = Map::new();
     line.insert("type".into(), json!("command"));
     line.insert("command".into(), json!(command));
@@ -109,7 +136,8 @@ pub fn settings(command: &str, theirs: Option<&TheirLine>) -> Value {
             }
         }
     }
-    json!({ "statusLine": line })
+    file.insert("statusLine".into(), Value::Object(line));
+    Value::Object(file)
 }
 
 pub fn write(path: &Path, settings: &Value) -> io::Result<()> {
@@ -193,6 +221,28 @@ mod tests {
     }
 
     #[test]
+    fn the_hooks_run_the_helper_async_and_only_after_writes_among_tool_calls() {
+        let helper = Path::new("/app/cerberus-live");
+        let hook = hook_command(helper, Shell::Posix);
+
+        let written = settings(None, &hook, None);
+
+        assert_eq!(hook, "'/app/cerberus-live' hook");
+        assert_eq!(
+            hook_command(Path::new(r"C:\a b\cerberus-live.exe"), Shell::PowerShell),
+            r"& 'C:\a b\cerberus-live.exe' hook"
+        );
+        assert!(written.get("statusLine").is_none());
+        let hooks = &written["hooks"];
+        assert_eq!(hooks["PostToolUse"][0]["matcher"], WRITE_MATCHER);
+        for event in ["PostToolUse", "Stop", "SubagentStart", "SubagentStop"] {
+            assert_eq!(hooks[event][0]["hooks"][0]["command"], hook, "{event}");
+            assert_eq!(hooks[event][0]["hooks"][0]["async"], true, "{event}");
+        }
+        assert_eq!(hooks.as_object().unwrap().len(), 4);
+    }
+
+    #[test]
     fn his_display_keys_are_kept_and_the_file_holds_only_the_status_line() {
         let theirs = TheirLine {
             command: Some("mine".into()),
@@ -201,16 +251,21 @@ mod tests {
             hide_vim_mode_indicator: Some(json!(true)),
         };
 
-        let written = settings("cmd", Some(&theirs));
+        let written = settings(Some("cmd"), "hook", Some(&theirs));
 
         assert_eq!(
-            written,
-            json!({"statusLine": {"type": "command", "command": "cmd", "padding": 1,
-                "hideVimModeIndicator": true}})
+            written["statusLine"],
+            json!({"type": "command", "command": "cmd", "padding": 1,
+                "hideVimModeIndicator": true})
         );
         assert_eq!(
-            settings("cmd", None),
-            json!({"statusLine": {"type": "command", "command": "cmd"}})
+            settings(Some("cmd"), "hook", None)["statusLine"],
+            json!({"type": "command", "command": "cmd"})
+        );
+        assert_eq!(
+            written.as_object().unwrap().len(),
+            2,
+            "hooks and the status line, nothing else"
         );
     }
 }

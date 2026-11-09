@@ -19,8 +19,46 @@ export interface TabLive {
   /** 0 to 100; `null` until the chat's first reply. */
   context: number | null;
   model: string | null;
-  /** The user's own status line runs where Cerberus can't wrap it, so this tab reports nothing. */
+  /** The user's own status line runs where Cerberus can't wrap it, so this tab reports no context. */
   keptTheirs: boolean;
+  /** Files the chat wrote, newest first. */
+  outputs: Output[];
+  /** Background shells and subagents still running, oldest first. */
+  tasks: RunningTask[];
+  finished: number;
+}
+
+export interface Output {
+  name: string;
+  /** Relative to the tab's folder when inside it; empty for the folder itself. */
+  folder: string;
+  path: string;
+  /** Milliseconds since the epoch. */
+  at: number;
+}
+
+export interface RunningTask {
+  id: string;
+  kind: "shell" | "subagent";
+  /** `shell`, or the subagent's type. */
+  label: string;
+  /** Milliseconds since the epoch when Cerberus first saw it. */
+  since: number;
+}
+
+/** "45s", "3m 12s", "1h 04m": how long a task has run. */
+export function elapsedText(ms: number): string {
+  const seconds = Math.max(0, Math.floor(ms / 1000));
+  if (seconds < 60) return `${String(seconds)}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60)
+    return `${String(minutes)}m ${String(seconds % 60).padStart(2, "0")}s`;
+  return `${String(Math.floor(minutes / 60))}h ${String(minutes % 60).padStart(2, "0")}m`;
+}
+
+/** Opens a file the tab's chat wrote; the core refuses any other path. */
+export function openOutput(tab: TabId, path: string): Promise<void> {
+  return invoke("live_open_output", { tab, path });
 }
 
 export interface Meter {
