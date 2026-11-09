@@ -1,9 +1,11 @@
-import { createSignal, For, onCleanup, Show } from "solid-js";
+import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 
 import { Card, Note, Row } from "./Cards";
-import { CodeIcon } from "./icons";
-import { elapsedText, openOutput, type TabLive } from "./live";
+import { CodeIcon, MoreIcon } from "./icons";
+import { elapsedText, openOutput, type Output, type TabLive } from "./live";
 import type { PanelState } from "./panelPrefs";
+import { placeBox } from "./place";
+import type { TabId } from "./tree";
 
 /** Milliseconds since the epoch, ticking each second so a running task's time moves. */
 function createSecondClock() {
@@ -15,13 +17,87 @@ function createSecondClock() {
   return now;
 }
 
-/** The files the shown chat wrote, newest first; a click opens one in the editor. */
+/** A written file's menu, for what the pane can't do. */
+function OutputMenu(props: {
+  output: Output;
+  at: DOMRect;
+  onVsCode: () => void;
+  onDismiss: () => void;
+}) {
+  const [place, setPlace] = createSignal({ left: 0, top: 0 });
+  let box: HTMLDivElement | undefined;
+  onMount(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") props.onDismiss();
+    };
+    window.addEventListener("keydown", onKey);
+    onCleanup(() => {
+      window.removeEventListener("keydown", onKey);
+    });
+    const size = {
+      width: box?.offsetWidth ?? 0,
+      height: box?.offsetHeight ?? 0,
+    };
+    setPlace(
+      placeBox(props.at, size, { width: innerWidth, height: innerHeight }),
+    );
+    box?.querySelector<HTMLButtonElement>("button")?.focus();
+  });
+  return (
+    <div
+      class="popover-backdrop"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) props.onDismiss();
+      }}
+    >
+      <div
+        class="popover menu service-menu"
+        role="menu"
+        aria-label={`${props.output.name} menu`}
+        style={{
+          left: `${String(place().left)}px`,
+          top: `${String(place().top)}px`,
+        }}
+        ref={(el) => {
+          box = el;
+        }}
+      >
+        <button
+          type="button"
+          class="menu-item"
+          role="menuitem"
+          onClick={() => {
+            props.onVsCode();
+          }}
+        >
+          <span class="menu-text">Open in VS Code</span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** The files the shown chat wrote, newest first; a click shows one in the file pane. */
 export function OutputsCard(props: {
   live: TabLive | undefined;
   liveOn: boolean;
   state: PanelState;
+  /** The file the pane shows, marked in the list. */
+  opened?: string;
+  onOpenFile: (tab: TabId, path: string) => void;
 }) {
   const [failed, setFailed] = createSignal<string>();
+  const [menu, setMenu] = createSignal<{ output: Output; at: DOMRect }>();
+  const vsCode = (tab: TabId, path: string) => {
+    openOutput(tab, path).then(
+      () => {
+        setFailed(undefined);
+      },
+      (error: unknown) => {
+        setFailed(`Could not open it: ${String(error)}`);
+      },
+    );
+  };
   const outputs = () => props.live?.outputs ?? [];
   return (
     <Card
@@ -44,36 +120,68 @@ export function OutputsCard(props: {
               fallback={<Note>No files written yet</Note>}
             >
               {(output) => (
-                <button
-                  type="button"
-                  class="card-row action"
-                  title={`${output.path}\nOpen in your editor`}
-                  onClick={() => {
-                    openOutput(live().tab, output.path).then(
-                      () => {
-                        setFailed(undefined);
-                      },
-                      (error: unknown) => {
-                        setFailed(`Could not open it: ${String(error)}`);
-                      },
-                    );
-                  }}
+                <div
+                  class="card-row output-row"
+                  classList={{ opened: props.opened === output.path }}
                 >
-                  <span class="row-icon">
-                    <CodeIcon />
-                  </span>
-                  <span class="row-text">
-                    <span class="row-main">{output.name}</span>
-                    <Show when={output.folder}>
-                      <span class="row-detail">{output.folder}</span>
-                    </Show>
-                  </span>
-                </button>
+                  <button
+                    type="button"
+                    class="output-open"
+                    title={output.path}
+                    aria-current={
+                      props.opened === output.path ? "true" : undefined
+                    }
+                    onClick={() => {
+                      props.onOpenFile(live().tab, output.path);
+                    }}
+                  >
+                    <span class="row-icon">
+                      <CodeIcon />
+                    </span>
+                    <span class="row-text">
+                      <span class="row-main">{output.name}</span>
+                      <Show when={output.folder}>
+                        <span class="row-detail">{output.folder}</span>
+                      </Show>
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    class="row-button icon"
+                    aria-label={`More for ${output.name}`}
+                    aria-haspopup="menu"
+                    onClick={(event) => {
+                      setMenu({
+                        output,
+                        at: event.currentTarget.getBoundingClientRect(),
+                      });
+                    }}
+                  >
+                    <MoreIcon />
+                  </button>
+                </div>
               )}
             </For>
           )}
         </Show>
         <Show when={failed()}>{(message) => <Note>{message()}</Note>}</Show>
+        <Show when={menu()}>
+          {(open) => (
+            <OutputMenu
+              output={open().output}
+              at={open().at}
+              onVsCode={() => {
+                const path = open().output.path;
+                const tab = props.live?.tab;
+                setMenu(undefined);
+                if (tab !== undefined) vsCode(tab, path);
+              }}
+              onDismiss={() => {
+                setMenu(undefined);
+              }}
+            />
+          )}
+        </Show>
       </Show>
     </Card>
   );

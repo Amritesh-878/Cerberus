@@ -42,7 +42,7 @@ import type { LiveView } from "./live";
 import { ContextCard, UsageCard } from "./LiveCards";
 import { PanelEdge } from "./SidebarEdge";
 import type { Statuses } from "./statuses";
-import { folderName, type TreeTab } from "./tree";
+import { folderName, type TabId, type TreeTab } from "./tree";
 import { OutputsCard, TasksCard } from "./WorkCards";
 
 /** The value once loaded, so a card can show a note while loading or on an error. */
@@ -73,6 +73,9 @@ export function Panel(props: {
   /** The bridge's latest report, which changes as chats link and unlink. */
   links: unknown;
   live: LiveView;
+  /** The file the file pane shows, if any. */
+  openedFile?: string;
+  onOpenFile: (tab: TabId, path: string) => void;
   onEditEnvironment: () => void;
   /** Over the chat, since beside it the chat would be too narrow; it then has its own close button. */
   overlay?: boolean;
@@ -284,6 +287,8 @@ export function Panel(props: {
               live={props.live.tabs.find((t) => t.tab === props.tab?.id)}
               liveOn={props.profiles.live}
               state={props.state}
+              opened={props.openedFile}
+              onOpenFile={props.onOpenFile}
             />
             <TasksCard
               live={props.live.tabs.find((t) => t.tab === props.tab?.id)}

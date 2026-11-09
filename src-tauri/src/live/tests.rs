@@ -344,3 +344,47 @@ fn without_an_editor_a_written_file_is_shown_in_its_folder_never_run() {
     assert_eq!(shown_instead(script).unwrap(), Path::new("/work/tools"));
     assert!(shown_instead(Path::new("run.cmd")).is_err());
 }
+
+#[test]
+fn the_pane_reads_only_files_the_chat_wrote() {
+    let fx = start(85);
+    let ticket = fx
+        .live
+        .register(7, 2, fx.dir.path(), fx.dir.path())
+        .unwrap();
+    let written = fx.dir.path().join("out.txt");
+    std::fs::write(
+        &written,
+        "fresh text
+",
+    )
+    .unwrap();
+    let other = fx.dir.path().join("secret.txt");
+    std::fs::write(
+        &other,
+        "FAKE-SECRET
+",
+    )
+    .unwrap();
+    let write = crate::live::hooks::tests::FAKE_WRITE.replace(
+        r#"C:\\work\\out.txt"#,
+        serde_json::to_string(&written.to_string_lossy())
+            .unwrap()
+            .trim_matches('"'),
+    );
+    hook(&env_of(&ticket), &write);
+    next_view_where(&fx.views, |v| !v.tabs[0].outputs.is_empty());
+    let path = written.to_string_lossy().into_owned();
+
+    let shown = fx.live.read_output(7, &path, |_| None).unwrap();
+    let refused = fx.live.read_output(7, &other.to_string_lossy(), |_| None);
+
+    assert!(
+        matches!(shown, files::FileView::Text { ref text, base: None, .. } if text == "fresh text
+")
+    );
+    assert_eq!(refused.unwrap_err().kind(), std::io::ErrorKind::NotFound);
+    assert!(fx.live.output_stamp(7, &path).is_some());
+    assert_eq!(fx.live.output_stamp(7, &other.to_string_lossy()), None);
+    assert_eq!(fx.live.output_stamp(8, &path), None, "another tab");
+}

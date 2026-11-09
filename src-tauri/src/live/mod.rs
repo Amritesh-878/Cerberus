@@ -1,6 +1,7 @@
 //! Live cards: each Claude tab's status line reports context and limits to the app over a pipe.
 
 pub mod event;
+pub mod files;
 pub mod helper;
 mod hooks;
 mod meters;
@@ -197,16 +198,43 @@ impl Live {
         core.changed();
     }
 
-    /// Opens a file the tab's chat wrote in VS Code; without VS Code, shows its folder instead.
-    pub fn open_output(&self, tab: TabId, path: &str) -> io::Result<()> {
-        let known = self.core.as_ref().is_some_and(|core| {
+    /// Whether `path` is a file this tab's chat reported writing; nothing else is ever read for the webview.
+    fn wrote(&self, tab: TabId, path: &str) -> bool {
+        self.core.as_ref().is_some_and(|core| {
             core.state()
                 .work
                 .get(&tab)
                 .is_some_and(|(_, work)| work.has_output(path))
-        });
+        })
+    }
+
+    /// A written file for the file pane, with its `HEAD` version from `head`.
+    pub fn read_output(
+        &self,
+        tab: TabId,
+        path: &str,
+        head: impl FnOnce(&Path) -> Option<Vec<u8>>,
+    ) -> io::Result<files::FileView> {
+        if !self.wrote(tab, path) {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                "not a file this chat wrote",
+            ));
+        }
+        Ok(files::view(Path::new(path), head))
+    }
+
+    /// Changes whenever the written file does, so the pane reloads only then.
+    pub fn output_stamp(&self, tab: TabId, path: &str) -> Option<String> {
+        self.wrote(tab, path)
+            .then(|| files::stamp(Path::new(path)))
+            .flatten()
+    }
+
+    /// Opens a file the tab's chat wrote in VS Code; without VS Code, shows its folder instead.
+    pub fn open_output(&self, tab: TabId, path: &str) -> io::Result<()> {
         // Only a path a hook reported for this tab, never one the webview names.
-        if !known {
+        if !self.wrote(tab, path) {
             return Err(io::Error::new(
                 io::ErrorKind::NotFound,
                 "not a file this chat wrote",

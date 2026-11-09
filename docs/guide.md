@@ -147,8 +147,9 @@ folded cards, starred skills and dismissed PRs are kept in `profiles.json`.
 - **Context:** how full the shown chat's context window is, and its model. **Compact** types
   `/compact` into the chat's input; nothing is sent until you press Enter. See Live cards below.
 - **Outputs:** the files the shown chat wrote or edited, newest first, each once, with its folder
-  relative to the tab's. A click opens the file in VS Code; without VS Code it opens the file's
-  folder instead, since opening a file the chat wrote, such as a script, could run it.
+  relative to the tab's. A click shows the file in the file pane (below). The row's **⋯** menu has
+  **Open in VS Code**; without VS Code it opens the file's folder instead, since opening a file the
+  chat wrote, such as a script, could run it.
 - **Background tasks:** the chat's background shells and subagents still running, with how long each
   has run (counted from when Cerberus first saw it, since Claude Code gives no start time), and how
   many have finished. Claude Code offers no way to stop one from outside the chat, so there is no stop
@@ -246,6 +247,28 @@ next window.
 
 The **Live cards** switch, in the same place, turns all of it off; Claude tabs started after that
 get no `--settings` and start as before.
+
+### The file pane
+
+A click on a file in Outputs shows it beside the chat, in the right half where a split's second tab
+or a service's output goes; the line between them drags to resize. The file is read only, with
+colours for TypeScript, JavaScript, Rust, Python, JSON, Markdown, CSS and HTML, and plain text
+otherwise.
+
+- **Diff** shows the change against the file's last commit (git `HEAD`) inline: removed lines in
+  red above the added ones in green. A file outside a repo, or one git doesn't track, shows as all
+  added.
+- The pane reloads when the file changes on disk, about a second after the writes stop, and keeps
+  your place in it.
+- **Follow** moves the pane to each new file the chat writes.
+- **Close**, or Escape while the pane has focus, closes it. Switching tabs, a split of two tabs or
+  a service's output closes it too.
+
+A file over 2 MB or a binary file isn't shown; the pane says so and offers **Open in VS Code**.
+Claude Code's login token (`.credentials.json`) and prompt history (`history.jsonl`) are never
+read, even through a link. The
+pane reads only files that chat's own hooks reported writing, and the text stays in the window:
+it is never logged or saved.
 
 ## The session board and alerts
 

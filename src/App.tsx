@@ -6,6 +6,7 @@ import {
   createResource,
   createSignal,
   For,
+  lazy,
   Match,
   on,
   onCleanup,
@@ -125,6 +126,9 @@ import {
   type Tree,
 } from "./tree";
 import { Walkthrough } from "./Walkthrough";
+
+// CodeMirror loads with the first file opened, so startup stays as small as before.
+const FilePane = lazy(() => import("./FilePane"));
 import {
   panelOverlays,
   RAIL_BELOW,
@@ -382,7 +386,15 @@ export function App() {
     const id = viewing();
     return services.view().services.find((s) => s.id === id);
   };
-  const beside = () => viewed() !== undefined && shown() !== undefined;
+  // A file the shown chat wrote, in the same place as a service's output; one of the two at a time.
+  const [fileOpen, setFileOpen] = createSignal<{ tab: TabId; path: string }>();
+  const fileShown = () => {
+    const file = fileOpen();
+    return file && file.tab === shown() ? file : undefined;
+  };
+  const beside = () =>
+    (viewed() !== undefined || fileShown() !== undefined) &&
+    shown() !== undefined;
   // A string, since the first service's id is 0 and a keyed Show treats 0 as nothing to show.
   const viewedKey = createMemo(() => {
     const service = viewed();
@@ -390,15 +402,39 @@ export function App() {
   });
   createEffect(
     on(split.showing, (pair) => {
-      if (pair) setViewing(undefined);
+      if (pair) {
+        setViewing(undefined);
+        setFileOpen(undefined);
+      }
     }),
   );
   // A page such as Accounts takes the whole stage, so the output would cover it.
   createEffect(
     on(page, (open) => {
-      if (open !== undefined) setViewing(undefined);
+      if (open !== undefined) {
+        setViewing(undefined);
+        setFileOpen(undefined);
+      }
     }),
   );
+  createEffect(
+    on(viewing, (id) => {
+      if (id !== undefined) setFileOpen(undefined);
+    }),
+  );
+  // The pane shows one chat's file, so moving to another tab closes it.
+  createEffect(
+    on(shown, (id) => {
+      if (fileOpen()?.tab !== id) setFileOpen(undefined);
+    }),
+  );
+  const openFile = (tab: TabId, path: string) => {
+    split.close();
+    setViewing(undefined);
+    setFileOpen({ tab, path });
+    // Over a narrow chat the panel would cover the pane it just opened.
+    if (panelOver()) panel.toggle();
+  };
   const onServiceError = (error: unknown) => {
     const id = shown();
     if (id !== undefined) setAlert(id, String(error));
@@ -1394,6 +1430,29 @@ export function App() {
                     </div>
                   )}
                 </Show>
+                <Show when={fileShown()}>
+                  {(file) => (
+                    <div
+                      class="tab-view shown service-view file-view"
+                      classList={{ "split-right": beside() }}
+                    >
+                      <FilePane
+                        tab={file().tab}
+                        path={file().path}
+                        outputs={
+                          live().tabs.find((t) => t.tab === file().tab)
+                            ?.outputs ?? []
+                        }
+                        onOpen={(path) => {
+                          setFileOpen({ tab: file().tab, path });
+                        }}
+                        onClose={() => {
+                          setFileOpen(undefined);
+                        }}
+                      />
+                    </div>
+                  )}
+                </Show>
                 <Show when={split.showing() || beside()}>
                   <SplitEdge
                     width={splitShare.value()}
@@ -1481,6 +1540,8 @@ export function App() {
                 onType={typeIntoChat}
                 links={messaging.snapshot()}
                 live={live()}
+                openedFile={fileShown()?.path}
+                onOpenFile={openFile}
                 onEditEnvironment={() => {
                   const id = shown();
                   if (id !== undefined && !applying().has(id)) setEditing(id);
