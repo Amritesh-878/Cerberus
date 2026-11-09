@@ -124,11 +124,16 @@ button {
 }
 
 .sidebar-top {
+  display: flex;
+  gap: 4px;
+  align-items: center;
   padding: 10px 10px 6px;
 }
 
 .search {
   display: flex;
+  flex: 1;
+  min-width: 0;
   gap: 6px;
   align-items: center;
   height: 28px;
@@ -2888,4 +2893,91 @@ button.card-row:focus-visible,
 
 .live-warning .faint {
   color: var(--dim);
+}
+
+/* The collapsed sidebar: a rail of project icons. */
+.app.sidebar-rail .sidebar {
+  display: none;
+}
+
+.rail {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+  min-height: 0;
+  padding: 10px 0;
+  overflow: hidden auto;
+  background: var(--side);
+  border-right: 1px solid var(--line);
+}
+
+.rail-projects {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+  padding: 6px 0 0;
+  margin: 0;
+  list-style: none;
+}
+
+.rail-project {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--dim);
+  cursor: pointer;
+  background: var(--hover);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.rail-project:hover {
+  color: var(--text);
+  border-color: #3a3a3a;
+}
+
+.rail-project.active {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.rail-project:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.rail-dot {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  box-shadow: 0 0 0 2px var(--side);
+}
+
+/* The panel over the chat, when beside it the chat would drop under about 60 columns. */
+.app.panel-over .panel {
+  position: absolute;
+  inset: 0 0 0 auto;
+  z-index: 12;
+  max-width: calc(100vw - 48px);
+  box-shadow: -8px 0 24px rgb(0 0 0 / 45%);
+}
+
+.panel-over-bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px 6px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--dim);
+  border-bottom: 1px solid var(--line);
 }
