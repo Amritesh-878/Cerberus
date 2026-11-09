@@ -114,6 +114,7 @@ pub fn run() {
             commands::pty_ack,
             commands::pty_kill,
             commands::resume_chat,
+            commands::reopen_as_claude,
             commands::tab_env,
             commands::tab_set_env,
             commands::tab_move_folder,

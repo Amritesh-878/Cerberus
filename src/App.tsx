@@ -45,6 +45,8 @@ import {
 } from "./board";
 import { applyEnvironment, type EnvironmentChange } from "./environment";
 import { EnvironmentDialog } from "./EnvironmentDialog";
+import { createHandChats } from "./handChat";
+import { HandNote } from "./HandNote";
 import { Home } from "./Home";
 import { AccountDot, MenuIcon, PanelIcon } from "./icons";
 import { shortcutFor } from "./keys";
@@ -78,7 +80,7 @@ import { createSavedWidth } from "./savedWidth";
 import { createSplit, dropsToSplit } from "./split";
 import { createStatuses } from "./statuses";
 import { setupGaps, type Step, stepFor } from "./steps";
-import { shellChoice, type Tab, tabFor } from "./tab";
+import { installed, shellChoice, type Tab, tabFor } from "./tab";
 import { ShortcutsSheet } from "./ShortcutsSheet";
 import type { TabDragEvents } from "./tabDrag";
 import { SidebarEdge, SplitEdge } from "./SidebarEdge";
@@ -474,6 +476,29 @@ export function App() {
     );
   };
 
+  // The tab's chat ended by itself, so it now runs the shell until Resume chat.
+  const chatEnded = (id: TabId) => {
+    notify(id, { state: "ended" });
+    markEnded(id, true);
+    setBoard((b) => cleared(b, id));
+  };
+  const hands = createHandChats({
+    tree,
+    setTree,
+    claude: () => installed(programList() ?? [], "claude"),
+    runOf,
+    setRun,
+    isEnded: (id) => ended().has(id),
+    markEnded,
+    clear: (id) => setBoard((b) => cleared(b, id)),
+    ended: chatEnded,
+    setAlert,
+  });
+  const byHandShown = () => {
+    const id = shown();
+    return id !== undefined && hands.byHand(id) ? id : undefined;
+  };
+
   const openSetupTab = (launch: Tab) => {
     const [next, id] = addTab(
       tree(),
@@ -510,6 +535,7 @@ export function App() {
     const after = setup ? undefined : neighbour(tree(), id);
     setTree(closeTab(tree(), id));
     split.forget(id);
+    hands.forget(id);
     if (active() === id) {
       setActive(after);
       if (setup) setOverPage(false);
@@ -937,6 +963,16 @@ export function App() {
                   });
                 }}
               />
+              <Show when={byHandShown()} keyed>
+                {(id) => (
+                  <HandNote
+                    working={markOf(board(), id)?.kind === "working"}
+                    onReopen={() => {
+                      hands.reopen(id);
+                    }}
+                  />
+                )}
+              </Show>
               <Show when={split.showing()}>
                 {(pair) => (
                   <div class="split-bar">
@@ -1052,11 +1088,16 @@ export function App() {
                               tab={id}
                               spec={tab().launch.spec}
                               kind={
-                                tab().launch.program === "claude"
+                                tab().launch.program === "claude" &&
+                                !ended().has(id)
                                   ? "claude"
                                   : "shell"
                               }
-                              imagePasteKey={tab().launch.imagePasteKey}
+                              imagePasteKey={
+                                ended().has(id)
+                                  ? null
+                                  : tab().launch.imagePasteKey
+                              }
                               input={tab().launch.input}
                               active={shown() === id || split.has(id)}
                               focused={shown() === id}
@@ -1068,9 +1109,10 @@ export function App() {
                               }}
                               onExit={() => setBoard((b) => exited(b, id))}
                               onEnded={() => {
-                                notify(id, { state: "ended" });
-                                markEnded(id, true);
-                                setBoard((b) => cleared(b, id));
+                                chatEnded(id);
+                              }}
+                              onChat={(chat) => {
+                                hands.heard(id, chat);
                               }}
                               onTyper={(type) => {
                                 typers.set(id, type);
