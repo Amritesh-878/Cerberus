@@ -43,7 +43,8 @@ SHA-256 so you can check a download.
 - **A board of every chat.** Each row shows whether its chat is working, waiting on you, or paused
   until a usage reset. A desktop notification tells you when a chat in another tab needs you.
 - **A shell when a chat ends.** After `/exit` the tab becomes a shell in the same folder.
-  **Resume chat** in its menu brings the chat back.
+  **Resume chat** in its menu brings the chat back. Type `claude` in a shell tab and the tab follows
+  that chat as a Claude Code tab until it exits.
 - **Move a chat to another of your accounts**, from the tab's right-click menu.
 - **Two tabs side by side.** Drag a tab from the sidebar onto the right half of the chat; drag the
   line between them to resize.
@@ -55,6 +56,9 @@ SHA-256 so you can check a download.
   its `claude` would load, plugin servers included.
 - **Messages between accounts.** A chat can message a chat on another of your accounts. Each
   message waits in a popup for you to approve, edit or reject, and both chats then show side by side.
+- **Live cards.** The shown chat's context use with a **Compact** button that types `/compact` for
+  you, each account's 5-hour and 7-day use, and a warning near the limit that offers to continue the
+  chat on another account, once you confirm.
 - **`cerberus open`** jumps to a tab from any terminal (below).
 
 More detail on each, and how it works: [`docs/guide.md`](docs/guide.md).

@@ -15,7 +15,12 @@ import {
   terminalAction,
   terminalHandlesKey,
 } from "./keys";
-import { PtySession, settledResize, type SpawnSpec } from "./pty";
+import {
+  type HandChat,
+  PtySession,
+  settledResize,
+  type SpawnSpec,
+} from "./pty";
 import { throttle } from "./throttle";
 
 const FIT_INTERVAL_MS = 30;
@@ -89,6 +94,7 @@ function copySelection(term: Terminal): void {
 export function TerminalView(props: {
   tab: number;
   spec: SpawnSpec;
+  /** Read on each key and paste, so it follows a chat that ends or starts in the tab. */
   kind: TabKind;
   imagePasteKey: string | null;
   input: string | null;
@@ -99,6 +105,8 @@ export function TerminalView(props: {
   onExit: () => void;
   /** The chat ended by itself, so this pane now runs the shell. */
   onEnded: () => void;
+  /** A `claude` the user started in this pane's shell started or ended. */
+  onChat?: (chat: HandChat) => void;
   /** Hands over a function that types into this pane without Enter; the returned function takes it back. */
   onTyper?: (type: (text: string) => void) => () => void;
 }) {
@@ -128,8 +136,11 @@ export function TerminalView(props: {
     term.open(element);
     const renderer = createRenderer(term);
     fit.fit();
-    // Turns to "shell" when the chat ends, so Shift+Enter is plain Enter again.
+    // Follows the tab, so a chat that ends or starts in it changes what Shift+Enter sends.
     let kind = props.kind;
+    createEffect(() => {
+      kind = props.kind;
+    });
     term.attachCustomKeyEventHandler((event) => {
       const action =
         event.type === "keydown" ? terminalAction(event, kind) : undefined;
@@ -142,7 +153,6 @@ export function TerminalView(props: {
     // Read once: a pane keeps its tab and program spec for its whole life.
     const spec = props.spec;
     const tab = props.tab;
-    let imagePasteKey = props.imagePasteKey;
     let noticeTimer: ReturnType<typeof setTimeout> | undefined;
     const showNotice = (text: string, ms: number) => {
       clearTimeout(noticeTimer);
@@ -175,7 +185,6 @@ export function TerminalView(props: {
           exit: (code, ended) => {
             if (disposed) return;
             if (ended) {
-              kind = "shell";
               term.write(ENDED_LINE);
               props.onEnded();
               session = start(null);
@@ -191,6 +200,13 @@ export function TerminalView(props: {
             if (notice() === RESUMING) setNotice(undefined);
             props.onState(state);
           },
+          chat: (chat) => {
+            if (disposed) return;
+            // A new chat in the shell makes the old one's notice stale.
+            if (chat.chat === "started" && notice() === ENDED)
+              setNotice(undefined);
+            props.onChat?.(chat);
+          },
         },
         tab,
       );
@@ -200,8 +216,6 @@ export function TerminalView(props: {
       void current.resume.then((resume) => {
         if (disposed || resume === "new") return;
         if (resume === "ended") {
-          kind = "shell";
-          imagePasteKey = null;
           props.onEnded();
           showNotice(ENDED, MISSING_NOTICE_MS);
         } else if (resume === "resuming") {
@@ -217,7 +231,8 @@ export function TerminalView(props: {
     // Capture phase, so an image paste never reaches xterm's own text-paste handler.
     const onPaste = (event: ClipboardEvent) => {
       const input =
-        event.clipboardData && pasteInput(event.clipboardData, imagePasteKey);
+        event.clipboardData &&
+        pasteInput(event.clipboardData, props.imagePasteKey);
       if (!input) return;
       event.preventDefault();
       event.stopPropagation();

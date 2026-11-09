@@ -87,6 +87,24 @@ the same folder and account, with Claude Code's "Resume this session with" line 
 prompt. It stays a shell after a restart. **Resume chat** in its right-click menu brings the chat
 back. Closing Cerberus, a crash, or moving the chat never counts as ended.
 
+**`claude` typed in a shell tab.** Run `claude` (or `claude --resume <id>`) in a shell tab, or in
+the shell of an ended chat, and within a second or two the tab becomes a Claude Code tab: its icon,
+the working, waiting and limit marks, alerts, and Shift+Enter for a new line. Cerberus finds it
+through the account's `sessions` file of a `claude` running below that tab's shell, so a chat in
+the same folder in another tab or window is never taken for it. Once the chat has its first
+message, the tab saves it, so a restart brings the tab back as a Claude Code tab resuming it, in
+the folder it ran in. When it exits, the tab is a shell again with that chat as its ended chat, so
+**Resume chat** and **Continue the ended chat on…** use it. A chat that exits before its first
+message leaves the tab as it was. Flags you typed (such as `--model`) aren't kept: after a restart
+the chat resumes with the tab's usual start. A `claude -p` run is a command, not a chat, and is not
+followed. Tracking follows the tab's own account: a `claude` you start with another
+`CLAUDE_CONFIG_DIR` set in the shell is not followed.
+
+A chat started this way has no Cerberus message helper, so it can't send messages to other
+accounts. The bar above the tab says so and offers **Reopen as Claude tab**, which closes the shell
+and that `claude` (asking first while it is working) and starts the same chat again as a Claude
+Code tab, with messages.
+
 A reload of the window would end every tab's program, so an installed Cerberus blocks it: the
 window's own right-click menu (text boxes and the app's menus keep theirs), F5, Ctrl+R and
 Ctrl+Shift+R (Cmd+R and Cmd+Shift+R on macOS). Ctrl+R in a terminal still reaches the shell.
@@ -111,6 +129,11 @@ folded cards, starred skills and dismissed PRs are kept in `profiles.json`.
 - **Environment:** the tab's account with its email and plan, the tab's folders (a click opens one
   in the file manager; an extra folder shows its branch) and the main folder's git branch. The gear
   opens **Edit environment** (below).
+- **Context:** how full the shown chat's context window is, and its model. **Compact** types
+  `/compact` into the chat's input; nothing is sent until you press Enter. See Live cards below.
+- **Usage:** one row per account with its 5-hour and 7-day plan use and when each resets, from the
+  newest reply of any tab on that account. "Unknown" until a tab on the account gets a reply; an
+  account signed in with an API key never reports one.
 - **Changes:** one row per repo among the tab's folders, the main folder's first: lines added and
   removed on the branch since it left the remote's default branch (`origin/HEAD`, else `main` or
   `master`), uncommitted and untracked files included. **Create PR**
@@ -171,6 +194,31 @@ The gear on the Environment card edits the tab on screen. Nothing changes until 
   and never logged or shown in an error, so keep real keys in your own secret store and reference
   them from there.
 
+### Live cards
+
+Each Claude tab is started with `--settings` pointing at a small file of Cerberus's own (in the app
+data folder, `live/tab-<id>.json`) that sets one key, `statusLine`. Claude Code runs that status
+line command, the `cerberus-live` helper shipped beside the app, after each reply, and hands it the
+status line's JSON. The helper sends the app only the session id, model name, context percentage,
+and the 5-hour and 7-day used percentages and reset times. Prompts, file paths, costs and the
+transcript path in that JSON are skipped, never kept or logged. Your settings files are never
+written.
+
+If you have a status line of your own, it still runs and shows: Cerberus's command passes the same
+JSON on to it unchanged, and keeps its `padding` and `refreshInterval`. On Windows without Git Bash,
+Claude Code runs status lines in PowerShell; there Cerberus leaves your status line alone, and the
+Context card says the chat can't report.
+
+**Warn when an account passes N% of its 5-hour limit** (Accounts, under Claude tabs; 85% by
+default) shows a banner over the chat and, with desktop alerts on, a notification: "work is at 87%,
+resets 6:40pm". It comes once per account per 5-hour window. The banner lists **Continue on
+<account>** for each signed-in account below the line; a click opens the usual Continue on confirm
+for the tab that crossed it, and nothing moves until you confirm. **Dismiss** hides it until the
+next window.
+
+The **Live cards** switch, in the same place, turns all of it off; Claude tabs started after that
+get no `--settings` and start as before.
+
 ## The session board and alerts
 
 Each Claude Code tab's row shows what its chat is doing:
@@ -200,8 +248,9 @@ of your accounts, for example to keep work and personal chats apart. If the chat
 Cerberus asks before closing it, and the row says "Moving to `<account>`…" until it lands.
 
 On a tab whose chat ended (now a shell), the item reads **Continue the ended chat on
-`<account>`…**: it moves only that tab's own saved chat, never a `claude` you started by hand in
-the shell, and asks first since the move closes the shell.
+`<account>`…**: it moves that tab's ended chat, which is the last `claude` you ran in its shell if
+that chat was saved, and asks first since the move closes the shell. While a `claude` you typed
+in the shell runs, the tab offers **Continue on `<account>`…** for that chat, as any running chat.
 
 Cerberus copies the chat's file, and its folder of subagent chats, into the other account's
 folder under a temporary name, renaming it once complete, then reopens the tab there with
@@ -340,6 +389,7 @@ start on macOS.
 | Saved tabs (`tree.db`) | same folder | same folder |
 | zsh suggestion files (`shell/zsh`) | same folder | same folder |
 | MCP config for messages between accounts (`mcp.json`) | `%APPDATA%\com.cerberus.terminal` | `~/Library/Application Support/com.cerberus.terminal` |
+| Status line settings for live cards (`live/tab-<id>.json`) | same folder | same folder |
 
 Uninstalling on Windows keeps this folder unless you tick the box to delete the app data. An
 unreadable `profiles.json` is kept as `profiles.json.bad` and the app offers to start fresh.

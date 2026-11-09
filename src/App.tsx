@@ -45,6 +45,8 @@ import {
 } from "./board";
 import { applyEnvironment, type EnvironmentChange } from "./environment";
 import { EnvironmentDialog } from "./EnvironmentDialog";
+import { createHandChats } from "./handChat";
+import { HandNote } from "./HandNote";
 import { Home } from "./Home";
 import { AccountDot, MenuIcon, PanelIcon } from "./icons";
 import { shortcutFor } from "./keys";
@@ -56,7 +58,9 @@ import {
   NOTE_TEXT,
   typeIn,
 } from "./messaging";
-import { createNotifier } from "./notify";
+import { createLiveFeed, dismissWarning, warningText } from "./live";
+import { LiveBanner } from "./LiveBanner";
+import { createNotifier, sendWarning } from "./notify";
 import { type Anchor, onScreen, type Side } from "./place";
 import { followOpenRequests } from "./open";
 import { Panel } from "./Panel";
@@ -76,7 +80,7 @@ import { createSavedWidth } from "./savedWidth";
 import { createSplit, dropsToSplit } from "./split";
 import { createStatuses } from "./statuses";
 import { setupGaps, type Step, stepFor } from "./steps";
-import { shellChoice, type Tab, tabFor } from "./tab";
+import { installed, shellChoice, type Tab, tabFor } from "./tab";
 import { ShortcutsSheet } from "./ShortcutsSheet";
 import type { TabDragEvents } from "./tabDrag";
 import { SidebarEdge, SplitEdge } from "./SidebarEdge";
@@ -159,7 +163,12 @@ export function App() {
   const [active, setActive] = createSignal<TabId>();
   const [opening, setOpening] = createSignal<Opening>();
   // Holds the tab it opened for, so switching tabs while it is open cannot move another chat.
-  const [pillMenu, setPillMenu] = createSignal<{ at: MenuPlace; tab: TabId }>();
+  // `chosen` opens the menu at its confirm step, as a warning's Continue on does.
+  const [pillMenu, setPillMenu] = createSignal<{
+    at: MenuPlace;
+    tab: TabId;
+    chosen?: Account;
+  }>();
   const [sheet, setSheet] = createSignal(false);
   const sidebarWidth = createSavedWidth({
     saved: () => profiles()?.sidebarWidth,
@@ -392,6 +401,16 @@ export function App() {
       select(id);
     },
   });
+  const live = createLiveFeed((warning) => {
+    if (!alertsSetting.on()) return;
+    const name =
+      profiles()?.accounts.find((a) => a.id === warning.account)?.name ??
+      "An account";
+    sendWarning(
+      { title: "Usage limit", body: warningText(name, warning) },
+      warning.tab,
+    );
+  });
 
   // The account each moving tab's chat is going to, shown on its row and pane until it restarts.
   const [moving, setMoving] = createSignal<ReadonlyMap<TabId, string>>(
@@ -457,6 +476,29 @@ export function App() {
     );
   };
 
+  // The tab's chat ended by itself, so it now runs the shell until Resume chat.
+  const chatEnded = (id: TabId) => {
+    notify(id, { state: "ended" });
+    markEnded(id, true);
+    setBoard((b) => cleared(b, id));
+  };
+  const hands = createHandChats({
+    tree,
+    setTree,
+    claude: () => installed(programList() ?? [], "claude"),
+    runOf,
+    setRun,
+    isEnded: (id) => ended().has(id),
+    markEnded,
+    clear: (id) => setBoard((b) => cleared(b, id)),
+    ended: chatEnded,
+    setAlert,
+  });
+  const byHandShown = () => {
+    const id = shown();
+    return id !== undefined && hands.byHand(id) ? id : undefined;
+  };
+
   const openSetupTab = (launch: Tab) => {
     const [next, id] = addTab(
       tree(),
@@ -493,6 +535,7 @@ export function App() {
     const after = setup ? undefined : neighbour(tree(), id);
     setTree(closeTab(tree(), id));
     split.forget(id);
+    hands.forget(id);
     if (active() === id) {
       setActive(after);
       if (setup) setOverPage(false);
@@ -902,6 +945,34 @@ export function App() {
                   </div>
                 )}
               </Show>
+              <LiveBanner
+                warnings={live().warnings}
+                profiles={loaded()}
+                statuses={statuses}
+                tabTitle={(id) => tabById(id)?.title}
+                onContinue={(id, account, box) => {
+                  setPillMenu({
+                    at: { x: box.left, y: box.bottom },
+                    tab: id,
+                    chosen: account,
+                  });
+                }}
+                onDismiss={(account) => {
+                  dismissWarning(account).catch((error: unknown) => {
+                    console.error("could not dismiss the warning:", error);
+                  });
+                }}
+              />
+              <Show when={byHandShown()} keyed>
+                {(id) => (
+                  <HandNote
+                    working={markOf(board(), id)?.kind === "working"}
+                    onReopen={() => {
+                      hands.reopen(id);
+                    }}
+                  />
+                )}
+              </Show>
               <Show when={split.showing()}>
                 {(pair) => (
                   <div class="split-bar">
@@ -1017,11 +1088,16 @@ export function App() {
                               tab={id}
                               spec={tab().launch.spec}
                               kind={
-                                tab().launch.program === "claude"
+                                tab().launch.program === "claude" &&
+                                !ended().has(id)
                                   ? "claude"
                                   : "shell"
                               }
-                              imagePasteKey={tab().launch.imagePasteKey}
+                              imagePasteKey={
+                                ended().has(id)
+                                  ? null
+                                  : tab().launch.imagePasteKey
+                              }
                               input={tab().launch.input}
                               active={shown() === id || split.has(id)}
                               focused={shown() === id}
@@ -1033,9 +1109,10 @@ export function App() {
                               }}
                               onExit={() => setBoard((b) => exited(b, id))}
                               onEnded={() => {
-                                notify(id, { state: "ended" });
-                                markEnded(id, true);
-                                setBoard((b) => cleared(b, id));
+                                chatEnded(id);
+                              }}
+                              onChat={(chat) => {
+                                hands.heard(id, chat);
                               }}
                               onTyper={(type) => {
                                 typers.set(id, type);
@@ -1136,6 +1213,7 @@ export function App() {
                 onCreatePr={createPr}
                 onType={typeIntoChat}
                 links={messaging.snapshot()}
+                live={live()}
                 onEditEnvironment={() => {
                   const id = shown();
                   if (id !== undefined && !applying().has(id)) setEditing(id);
@@ -1189,6 +1267,7 @@ export function App() {
               {(tab) => (
                 <TabMenu
                   title={tab().title}
+                  chosen={pillMenu()?.chosen}
                   account={menuAccount(
                     loaded().accounts.find(
                       (a) => a.id === tab().launch.account?.id,

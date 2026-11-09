@@ -1,3 +1,16 @@
+/// What the system says about processes, as plain functions so tests can stand in for it.
+pub struct Probes {
+    pub below: fn(u32) -> Vec<u32>,
+    pub is_running: fn(u32) -> bool,
+}
+
+impl Probes {
+    pub const SYSTEM: Self = Self {
+        below: descendants,
+        is_running,
+    };
+}
+
 /// Every process below `root`, children first, from Windows' process list.
 #[cfg(windows)]
 pub fn descendants(root: u32) -> Vec<u32> {

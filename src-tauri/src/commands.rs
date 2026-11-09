@@ -13,10 +13,13 @@ use crate::accounts::{
 use crate::bridge::Bridge;
 use crate::bridge::spawn::Messages;
 use crate::cli_link::{self, LinkError, Linked};
-use crate::handover::{ContinueError, RunningTabs, continue_chat, move_to_folder};
+use crate::handover::{ContinueError, RunningTabs, continue_chat, move_to_folder, reopen_chat};
+use crate::live::Live;
 use crate::programs::{Finder, ProgramChoice, pick_shell};
 use crate::pty::{Exit, PtyError, PtyManager, SessionId, SpawnRequest};
 use crate::saved::{EnvEdit, EnvError, Loaded, Saved, SavedTree, TabId, TreeError};
+use crate::sessions::procs::Probes;
+use crate::sessions::shell::{HandChat, Keeper, Report, Shell, watch_shell};
 use crate::sessions::{
     Resume, TabState, Watched, add_dir_args, chat_ended, is_claude, plan_resume, watch,
 };
@@ -96,6 +99,10 @@ pub fn pty_spawn(
         claude_home = None;
     }
     let runs_claude = claude_home.is_some();
+    // A shell is watched on the tab's own account only, for a `claude` the user starts in it.
+    let shell_home = (!runs_claude)
+        .then(|| accounts.claude_home(account).ok())
+        .flatten();
     if runs_claude {
         request.args = add_dir_args(&request.args, &request.dirs, &cwd);
     }
@@ -115,6 +122,16 @@ pub fn pty_spawn(
         .as_deref()
         .zip(tab)
         .and_then(|(home, tab)| link_messages(&app, &accounts, &mut request, home, tab));
+    let live = Live::clone(&app.state::<Live>());
+    let live_token =
+        claude_home
+            .as_deref()
+            .zip(tab)
+            .zip(account)
+            .and_then(|((home, tab), account)| {
+                link_live(&live, &accounts, &mut request, (tab, account), (home, &cwd))
+            });
+    let (exit_live, exit_live_token) = (live.clone(), live_token.clone());
     let (output_bridge, output_token) = (bridge.clone(), token.clone());
     let (exit_bridge, exit_token) = (bridge.clone(), token.clone());
     let ended_saved = Saved::clone(&saved);
@@ -146,6 +163,9 @@ pub fn pty_spawn(
             if let Some(token) = &exit_token {
                 exit_bridge.closed(token);
             }
+            if let Some(token) = &exit_live_token {
+                exit_live.closed(token);
+            }
             // Only a flag that was kept makes the tab a shell; otherwise its next start would run `claude` again.
             let ended = chat_ended(runs_claude, exit)
                 && tab.is_some_and(|tab| ended_saved.set_ended(tab, true));
@@ -169,6 +189,9 @@ pub fn pty_spawn(
             }
             if let Some(token) = &token {
                 bridge.closed(token);
+            }
+            if let Some(token) = &live_token {
+                live.closed(token);
             }
             return Err(e.into());
         }
@@ -210,8 +233,61 @@ pub fn pty_spawn(
             }
             Err(e) => eprintln!("could not watch tab {tab:?}: {e}"),
         }
+    } else if let (Some(config_dir), Some(pid), Some(tab)) = (shell_home, pid, tab) {
+        let shell = Shell {
+            config_dir,
+            pid,
+            cwd,
+            started_ms,
+            probes: Probes::SYSTEM,
+        };
+        let report = TabReport {
+            keeper: Keeper {
+                saved: Saved::clone(&saved),
+                tab,
+            },
+            events: state_events,
+            app: app.clone(),
+            id,
+        };
+        // Without a watcher the shell still works; a `claude` started in it is just not followed.
+        match watch_shell(shell, stopped, report) {
+            Ok(watcher) => running.watching(tab, watcher),
+            Err(e) => eprintln!("could not watch shell tab {tab}: {e}"),
+        }
     }
     Ok(Spawned { id, resume })
+}
+
+/// Sends a `claude` started in a shell tab to the tab as it starts, works and ends, and keeps its chat in the saved tab.
+struct TabReport {
+    keeper: Keeper,
+    events: Channel<InvokeResponseBody>,
+    app: AppHandle,
+    id: SessionId,
+}
+
+impl Report for TabReport {
+    fn chat(&mut self, chat: &HandChat) {
+        self.keeper.chat(chat);
+        if let Ok(body) = chat.clone().body() {
+            let _ = self.events.send(body);
+        }
+    }
+
+    fn session(&mut self, id: &str) {
+        self.keeper.session(id);
+    }
+
+    fn state(&mut self, state: TabState) {
+        if let Ok(body) = state.body() {
+            let _ = self.events.send(body);
+        }
+    }
+
+    fn open(&self) -> bool {
+        self.app.state::<PtyManager>().is_open(self.id)
+    }
 }
 
 /// With messages on, links the tab to the bridge and adds the `cerberus` MCP server; off leaves the spawn as it was.
@@ -229,6 +305,26 @@ fn link_messages(
     }
     let ticket = app.state::<Bridge>().register(tab, home)?;
     request.args = messages.args(&request.args);
+    request.env.extend(ticket.env);
+    Some(ticket.token)
+}
+
+/// With live cards on, gives the tab its status line settings and token; off leaves the spawn as it was.
+fn link_live(
+    live: &Live,
+    accounts: &Accounts,
+    request: &mut SpawnRequest,
+    (tab, account): (TabId, AccountId),
+    (home, cwd): (&std::path::Path, &str),
+) -> Option<String> {
+    // An unreadable profiles file is reported elsewhere; the tab starts without live cards.
+    if !accounts.load().is_ok_and(|p| p.live) {
+        return None;
+    }
+    let ticket = live.register(tab, account, std::path::Path::new(cwd), home)?;
+    if let Some(arg) = ticket.arg {
+        request.args.insert(0, arg);
+    }
     request.env.extend(ticket.env);
     Some(ticket.token)
 }
@@ -265,6 +361,16 @@ pub fn tab_move_folder(
 #[tauri::command(async)]
 pub fn resume_chat(saved: State<'_, Saved>, tab: TabId) {
     saved.set_ended(tab, false);
+}
+
+/// Waits for a stopped tab's shell and the `claude` started in it to end, so the tab can resume that chat as a Claude tab.
+#[tauri::command(async)]
+pub fn reopen_as_claude(
+    saved: State<'_, Saved>,
+    running: State<'_, Arc<RunningTabs>>,
+    tab: TabId,
+) -> Result<(), ContinueError> {
+    reopen_chat(&saved, &running, tab)
 }
 
 #[tauri::command(async)]
