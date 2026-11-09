@@ -2,7 +2,7 @@ mod gh;
 mod git;
 mod mcp;
 mod plugins;
-mod reveal;
+pub(crate) mod reveal;
 mod skills;
 mod vscode;
 

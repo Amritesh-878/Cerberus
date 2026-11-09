@@ -86,6 +86,19 @@ import { ShortcutsSheet } from "./ShortcutsSheet";
 import type { TabDragEvents } from "./tabDrag";
 import { SidebarEdge, SplitEdge } from "./SidebarEdge";
 import { menuAccount, type MenuPlace, TabMenu } from "./TabMenu";
+import { ServiceForm } from "./ServiceForm";
+import { ServiceOutput } from "./ServiceOutput";
+import {
+  act as actOnService,
+  addService,
+  createServicesFeed,
+  foldServices,
+  openServiceUrl,
+  type ServiceId,
+  type ServiceRow,
+  updateService,
+} from "./services";
+import { ServicesSection } from "./ServicesSection";
 import { TerminalView } from "./Terminal";
 import {
   addProject,
@@ -352,6 +365,38 @@ export function App() {
   };
   const messaging = createMessaging();
   const split = createSplit(shown);
+  // A service's output shown beside the tab on screen, in place of a split of two tabs.
+  const services = createServicesFeed();
+  const [viewing, setViewing] = createSignal<ServiceId>();
+  const [serviceForm, setServiceForm] = createSignal<{
+    editing?: ServiceRow;
+  }>();
+  const viewed = () => {
+    const id = viewing();
+    return services.view().services.find((s) => s.id === id);
+  };
+  const beside = () => viewed() !== undefined && shown() !== undefined;
+  // A string, since the first service's id is 0 and a keyed Show treats 0 as nothing to show.
+  const viewedKey = createMemo(() => {
+    const service = viewed();
+    return service === undefined ? undefined : String(service.id);
+  });
+  createEffect(
+    on(split.showing, (pair) => {
+      if (pair) setViewing(undefined);
+    }),
+  );
+  // A page such as Accounts takes the whole stage, so the output would cover it.
+  createEffect(
+    on(page, (open) => {
+      if (open !== undefined) setViewing(undefined);
+    }),
+  );
+  const onServiceError = (error: unknown) => {
+    const id = shown();
+    if (id !== undefined) setAlert(id, String(error));
+    else console.error("service:", error);
+  };
   let stage: HTMLDivElement | undefined;
   // Set while a tab is dragged out of the sidebar; `over` once it would split on release.
   const [dropping, setDropping] = createSignal<{ over: boolean }>();
@@ -862,6 +907,29 @@ export function App() {
                 showPage("accounts");
                 setDrawer(false);
               }}
+              services={
+                <ServicesSection
+                  view={services.view()}
+                  onFold={(folded) => {
+                    foldServices(folded).then(services.set, onServiceError);
+                  }}
+                  onAdd={() => setServiceForm({})}
+                  onAct={(id, action) => {
+                    if (action === "remove" && viewing() === id)
+                      setViewing(undefined);
+                    actOnService(action, id).then(services.set, onServiceError);
+                  }}
+                  onOutput={(id) => {
+                    split.close();
+                    setViewing(id);
+                    setDrawer(false);
+                  }}
+                  onEdit={(service) => setServiceForm({ editing: service })}
+                  onOpenUrl={(id) => {
+                    openServiceUrl(id).catch(onServiceError);
+                  }}
+                />
+              }
             />
             <Show when={mode() === "rail" && !inSetup()}>
               <SidebarRail
@@ -1110,7 +1178,9 @@ export function App() {
                           class="tab-view"
                           classList={{
                             shown: shown() === id || split.has(id),
-                            "split-left": split.side(id) === "left",
+                            "split-left":
+                              split.side(id) === "left" ||
+                              (beside() && shown() === id),
                             "split-right": split.side(id) === "right",
                           }}
                           onPointerDown={() => {
@@ -1230,7 +1300,30 @@ export function App() {
                     </Show>
                   )}
                 </For>
-                <Show when={split.showing()}>
+                <Show when={viewedKey()} keyed>
+                  {(key) => (
+                    <div
+                      class="tab-view shown service-view"
+                      classList={{ "split-right": beside() }}
+                    >
+                      <div class="service-bar">
+                        <span class="split-title">{viewed()?.name} output</span>
+                        <span class="spacer" />
+                        <button
+                          type="button"
+                          class="secondary"
+                          onClick={() => {
+                            setViewing(undefined);
+                          }}
+                        >
+                          Close
+                        </button>
+                      </div>
+                      <ServiceOutput service={Number(key)} />
+                    </div>
+                  )}
+                </Show>
+                <Show when={split.showing() || beside()}>
                   <SplitEdge
                     width={splitShare.value()}
                     area={() => stage?.getBoundingClientRect()}
@@ -1339,6 +1432,29 @@ export function App() {
                   onSave={(change) => saveEnvironment(tab().id, change)}
                   onClose={() => {
                     setEditing(undefined);
+                  }}
+                />
+              )}
+            </Show>
+            <Show when={serviceForm()}>
+              {(form) => (
+                <ServiceForm
+                  editing={form().editing}
+                  shells={(programList() ?? []).filter(
+                    (p) => p.isShell && p.program !== null,
+                  )}
+                  onSave={(draft) => {
+                    const editing = form().editing;
+                    return (
+                      editing
+                        ? updateService(editing.id, draft)
+                        : addService(draft)
+                    ).then((view) => {
+                      services.set(view);
+                    });
+                  }}
+                  onClose={() => {
+                    setServiceForm(undefined);
                   }}
                 />
               )}

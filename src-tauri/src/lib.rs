@@ -16,6 +16,7 @@ mod programs;
 mod pty;
 mod run;
 mod saved;
+mod services;
 mod sessions;
 mod suggestions;
 
@@ -32,6 +33,7 @@ use crate::live::Live;
 use crate::panel::PrCache;
 use crate::pty::PtyManager;
 use crate::saved::Saved;
+use crate::services::Services;
 use crate::suggestions::Suggestions;
 
 pub use crate::open::console;
@@ -94,6 +96,13 @@ pub fn run() {
                 let _ = handle.emit("tree-save", failure);
             };
             app.manage(Saved::open(&config_dir.join(saved::FILE_NAME), report));
+            let services = Services::new(
+                &config_dir,
+                paths.home_dir()?,
+                services::app::AppSink(app.handle().clone()),
+            );
+            services.start_saved();
+            app.manage(services);
             if let open::Command::Open(spec) = &command {
                 open::request(app.handle(), spec);
             }
@@ -160,6 +169,18 @@ pub fn run() {
             messages::bridge_discard,
             messages::bridge_type_in,
             open::launch::open_take,
+            services::app::services_view,
+            services::app::service_add,
+            services::app::service_update,
+            services::app::service_remove,
+            services::app::service_start,
+            services::app::service_stop,
+            services::app::service_restart,
+            services::app::service_command,
+            services::app::service_open_url,
+            services::app::services_fold,
+            services::app::service_watch,
+            services::app::service_unwatch,
         ])
         .build(context)
         .expect("error while building tauri application");
@@ -168,6 +189,8 @@ pub fn run() {
         if let RunEvent::Exit = event {
             handle.state::<Bridge>().shutdown();
             handle.state::<PtyManager>().kill_all();
+            // Before the job lets go of children on exit, so no service outlives the app.
+            handle.state::<Services>().stop_all();
             handle.state::<Saved>().flush();
             job::spare_children_on_exit();
         }
