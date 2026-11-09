@@ -2,9 +2,10 @@
 
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, mpsc};
+use std::sync::{Arc, Mutex, Weak, mpsc};
 use std::thread;
 
+use crate::bridge::queue::run_of;
 use crate::bridge::wire::{Ask, AskKind, MOST_LINE, MOST_MESSAGE, Order, Outcome, Reply, TabEntry};
 use crate::bridge::{Core, Hello, link};
 use crate::saved::TabId;
@@ -49,7 +50,7 @@ pub fn listen(core: &Arc<Core>) -> io::Result<()> {
     Ok(())
 }
 
-fn answer(core: &Core, stream: link::Stream) -> io::Result<()> {
+fn answer(core: &Arc<Core>, stream: link::Stream) -> io::Result<()> {
     let mut line = String::new();
     BufReader::new((&stream).take(MOST_LINE)).read_line(&mut line)?;
     let ask: Ask = serde_json::from_str(&line)?;
@@ -112,13 +113,14 @@ fn answer(core: &Core, stream: link::Stream) -> io::Result<()> {
 }
 
 fn listening(
-    core: &Core,
+    core: &Arc<Core>,
     token: &str,
     stream: link::Stream,
     (messaging, pipe): (bool, Option<String>),
     run: &str,
 ) -> io::Result<()> {
     write_line(&stream, &Order::Ready)?;
+    let peer = link::Peer::of(&stream);
     let ended = {
         let mut state = core.state();
         let Some(link) = state.links.get_mut(token) else {
@@ -130,6 +132,7 @@ fn listening(
             messaging,
             pipe,
             listen: Arc::new(Mutex::new(stream)),
+            run: run.to_owned(),
         });
         // A second hello is a restarted helper, whose earlier calls ended with it; its own may already be queued.
         if again {
@@ -142,7 +145,41 @@ fn listening(
         let _ = pending.waiter.try_send(Outcome::Cancelled);
     }
     core.changed();
+    match peer {
+        Ok(peer) => watch(Arc::downgrade(core), token.to_owned(), run.to_owned(), peer),
+        Err(e) => eprintln!("bridge: a helper's exit can't be watched: {e}"),
+    }
     Ok(())
+}
+
+/// Waits on its own thread for a helper to go, then takes its messages out of the popup.
+fn watch(core: Weak<Core>, token: String, run: String, peer: link::Peer) {
+    let started = thread::Builder::new().spawn(move || {
+        peer.gone();
+        if let Some(core) = core.upgrade() {
+            helper_gone(&core, &token, &run);
+        }
+    });
+    if started.is_err() {
+        eprintln!("bridge: no thread to watch a helper");
+    }
+}
+
+fn helper_gone(core: &Core, token: &str, run: &str) {
+    let waiters = {
+        let mut state = core.state();
+        let Some(link) = state.links.get_mut(token) else {
+            return;
+        };
+        link.end_run(run);
+        let tab = link.tab;
+        let gone = state.queue.drop_run(tab, run);
+        state.sender_left(gone)
+    };
+    for waiter in waiters {
+        let _ = waiter.try_send(Outcome::Cancelled);
+    }
+    core.changed();
 }
 
 fn write_line(stream: &link::Stream, value: &impl serde::Serialize) -> io::Result<()> {
@@ -201,13 +238,20 @@ fn send(core: &Core, from: TabId, token: &str, call: String, to: &str, message: 
         if state.early_cancels.remove(&(from, call.clone())) {
             return Outcome::Cancelled;
         }
-        let home = state.links.get(token).map(|l| l.home.clone());
+        let Some(sender) = state.links.get(token) else {
+            return Outcome::Cancelled;
+        };
+        // A send can still be on its way when its helper's exit is seen.
+        if run_of(&call).is_some_and(|run| sender.ended.iter().any(|r| r == run)) {
+            return Outcome::Cancelled;
+        }
+        let home = sender.home.clone();
         let Some(target) = state.by_tab(to) else {
             return refuse(format!(
                 "tab \"{to}\" is not a Claude tab Cerberus can reach. list_tabs shows the tabs you can reach."
             ));
         };
-        if home.as_deref() == Some(target.home.as_str()) {
+        if home == target.home {
             return refuse(format!(
                 "tab \"{to}\" is on this chat's own account; use SendMessage for chats on the same account."
             ));

@@ -12,7 +12,7 @@ pub mod spawn;
 mod tests;
 pub mod wire;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::ffi::OsString;
 use std::io;
 use std::path::Path;
@@ -26,10 +26,15 @@ use serde::{Deserialize, Serialize, Serializer};
 
 use crate::bridge::check::Sighting;
 use crate::bridge::deliver::{Landed, land, prefill_into};
-use crate::bridge::queue::{PendingView, Queue};
+use crate::bridge::queue::{Pending, PendingView, Queue};
 use crate::bridge::wire::{MOST_MESSAGE, Outcome, Written};
 use crate::pty::SessionId;
 use crate::saved::TabId;
+
+/// How many dropped messages the popup can still tell apart from decided ones.
+const MOST_SENDER_GONE: usize = 32;
+/// How many ended helper runs a tab remembers, to refuse a send that was still on its way.
+const MOST_ENDED_RUNS: usize = 8;
 
 /// A helper that has not said hello by then is not coming.
 const HELLO_WAIT: Duration = Duration::from_millis(if cfg!(test) { 500 } else { 10_000 });
@@ -78,7 +83,7 @@ pub trait Hooks: Send + Sync + 'static {
 pub enum Note {
     /// Approved messages reach this tab by typing them into its input, for the user to send.
     PrefillOnly,
-    /// This tab's helper never started, so it can neither send nor be reached.
+    /// This tab's helper never started or has ended, so it can neither send nor be reached.
     Off,
 }
 
@@ -89,9 +94,12 @@ pub struct TabNote {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Snapshot {
     pub pending: Vec<PendingView>,
     pub notes: Vec<TabNote>,
+    /// Recent messages dropped because the chat that sent them is gone, so the popup can say so.
+    pub sender_gone: Vec<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -136,6 +144,7 @@ struct Hello {
     messaging: bool,
     pipe: Option<String>,
     listen: Arc<Mutex<link::Stream>>,
+    run: String,
 }
 
 struct TabLink {
@@ -148,6 +157,8 @@ struct TabLink {
     facts: Option<(Option<String>, Option<u64>)>,
     busy: bool,
     sighting: Option<(Sighting, SyncSender<()>)>,
+    /// Helper runs that are gone, newest last.
+    ended: VecDeque<String>,
 }
 
 impl TabLink {
@@ -160,6 +171,16 @@ impl TabLink {
             .as_ref()
             .is_some_and(|(version, protocol)| !inbox::passes_gate(version.as_deref(), *protocol));
         (!cfg!(windows) || !hello.messaging || gate_failed).then_some(Note::PrefillOnly)
+    }
+
+    fn end_run(&mut self, run: &str) {
+        if self.ended.len() == MOST_ENDED_RUNS {
+            self.ended.pop_front();
+        }
+        self.ended.push_back(run.to_owned());
+        if self.hello.as_ref().is_some_and(|h| h.run == run) {
+            self.hello = None;
+        }
     }
 
     /// Whether the helper can write into this tab's inbox; unknown facts mean no.
@@ -183,6 +204,7 @@ struct State {
     early_cancels: HashSet<(TabId, String)>,
     /// Messages written to an inbox that did not show, kept so the user can type one in instead.
     unseen: HashMap<u64, (TabId, String)>,
+    sender_gone: VecDeque<u64>,
 }
 
 impl State {
@@ -206,7 +228,21 @@ impl State {
         Snapshot {
             pending: self.queue.views(),
             notes,
+            sender_gone: self.sender_gone.iter().copied().collect(),
         }
+    }
+
+    /// Remembers the ids of messages dropped with their sender, for the popup, and hands back their waiters.
+    fn sender_left(&mut self, gone: Vec<Pending<SyncSender<Outcome>>>) -> Vec<SyncSender<Outcome>> {
+        gone.into_iter()
+            .map(|p| {
+                if self.sender_gone.len() == MOST_SENDER_GONE {
+                    self.sender_gone.pop_front();
+                }
+                self.sender_gone.push_back(p.id);
+                p.waiter
+            })
+            .collect()
     }
 }
 
@@ -277,6 +313,7 @@ impl Bridge {
                 facts: None,
                 busy: false,
                 sighting: None,
+                ended: VecDeque::new(),
             },
         );
         let weak = Arc::downgrade(core);
@@ -314,29 +351,27 @@ impl Bridge {
     /// The tab's program ended: its messages, both ways, end with it.
     pub fn closed(&self, token: &str) {
         let Some(core) = &self.0 else { return };
-        let gone = {
+        let (sent, received) = {
             let mut state = core.state();
             let Some(link) = state.links.remove(token) else {
                 return;
             };
             state.early_cancels.retain(|(tab, _)| *tab != link.tab);
             state.unseen.retain(|_, (to, _)| *to != link.tab);
-            state
+            let (sent, received): (Vec<_>, Vec<_>) = state
                 .queue
                 .drop_tab(link.tab)
                 .into_iter()
-                .map(|p| (p.from == link.tab, p.waiter))
-                .collect::<Vec<_>>()
+                .partition(|p| p.from == link.tab);
+            (state.sender_left(sent), received)
         };
-        for (was_sender, waiter) in gone {
-            let outcome = if was_sender {
-                Outcome::Cancelled
-            } else {
-                Outcome::Failed {
-                    reason: "the target tab closed before the user approved it.".to_owned(),
-                }
-            };
-            let _ = waiter.try_send(outcome);
+        for waiter in sent {
+            let _ = waiter.try_send(Outcome::Cancelled);
+        }
+        for pending in received {
+            let _ = pending.waiter.try_send(Outcome::Failed {
+                reason: "the target tab closed before the user approved it.".to_owned(),
+            });
         }
         core.changed();
     }

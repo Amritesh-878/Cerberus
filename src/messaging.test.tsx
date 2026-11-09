@@ -77,6 +77,7 @@ test("an approved message shows both chats side by side on the target", async ()
   const app = core({
     pending: [{ id: 1, from: 3, to: 6, text: "what is 2+2?" }],
     notes: [],
+    senderGone: [],
   });
   const root = await renderApp(() => SAVED, app.core);
   await open(root, "coder");
@@ -138,12 +139,13 @@ async function arrive(id: number, from: number, to: number): Promise<void> {
   await emitEvent("bridge", {
     pending: [{ id, from, to, text: "hi" }],
     notes: [],
+    senderGone: [],
   });
   await settle();
 }
 
 async function gone(): Promise<void> {
-  await emitEvent("bridge", { pending: [], notes: [] });
+  await emitEvent("bridge", { pending: [], notes: [], senderGone: [] });
   await settle();
 }
 
@@ -153,7 +155,7 @@ test("every delivered message opens or keeps its split, nothing else changes it,
   const root = await renderApp(() => SAVED, {
     ...pty.core,
     tree_load: () => ({ tree: TWO_PROJECTS, notice: null }),
-    bridge_snapshot: () => ({ pending: [], notes: [] }),
+    bridge_snapshot: () => ({ pending: [], notes: [], senderGone: [] }),
     bridge_decide: () => replies.shift(),
     bridge_type_in: () => null,
     bridge_discard: () => null,
@@ -230,6 +232,7 @@ test("closing the other half ends the split", async () => {
   const app = core({
     pending: [{ id: 1, from: 3, to: 6, text: "hi" }],
     notes: [],
+    senderGone: [],
   });
   const root = await renderApp(() => SAVED, app.core);
   await open(root, "coder");
@@ -245,7 +248,11 @@ test("closing the other half ends the split", async () => {
 });
 
 test("a tab's note says when messages are prefill only or off", async () => {
-  const app = core({ pending: [], notes: [{ tab: 6, note: "prefillOnly" }] });
+  const app = core({
+    pending: [],
+    notes: [{ tab: 6, note: "prefillOnly" }],
+    senderGone: [],
+  });
   const root = await renderApp(() => SAVED, app.core);
 
   await open(root, "coder");
@@ -255,7 +262,11 @@ test("a tab's note says when messages are prefill only or off", async () => {
   await open(root, "planner");
   expect(root.querySelector(".messages-note")).toBeNull();
 
-  await emitEvent("bridge", { pending: [], notes: [{ tab: 3, note: "off" }] });
+  await emitEvent("bridge", {
+    pending: [],
+    notes: [{ tab: 3, note: "off" }],
+    senderGone: [],
+  });
   await settle();
   expect(root.querySelector(".messages-note")?.textContent).toBe(
     "messages off",
@@ -263,7 +274,7 @@ test("a tab's note says when messages are prefill only or off", async () => {
 });
 
 test("a new waiting message from the core shows in the popup", async () => {
-  const app = core({ pending: [], notes: [] });
+  const app = core({ pending: [], notes: [], senderGone: [] });
   const root = await renderApp(() => SAVED, app.core);
   expect(root.querySelector(".approval")).toBeNull();
 
@@ -273,6 +284,7 @@ test("a new waiting message from the core shows in the popup", async () => {
       { id: 5, from: 6, to: 3, text: "and 5" },
     ],
     notes: [],
+    senderGone: [],
   });
   await settle();
 
@@ -280,4 +292,22 @@ test("a new waiting message from the core shows in the popup", async () => {
   expect(root.querySelector<HTMLTextAreaElement>(".approval-text")?.value).toBe(
     "4",
   );
+});
+
+test("the popup says so when the chat that sent its message is gone", async () => {
+  const app = core({
+    pending: [{ id: 1, from: 3, to: 6, text: "hi" }],
+    notes: [],
+    senderGone: [],
+  });
+  const root = await renderApp(() => SAVED, app.core);
+  expect(root.querySelector(".approval-text")).not.toBeNull();
+
+  await emitEvent("bridge", { pending: [], notes: [], senderGone: [1] });
+  await settle();
+
+  expect(root.querySelector(".approval")?.textContent).toContain(
+    "The sending chat is gone",
+  );
+  expect(app.decided).toEqual([]);
 });

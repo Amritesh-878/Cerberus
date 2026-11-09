@@ -1,4 +1,4 @@
-import { createSignal } from "solid-js";
+import { batch, createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import { afterEach, expect, test } from "vitest";
 
@@ -46,12 +46,14 @@ function show(
   const typed: number[] = [];
   const dropped: number[] = [];
   const [pending, setPending] = createSignal(first);
+  const [senderGone, setSenderGone] = createSignal<number[]>([]);
   const root = document.createElement("div");
   document.body.append(root);
   dispose = render(
     () => (
       <Approvals
         pending={pending()}
+        senderGone={senderGone()}
         name={(tab) => NAMES[tab] ?? UNKNOWN}
         decide={(id, decision) => {
           decisions.push([id, decision]);
@@ -72,7 +74,14 @@ function show(
     ),
     root,
   );
-  return { root, decisions, approved, typed, dropped, setPending };
+  // One core snapshot carries both, so they change together.
+  const senderLeft = (id: number) => {
+    batch(() => {
+      setSenderGone((all) => [...all, id]);
+      setPending((all) => all.filter((m) => m.id !== id));
+    });
+  };
+  return { root, decisions, approved, typed, dropped, setPending, senderLeft };
 }
 
 function textBox(root: HTMLElement): HTMLTextAreaElement {
@@ -134,6 +143,34 @@ test("reject sends nothing on and opens no split", async () => {
 
   expect(decisions).toEqual([[1, { kind: "reject" }]]);
   expect(approved).toEqual([]);
+});
+
+test("a message whose sending chat is gone says so, then the next shows", async () => {
+  const { root, decisions, senderLeft } = show([
+    message(1, "hi"),
+    message(2, "next"),
+  ]);
+
+  senderLeft(1);
+  await settle();
+
+  expect(root.querySelector(".approval")?.textContent).toContain(
+    "The sending chat is gone, so its message was dropped.",
+  );
+  click(root, "OK");
+  await settle();
+  expect(textBox(root).value).toBe("next");
+  expect(decisions).toEqual([]);
+});
+
+test("a gone sender's message behind the shown one leaves quietly", async () => {
+  const { root, senderLeft } = show([message(1, "hi"), message(2, "next")]);
+
+  senderLeft(2);
+  await settle();
+
+  expect(textBox(root).value).toBe("hi");
+  expect(root.querySelector(".approval-count")).toBeNull();
 });
 
 test("waiting messages queue in order with a count", async () => {

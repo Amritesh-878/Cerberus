@@ -1,5 +1,5 @@
 use std::fs;
-use std::io;
+use std::io::{self, Read};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
@@ -34,6 +34,28 @@ pub fn connect(name: &str) -> io::Result<Option<UnixStream>> {
 /// A socket write is in the peer's buffer once it returns, so closing loses nothing.
 pub fn finish(_stream: &UnixStream) -> io::Result<()> {
     Ok(())
+}
+
+/// The other end of a socket, watched through a second handle to it.
+pub struct Peer(UnixStream);
+
+impl Peer {
+    /// A socket reads and writes independently, so a read held open here never delays a write.
+    pub fn of(stream: &UnixStream) -> io::Result<Self> {
+        stream.try_clone().map(Self)
+    }
+
+    /// Blocks until the other end has closed, as it does when its process exits.
+    pub fn gone(self) {
+        let mut buf = [0u8; 256];
+        loop {
+            match (&self.0).read(&mut buf) {
+                Ok(0) => return,
+                Err(e) if e.kind() != io::ErrorKind::Interrupted => return,
+                _ => {}
+            }
+        }
+    }
 }
 
 /// Removes its socket file when dropped.

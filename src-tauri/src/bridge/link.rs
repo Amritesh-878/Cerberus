@@ -8,9 +8,9 @@ mod unix;
 mod windows;
 
 #[cfg(unix)]
-pub use unix::{Listener, Stream, connect, finish, name_for};
+pub use unix::{Listener, Peer, Stream, connect, finish, name_for};
 #[cfg(windows)]
-pub use windows::{Listener, Stream, connect, finish, name_for};
+pub use windows::{Listener, Peer, Stream, connect, finish, name_for};
 
 /// From the OS generator, since tab tokens and pipe names must not be guessable.
 pub fn random_hex(bytes: usize) -> io::Result<String> {

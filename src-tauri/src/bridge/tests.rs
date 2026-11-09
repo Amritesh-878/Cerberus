@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::{self, BufRead, BufReader, PipeWriter, Read, Write};
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -17,7 +18,7 @@ use crate::bridge::inbox::{self, Letter};
 use crate::bridge::mcp::{self, Env};
 #[cfg(windows)]
 use crate::bridge::wire::Written;
-use crate::bridge::wire::{Ask, AskKind, Order, Outcome, Reply};
+use crate::bridge::wire::{Ask, AskKind, BRIDGE_VAR, Order, Outcome, Reply, TOKEN_VAR};
 use crate::bridge::{
     Bridge, Decided, Decision, Hooks, Label, Note, Snapshot, TabNote, Ticket, link, lock,
 };
@@ -935,4 +936,77 @@ fn a_restart_keeps_the_new_runs_send_that_beat_its_hello() {
         .map(|p| p.text)
         .collect();
     assert_eq!(left, ["from the new run"]);
+}
+
+const AS_HELPER: &str = "CERBERUS_BRIDGE_TEST_HELPER";
+
+/// Runs only as the helper process the test below starts and kills, since a helper thread can't be killed.
+#[test]
+fn bridge_test_helper() {
+    if std::env::var_os(AS_HELPER).is_none() {
+        return;
+    }
+    let var = |name: &str| std::env::var(name).ok();
+    // The ticket alone, so a test run inside a real tab never touches that tab's inbox or config dir.
+    let env = Env {
+        bridge: var(BRIDGE_VAR),
+        token: var(TOKEN_VAR),
+        ..Env::default()
+    };
+    mcp::run(io::stdin().lock(), io::stdout(), env);
+}
+
+#[test]
+fn a_killed_helpers_message_leaves_the_popup_and_its_late_sends_are_refused() {
+    let world = World::new("2.1.317");
+    let ticket = world.bridge.register(5, Path::new("acc-a")).unwrap();
+    let mut helper = Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", "bridge::tests::bridge_test_helper"])
+        .env(AS_HELPER, "1")
+        .envs(ticket.env.iter().map(|(name, value)| (*name, value)))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .spawn()
+        .unwrap();
+    let request = json!({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "send_to_tab", "arguments": {"tab": "2", "message": "about to die"}}});
+    writeln!(helper.stdin.as_mut().unwrap(), "{request}").unwrap();
+    world.until(|state| state.by_tab(5).is_some() && !state.queue.views().is_empty());
+    let id = world.waiting();
+
+    helper.kill().unwrap();
+    helper.wait().unwrap();
+
+    world.until(|state| state.queue.views().is_empty());
+    assert_eq!(world.bridge.snapshot().sender_gone, [id]);
+    world.until(|state| state.by_tab(5).is_none());
+    let run = world.bridge.0.as_ref().unwrap().state().links[&ticket.token].ended[0].clone();
+    let late = ask(
+        &world.bridge,
+        &ticket.token,
+        AskKind::Send {
+            call: format!("{run}:2"),
+            to: "2".to_owned(),
+            message: "sent as it died".to_owned(),
+        },
+    );
+    assert_eq!(
+        late,
+        Reply::Outcome {
+            outcome: Outcome::Cancelled
+        }
+    );
+}
+
+#[test]
+fn a_closed_tabs_messages_are_marked_sender_gone() {
+    let mut world = World::new("2.1.317");
+    world.helper(1).send_to_tab("2", "from a closing tab");
+    let id = world.waiting();
+
+    world.bridge.closed(&world.tabs[&1].ticket.token);
+
+    let snapshot = world.bridge.snapshot();
+    assert!(snapshot.pending.is_empty());
+    assert_eq!(snapshot.sender_gone, [id]);
 }

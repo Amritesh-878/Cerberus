@@ -44,6 +44,7 @@ function waitsForEnter(where: string): string {
 /** The first waiting message, to approve, edit or reject; nothing approves by itself, and Escape is the terminal's. */
 export function Approvals(props: {
   pending: PendingMessage[];
+  senderGone: number[];
   name: (tab: number) => TabName;
   decide: (id: number, decision: Decision) => Promise<Decided>;
   typeIn: (id: number) => Promise<void>;
@@ -63,9 +64,20 @@ export function Approvals(props: {
   createEffect(
     on(
       () => first()?.id,
-      () => {
+      (id, shown) => {
         setText(first()?.text ?? "");
         setError(undefined);
+        // The message on screen left with no decision, because the chat that sent it ended.
+        if (
+          shown !== undefined &&
+          id !== shown &&
+          notice() === undefined &&
+          props.senderGone.includes(shown)
+        ) {
+          setNotice({
+            text: "The sending chat is gone, so its message was dropped.",
+          });
+        }
       },
     ),
   );
