@@ -132,8 +132,8 @@ folded cards, starred skills and dismissed PRs are kept in `profiles.json`.
 - **Context:** how full the shown chat's context window is, and its model. **Compact** types
   `/compact` into the chat's input; nothing is sent until you press Enter. See Live cards below.
 - **Outputs:** the files the shown chat wrote or edited, newest first, each once, with its folder
-  relative to the tab's. A click opens the file in VS Code (or the app Windows or macOS opens it
-  with when VS Code isn't installed).
+  relative to the tab's. A click opens the file in VS Code; without VS Code it opens the file's
+  folder instead, since opening a file the chat wrote, such as a script, could run it.
 - **Background tasks:** the chat's background shells and subagents still running, with how long each
   has run (counted from when Cerberus first saw it, since Claude Code gives no start time), and how
   many have finished. Claude Code offers no way to stop one from outside the chat, so there is no stop

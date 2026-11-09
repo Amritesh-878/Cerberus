@@ -336,3 +336,11 @@ fn only_a_file_the_chat_wrote_can_be_opened_and_a_closed_tabs_tasks_end() {
     assert_eq!(view.tabs[0].finished, 2);
     assert!(again.arg.is_some());
 }
+
+#[test]
+fn without_an_editor_a_written_file_is_shown_in_its_folder_never_run() {
+    let script = Path::new("/work/tools/run.cmd");
+
+    assert_eq!(shown_instead(script).unwrap(), Path::new("/work/tools"));
+    assert!(shown_instead(Path::new("run.cmd")).is_err());
+}

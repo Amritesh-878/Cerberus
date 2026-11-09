@@ -197,7 +197,7 @@ impl Live {
         core.changed();
     }
 
-    /// Opens a file the tab's chat wrote, in VS Code when it is installed, else as a double-click would.
+    /// Opens a file the tab's chat wrote in VS Code; without VS Code, shows its folder instead.
     pub fn open_output(&self, tab: TabId, path: &str) -> io::Result<()> {
         let known = self.core.as_ref().is_some_and(|core| {
             core.state()
@@ -214,7 +214,7 @@ impl Live {
         }
         match crate::panel::vscode::find() {
             Some(code) => crate::panel::vscode::open(&code, Path::new(path)),
-            None => crate::panel::reveal::open(std::ffi::OsStr::new(path)),
+            None => crate::panel::reveal::open(shown_instead(Path::new(path))?.as_os_str()),
         }
     }
 
@@ -306,6 +306,13 @@ impl Core {
             self.sink.warned(warning);
         }
     }
+}
+
+/// The folder to show for a file when no editor is there: a double-click on the file could run it.
+fn shown_instead(path: &Path) -> io::Result<&Path> {
+    path.parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "the file has no folder"))
 }
 
 impl Core {
