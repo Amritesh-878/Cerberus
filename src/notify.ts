@@ -144,3 +144,14 @@ export function createNotifier(
     });
   };
 }
+
+// Asked on the first warning, apart from the tab alerts' own ask.
+let warningsAllowed: Promise<boolean> | undefined;
+
+/** A low-limit warning; a click opens the tab it names, as a tab alert's does. */
+export function sendWarning(toast: Toast, tab: TabId): void {
+  warningsAllowed ??= permitted();
+  void warningsAllowed.then((ok) => {
+    if (ok) sendNotification({ ...toast, extra: { tab } });
+  });
+}

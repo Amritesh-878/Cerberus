@@ -366,7 +366,14 @@ test("Connectors sits below Skills, folded until opened, and opening it is kept"
   const titles = [...root.querySelectorAll(".card-title")].map(
     (t) => t.textContent,
   );
-  expect(titles).toEqual(["Environment", "Changes", "Skills", "Connectors"]);
+  expect(titles).toEqual([
+    "Environment",
+    "Context",
+    "Usage",
+    "Changes",
+    "Skills",
+    "Connectors",
+  ]);
   expect(card(root, "Connectors").querySelector(".card-body")).toBeNull();
 
   card(root, "Connectors")

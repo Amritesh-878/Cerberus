@@ -15,7 +15,8 @@ export interface Account {
 }
 
 /** The right panel's cards that fold to their title. */
-export type PanelCard = "environment" | "changes" | "connectors" | "skills";
+export type PanelCard =
+  "environment" | "context" | "usage" | "changes" | "connectors" | "skills";
 
 export interface PanelPrefs {
   open: boolean;
@@ -48,6 +49,10 @@ export interface Profiles {
   suggestions: boolean;
   /** Claude tabs can message tabs on other accounts, each message approved first. */
   messages: boolean;
+  /** Claude tabs report context and limits through their status line for the live cards. */
+  live: boolean;
+  /** The 5-hour use, in percent, at which an account's warning shows. */
+  warnAt: number;
   /** The walkthrough step to reopen at; `null` once setup is finished or skipped. */
   setup: Step | null;
   /** Removed accounts, still named on the tabs left on them. */
