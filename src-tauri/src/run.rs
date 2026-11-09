@@ -223,13 +223,15 @@ mod tests {
         let exe = std::env::current_exe().unwrap();
         let mut command = Command::new("cmd");
         // This test binary as the wrapped program, since PowerShell can take longer to start than any timeout here.
-        command
-            .arg("/c")
-            // From its own folder, since cmd drops the quotes around a path like `Program Files (x86)`; `.\` works even where cmd skips the current folder.
-            .arg(std::path::Path::new(".").join(exe.file_name().unwrap()))
-            .args(["--exact", "run::tests::wrapper_test_child", "--nocapture"])
-            .current_dir(exe.parent().unwrap())
-            .env(PID_FILE, &pid_file);
+        // `/s` strips only the outer quotes, so a path with spaces, brackets or a share name survives.
+        std::os::windows::process::CommandExt::raw_arg(
+            &mut command,
+            format!(
+                r#"/s /c ""{}" --exact run::tests::wrapper_test_child --nocapture""#,
+                exe.display()
+            ),
+        );
+        command.env(PID_FILE, &pid_file);
 
         let result = run(command, Duration::from_secs(10));
 
