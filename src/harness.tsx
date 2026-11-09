@@ -235,7 +235,16 @@ export function emit(
   nth: number,
   ...messages: unknown[]
 ): void {
-  const channel = field(spawned[nth], "events") as { id: number };
+  sendOn(spawned[nth], "events", ...messages);
+}
+
+/** Sends `messages` on the channel a call passed as its `key` argument, as the core would. */
+export function sendOn(
+  args: unknown,
+  key: string,
+  ...messages: unknown[]
+): void {
+  const channel = field(args, key) as { id: number };
   const internals = (
     window as unknown as { __TAURI_INTERNALS__: MockInternals }
   ).__TAURI_INTERNALS__;
