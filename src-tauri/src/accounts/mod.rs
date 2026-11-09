@@ -16,6 +16,7 @@ pub use crate::accounts::detect::Candidate;
 pub use crate::accounts::removal::Removal;
 pub use crate::accounts::status::{AuthState, AuthStatus};
 use crate::accounts::store::Store;
+use crate::live::DEFAULT_WARN_AT;
 use crate::programs::Finder;
 
 pub type AccountId = u32;
@@ -26,7 +27,14 @@ const MOST_DISMISSED: usize = 500;
 /// The left chat's share of a split, in thousandths, so neither side can be dragged shut.
 const SPLIT_SHARES: std::ops::RangeInclusive<u32> = 200..=800;
 /// The right panel's cards that can be collapsed; a name not here is dropped when saved.
-const PANEL_CARDS: [&str; 4] = ["environment", "changes", "connectors", "skills"];
+const PANEL_CARDS: [&str; 6] = [
+    "environment",
+    "context",
+    "usage",
+    "changes",
+    "connectors",
+    "skills",
+];
 /// Cards that start folded, so for these the saved list is the ones the user opened.
 const PANEL_FOLDED_AT_FIRST: [&str; 1] = ["connectors"];
 const MAX_FAVOURITES: usize = 200;
@@ -131,6 +139,12 @@ pub struct Profiles {
     /// Claude tabs can message tabs on other accounts, each message approved first.
     #[serde(default = "on")]
     pub messages: bool,
+    /// Claude tabs report context and limits through their status line for the live cards.
+    #[serde(default = "on")]
+    pub live: bool,
+    /// The 5-hour use, in percent, at which an account's warning shows.
+    #[serde(default = "default_warn_at")]
+    pub warn_at: u8,
     /// Where setup is, until it is finished or skipped; a file from before the setting has finished it.
     #[serde(default)]
     pub setup: Option<SetupStep>,
@@ -145,7 +159,7 @@ pub struct Profiles {
     next_id: AccountId,
 }
 
-// Written out because alerts, suggestions and messages start on, on a first run as in a file saved before the setting existed.
+// Written out because alerts, suggestions, messages and live cards start on, on a first run as in a file saved before the setting existed.
 impl Default for Profiles {
     fn default() -> Self {
         Self {
@@ -159,6 +173,8 @@ impl Default for Profiles {
             alerts: true,
             suggestions: true,
             messages: true,
+            live: true,
+            warn_at: DEFAULT_WARN_AT,
             setup: Some(SetupStep::Install),
             retired: Vec::new(),
             revision: 0,
@@ -169,6 +185,10 @@ impl Default for Profiles {
 
 fn on() -> bool {
     true
+}
+
+fn default_warn_at() -> u8 {
+    DEFAULT_WARN_AT
 }
 
 impl Profiles {
@@ -446,6 +466,21 @@ impl Accounts {
     pub fn set_messages(&self, on: bool) -> Result<Profiles, AccountsError> {
         self.update(|p| {
             p.messages = on;
+            Ok(())
+        })
+    }
+
+    pub fn set_live(&self, on: bool) -> Result<Profiles, AccountsError> {
+        self.update(|p| {
+            p.live = on;
+            Ok(())
+        })
+    }
+
+    /// Held to 50..=99: lower warns all day, and 100 is the limit itself.
+    pub fn set_warn_at(&self, percent: u8) -> Result<Profiles, AccountsError> {
+        self.update(|p| {
+            p.warn_at = percent.clamp(50, 99);
             Ok(())
         })
     }
@@ -1072,6 +1107,23 @@ mod tests {
         assert!(accounts.load().unwrap().messages);
         assert!(!accounts.set_messages(false).unwrap().messages);
         assert!(!accounts.load().unwrap().messages);
+    }
+
+    #[test]
+    fn live_cards_start_on_at_85_and_the_threshold_stays_in_range() {
+        let home = TestDir::new();
+        let accounts = Accounts::new(&home.path().join("app"), home.path().to_path_buf());
+
+        let fresh = accounts.load().unwrap();
+        assert!(fresh.live);
+        assert_eq!(fresh.warn_at, 85);
+        assert!(!accounts.set_live(false).unwrap().live);
+        assert_eq!(accounts.set_warn_at(90).unwrap().warn_at, 90);
+        assert_eq!(accounts.set_warn_at(10).unwrap().warn_at, 50);
+        assert_eq!(accounts.set_warn_at(100).unwrap().warn_at, 99);
+        let saved = accounts.load().unwrap();
+        assert!(!saved.live);
+        assert_eq!(saved.warn_at, 99);
     }
 
     #[test]
