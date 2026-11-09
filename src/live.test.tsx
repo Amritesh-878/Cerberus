@@ -129,6 +129,15 @@ test("the context card shows the shown chat's use, and Compact types /compact wi
   expect(card(root, "Context").textContent).toContain(
     "Shows after the chat's first reply",
   );
+  await emitEvent("live", {
+    ...VIEW,
+    tabs: [{ ...VIEW.tabs[0], context: 0 }],
+  });
+  await settle();
+  expect(card(root, "Context").querySelector(".card-meta")?.textContent).toBe(
+    "0%",
+  );
+  expect(card(root, "Context").querySelector(".meter")).not.toBeNull();
   await emitEvent("live", VIEW);
   await settle();
   const context = card(root, "Context");

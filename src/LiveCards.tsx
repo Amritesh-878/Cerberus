@@ -95,12 +95,16 @@ export function ContextCard(props: {
               }
             >
               <Show
-                when={context()}
+                // Wrapped, since a bare 0% would read as false and hide the bar.
+                when={(() => {
+                  const used = context();
+                  return used === null ? undefined : { used };
+                })()}
                 fallback={<Note>Shows after the chat's first reply</Note>}
               >
-                {(used) => (
+                {(found) => (
                   <>
-                    <Bar used={used()} label="Context used" />
+                    <Bar used={found().used} label="Context used" />
                     <Show when={live().model}>
                       {(model) => <p class="card-note faint">{model()}</p>}
                     </Show>
