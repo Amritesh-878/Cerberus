@@ -387,6 +387,20 @@ impl Saved {
         lock(&live.snapshot).sessions.get(&tab).cloned()
     }
 
+    /// Which tab has each saved chat, so Find a chat can switch to it instead of opening it twice.
+    pub fn open_sessions(&self) -> HashMap<String, TabId> {
+        let Ok(live) = self.live() else {
+            return HashMap::new();
+        };
+        let snapshot = lock(&live.snapshot);
+        snapshot
+            .sessions
+            .iter()
+            .filter(|(tab, _)| snapshot.tree.tabs.iter().any(|t| t.id == **tab))
+            .map(|(tab, id)| (id.clone(), *tab))
+            .collect()
+    }
+
     pub fn flush(&self) {
         let Ok(live) = self.live() else { return };
         let (tx, rx) = mpsc::channel();

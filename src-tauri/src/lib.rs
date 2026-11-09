@@ -3,6 +3,7 @@ mod bridge;
 mod cards;
 mod cli_link;
 mod commands;
+mod findchat;
 mod handover;
 mod job;
 mod live;
@@ -28,6 +29,7 @@ use tauri::{Emitter, Manager, RunEvent};
 use crate::accounts::Accounts;
 use crate::bridge::Bridge;
 use crate::bridge::spawn::Messages;
+use crate::findchat::ChatFinder;
 use crate::handover::RunningTabs;
 use crate::live::Live;
 use crate::panel::PrCache;
@@ -76,6 +78,7 @@ pub fn run() {
         .manage(Arc::new(RunningTabs::default()))
         .manage(open::Pending::default())
         .manage(PrCache::default())
+        .manage(ChatFinder::default())
         .setup(move |app| {
             let paths = app.path();
             let config_dir = paths.app_config_dir()?;
@@ -172,6 +175,9 @@ pub fn run() {
             messages::bridge_discard,
             messages::bridge_type_in,
             open::launch::open_take,
+            findchat::app::chat_find,
+            findchat::app::chat_find_close,
+            findchat::app::chat_resume,
             services::app::services_view,
             services::app::service_add,
             services::app::service_update,
