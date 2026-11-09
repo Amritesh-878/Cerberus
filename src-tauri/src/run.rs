@@ -223,15 +223,14 @@ mod tests {
         let exe = std::env::current_exe().unwrap();
         let mut command = Command::new("cmd");
         // This test binary as the wrapped program, since PowerShell can take longer to start than any timeout here.
-        // `/s` strips only the outer quotes, so a path with spaces, brackets or a share name survives.
+        // `/s` strips only the outer quotes, and cmd expands a variable once, so no path character is reread.
         std::os::windows::process::CommandExt::raw_arg(
             &mut command,
-            format!(
-                r#"/s /c ""{}" --exact run::tests::wrapper_test_child --nocapture""#,
-                exe.display()
-            ),
+            r#"/v:off /s /c ""%CERBERUS_RUN_TEST_EXE%" --exact run::tests::wrapper_test_child --nocapture""#,
         );
-        command.env(PID_FILE, &pid_file);
+        command
+            .env("CERBERUS_RUN_TEST_EXE", &exe)
+            .env(PID_FILE, &pid_file);
 
         let result = run(command, Duration::from_secs(10));
 
