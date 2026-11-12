@@ -28,8 +28,13 @@ function press(button: HTMLElement, x: number): Press {
   );
 }
 
+// A move while dragging holds the button down, as a real one does.
 function at(type: string, button: HTMLElement, x: number): Press {
-  return on(new PointerEvent(type, { clientX: x, clientY: 10 }), button);
+  const buttons = type === "pointermove" ? 1 : 0;
+  return on(
+    new PointerEvent(type, { clientX: x, clientY: 10, buttons }),
+    button,
+  );
 }
 
 function recorder() {
@@ -112,4 +117,69 @@ test("a cancelled drag says so and drops nothing", () => {
 
   expect(seen).toEqual(["move 400", "cancel"]);
   expect(drag.swallowClick()).toBe(false);
+});
+
+test.each([
+  [
+    "the window loses focus",
+    () => window.dispatchEvent(new FocusEvent("blur")),
+  ],
+  [
+    "a key is pressed",
+    () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "a" })),
+  ],
+  [
+    "the mouse moves with no button held",
+    () => window.dispatchEvent(new MouseEvent("mousemove", { buttons: 0 })),
+  ],
+  [
+    "a pointer moves with no button held",
+    () => window.dispatchEvent(new PointerEvent("pointermove", { buttons: 0 })),
+  ],
+  ["a native drag ends", () => window.dispatchEvent(new Event("dragend"))],
+  ["something is dropped", () => window.dispatchEvent(new Event("drop"))],
+  [
+    "the page is hidden",
+    () => {
+      Object.defineProperty(document, "hidden", {
+        value: true,
+        configurable: true,
+      });
+      document.dispatchEvent(new Event("visibilitychange"));
+      Object.defineProperty(document, "hidden", {
+        value: false,
+        configurable: true,
+      });
+    },
+  ],
+])("a drag whose release never comes ends when %s", (_name, happen) => {
+  const { button, captured } = rowButton();
+  const { seen, events } = recorder();
+  const drag = tabDrag();
+  drag.onPointerDown(press(button, 10));
+  drag.onPointerMove(at("pointermove", button, 400), events);
+
+  happen();
+  drag.onPointerMove(at("pointermove", button, 500), events);
+  window.dispatchEvent(new FocusEvent("blur"));
+
+  expect(seen).toEqual(["move 400", "cancel"]);
+  expect(captured).toEqual([]);
+  expect(drag.swallowClick()).toBe(false);
+});
+
+test("a move with the button held keeps the drag, and the row's own move with none ends it", () => {
+  const { button } = rowButton();
+  const { seen, events } = recorder();
+  const drag = tabDrag();
+  drag.onPointerDown(press(button, 10));
+  drag.onPointerMove(at("pointermove", button, 400), events);
+
+  window.dispatchEvent(new MouseEvent("mousemove", { buttons: 1 }));
+  drag.onPointerMove(
+    on(new PointerEvent("pointermove", { clientX: 450, buttons: 0 }), button),
+    events,
+  );
+
+  expect(seen).toEqual(["move 400", "cancel"]);
 });
