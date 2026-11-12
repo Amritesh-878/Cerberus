@@ -1,4 +1,4 @@
-import { onMount } from "solid-js";
+import { onCleanup, onMount } from "solid-js";
 
 /** Asks before a dialog with unsaved changes closes by Escape or its backdrop. */
 export function DiscardAsk(props: {
@@ -6,8 +6,14 @@ export function DiscardAsk(props: {
   onKeep: () => void;
 }) {
   let keep: HTMLButtonElement | undefined;
-  // Keep editing is the safe answer, so Enter lands there.
-  onMount(() => keep?.focus());
+  // Keep editing is the safe answer, so Enter lands there; closing gives focus back to the field it came from.
+  onMount(() => {
+    const before = document.activeElement;
+    keep?.focus();
+    onCleanup(() => {
+      if (before instanceof HTMLElement && before.isConnected) before.focus();
+    });
+  });
   return (
     <div class="discard-ask" role="alertdialog" aria-label="Unsaved changes">
       <p>Discard your changes?</p>

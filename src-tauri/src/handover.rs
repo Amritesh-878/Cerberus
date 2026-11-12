@@ -164,7 +164,8 @@ impl RunningTabs {
                 if left.is_empty() {
                     break;
                 }
-                if !stopped && Instant::now() >= grace {
+                // The root exited, so a process holding its pid now is another program, whose children are not this chat's.
+                if !stopped && Instant::now() >= grace && !(self.probes.is_running)(root) {
                     left.into_iter()
                         .for_each(|pid| (self.probes.stop)(pid, since));
                     stopped = true;
@@ -587,6 +588,34 @@ mod tests {
         assert_eq!(pid, 99);
         STOPPED_SINCE.store(usize::try_from(since).unwrap(), Ordering::SeqCst);
         STOPPED.store(true, Ordering::SeqCst);
+    }
+
+    static NEVER_STOPPED: AtomicBool = AtomicBool::new(false);
+
+    fn stop_must_not_run(_: u32, _: u64) {
+        NEVER_STOPPED.store(true, Ordering::SeqCst);
+    }
+
+    fn root_pid_taken_again(pid: u32) -> bool {
+        pid == 7
+    }
+
+    #[test]
+    fn a_root_pid_taken_by_another_program_is_never_used_to_stop_anything() {
+        let world = world_with(RunningTabs::with(Probes {
+            below: below_for_ever,
+            is_running: root_pid_taken_again,
+            stop: stop_must_not_run,
+        }));
+        world.running.started(2);
+        world.running.spawned(2, 7, 1_234);
+        world.running.ended(2);
+
+        assert!(matches!(
+            world.continue_to(1, true),
+            Err(ContinueError::Running)
+        ));
+        assert!(!NEVER_STOPPED.load(Ordering::SeqCst));
     }
 
     #[test]

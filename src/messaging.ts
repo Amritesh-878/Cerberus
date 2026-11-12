@@ -63,7 +63,7 @@ const TYPED_IN =
 const TITLES: Record<NoteWhy | "off" | "unknown", string> = {
   platform: `${TYPED_IN}. Delivering them straight to the chat is checked on Windows only so far.`,
   noInbox: `${TYPED_IN}, since this tab's Claude Code reported no inbox of its own.`,
-  version: `${TYPED_IN}, since this tab's Claude Code is older than 2.1.317. Update Claude Code, then reopen the tab.`,
+  version: `${TYPED_IN}, since this tab's Claude Code is older than 2.1.317 or uses an inbox format Cerberus doesn't know. Updating Claude Code and reopening the tab usually fixes it.`,
   unknown: `${TYPED_IN}, since its Claude Code can't take them directly.`,
   off: "This tab's message helper didn't start or has ended, so it can't send or receive messages between accounts.",
 };
