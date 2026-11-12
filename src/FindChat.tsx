@@ -350,7 +350,9 @@ export function FindChat(props: {
               ? query().trim() === ""
                 ? "No chats yet"
                 : "No chats match"
-              : `${String(chats().length)} of ${String(done())} chats`}
+              : shownChats().length === 0
+                ? "Every chat found is open in a tab above"
+                : `${String(shownChats().length)} of ${String(done())} chats`}
           </Show>
         </p>
         <Show when={error()}>

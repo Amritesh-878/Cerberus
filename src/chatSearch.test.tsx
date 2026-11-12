@@ -145,7 +145,7 @@ test("Ctrl+Shift+F lists the open tabs, then every other chat newest first, and 
   expect(
     [...root.querySelectorAll(".find-group")].map((g) => g.textContent),
   ).toEqual(["Open tabs", "Chats"]);
-  expect(root.querySelector(".find-status")?.textContent).toBe("3 of 3 chats");
+  expect(root.querySelector(".find-status")?.textContent).toBe("2 of 3 chats");
   press("ArrowDown");
   press("ArrowDown");
   press("ArrowDown");

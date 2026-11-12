@@ -186,7 +186,7 @@ test("usage kept from before a restart shows dimmed with its time, and a reset w
   );
   const lines = [...(work?.querySelectorAll(".usage-line") ?? [])];
   expect(lines[0]?.classList.contains("kept")).toBe(true);
-  expect(lines[0]?.textContent).toMatch(/30% · resets .+ · as of .+$/);
+  expect(lines[0]?.textContent).toMatch(/30% · resets .+as of .+$/);
   expect(lines[1]?.textContent).toBe("7-dayreset");
   expect(card(root, "Usage").textContent).toContain(
     "an account updates after a reply in one of its tabs",

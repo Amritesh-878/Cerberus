@@ -144,13 +144,14 @@ function WindowLine(props: {
             />
             <span class="usage-meta">
               {percentText(w().used)} · resets {resetText(w().resetsAt)}
-              {(() => {
-                const asOf = w().asOf;
-                return asOf === null
-                  ? ""
-                  : ` · as of ${resetText(Math.floor(asOf / 1000))}`;
-              })()}
             </span>
+            <Show when={w().asOf}>
+              {(asOf) => (
+                <span class="usage-asof">
+                  as of {resetText(Math.floor(asOf() / 1000))}
+                </span>
+              )}
+            </Show>
           </>
         )}
       </Show>

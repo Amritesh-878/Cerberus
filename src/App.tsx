@@ -1511,7 +1511,11 @@ export function App() {
                       }}
                     >
                       <ProgramIcon
-                        program={tabById(at().id)?.launch.program ?? ""}
+                        program={
+                          ended().has(at().id)
+                            ? "shell"
+                            : (tabById(at().id)?.launch.program ?? "")
+                        }
                         size={13}
                       />
                       <span>{tabById(at().id)?.title}</span>
@@ -1644,7 +1648,8 @@ export function App() {
                   folder: tab.launch.spec.cwd,
                   account: tab.launch.account ? tabName(tab.id).account : null,
                   accountId: tab.launch.account?.id ?? null,
-                  program: tab.launch.program,
+                  // An ended chat's tab runs the shell, as its sidebar icon shows.
+                  program: ended().has(tab.id) ? "shell" : tab.launch.program,
                 }))}
                 onSwitch={(id) => {
                   setFinding(false);

@@ -3035,7 +3035,16 @@ button.card-row:focus-visible,
 }
 
 .usage-line.kept {
+  flex-wrap: wrap;
+  row-gap: 0;
   opacity: 0.6;
+}
+
+/* Under the bar, so a narrow panel never scrolls sideways. */
+.usage-asof {
+  flex-basis: 100%;
+  padding-left: 52px;
+  font-size: 11px;
 }
 
 .usage-meta,
