@@ -152,10 +152,11 @@ folded cards, starred skills and dismissed PRs are kept in `profiles.json`.
   relative to the tab's. A click shows the file in the file pane (below). The row's **<>** button is
   **Open in VS Code**; without VS Code it opens the file's folder instead, since opening a file the
   chat wrote, such as a script, could run it.
-- **Background tasks:** the chat's background shells and subagents still running, with how long each
-  has run (counted from when Cerberus first saw it, since Claude Code gives no start time), and how
-  many have finished. Claude Code offers no way to stop one from outside the chat, so there is no stop
-  button; ask the chat, or use its own `/tasks`.
+- **Background tasks:** the chat's background shells and subagents, running ones first, then the last
+  20 finished, each by Claude Code's short description (kept in memory only, never the command), its
+  kind, and how long it ran (counted from when Cerberus first saw it, since Claude Code gives no start
+  time). A click types `/tasks` into the chat for you to send, where Claude Code shows the output.
+  There is no stop button: Claude Code offers no way to stop one from outside the chat.
 - **Usage:** one row per account with its 5-hour and 7-day plan use and when each resets, from the
   newest reply of any tab on that account. The last numbers are kept in the profiles file (numbers
   and times only), so after a restart they show dimmed with "as of" and the time they came, until a

@@ -291,6 +291,8 @@ export function Panel(props: {
               onOpenFile={props.onOpenFile}
             />
             <TasksCard
+              canType={props.canType}
+              onType={props.onType}
               live={props.live.tabs.find((t) => t.tab === props.tab?.id)}
               liveOn={props.profiles.live}
               state={props.state}

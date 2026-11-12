@@ -78,6 +78,7 @@ function liveView(outputs: Output[]): LiveView {
         keptTheirs: false,
         outputs,
         tasks: [],
+        done: [],
         finished: 0,
       },
     ],

@@ -362,6 +362,17 @@ button {
   align-items: center;
 }
 
+.task-row .mark.idle {
+  width: 7px;
+  height: 7px;
+  background: var(--faint);
+  border-radius: 50%;
+}
+
+.task-row.done {
+  color: var(--dim);
+}
+
 .mark.working {
   width: 9px;
   height: 9px;

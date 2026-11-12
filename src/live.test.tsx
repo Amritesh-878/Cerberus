@@ -105,6 +105,7 @@ const VIEW: LiveView = {
       keptTheirs: false,
       outputs: [],
       tasks: [],
+      done: [],
       finished: 0,
     },
   ],
@@ -331,7 +332,7 @@ test("the outputs card lists written files, and its menu opens one through the c
   expect(opened).toEqual([{ tab: 3, path: APP_PATH }]);
 });
 
-test("the tasks card shows what runs and for how long, a finished count, and no stop button", async () => {
+test("the tasks card lists running then finished tasks by description, and a click types /tasks", async () => {
   const live = liveCore();
   const root = await renderApp(live.profiles, live.core);
   await open(root, "planner");
@@ -342,8 +343,32 @@ test("the tasks card shows what runs and for how long, a finished count, and no 
       {
         ...VIEW.tabs[0],
         tasks: [
-          { id: "b1", kind: "shell", label: "shell", since },
-          { id: "a1", kind: "subagent", label: "general-purpose", since },
+          {
+            id: "b1",
+            kind: "shell",
+            label: "shell",
+            description: "Run the dev server",
+            since,
+            ended: null,
+          },
+          {
+            id: "a1",
+            kind: "subagent",
+            label: "general-purpose",
+            description: null,
+            since,
+            ended: null,
+          },
+        ],
+        done: [
+          {
+            id: "b0",
+            kind: "shell",
+            label: "shell",
+            description: "Build the app",
+            since: 1_000,
+            ended: 63_000,
+          },
         ],
         finished: 3,
       },
@@ -353,13 +378,19 @@ test("the tasks card shows what runs and for how long, a finished count, and no 
 
   const tasks = card(root, "Background tasks");
   expect(tasks.querySelector(".card-meta")?.textContent).toBe("2 running");
-  const rows = [...tasks.querySelectorAll(".card-row")].map(
+  const rows = [...tasks.querySelectorAll(".task-row")].map(
     (r) => r.textContent,
   );
-  expect(rows[0]).toMatch(/^shell1m 1[4-6]s$/);
-  expect(rows[1]).toMatch(/^general-purposesubagent1m 1[4-6]s$/);
-  expect(tasks.textContent).toContain("3 finished");
-  expect(tasks.querySelector("button:not(.card-title)")).toBeNull();
+  expect(rows[0]).toMatch(
+    /^general-purposesubagent · general-purpose · running1m 1[4-6]s$/,
+  );
+  expect(rows[1]).toMatch(/^Run the dev servershell · running1m 1[4-6]s$/);
+  expect(rows[2]).toBe("Build the appshell · done1m 02s");
+  expect(tasks.textContent).toContain("3 finished in all");
+
+  click(tasks, "Build the appshell · done1m 02s");
+  await settle();
+  expect(live.writes).toEqual(["/tasks"]);
 });
 
 test("the warning text, elapsed time and a window past its reset", () => {

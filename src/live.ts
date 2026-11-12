@@ -50,6 +50,8 @@ export interface TabLive {
   outputs: Output[];
   /** Background shells and subagents still running, oldest first. */
   tasks: RunningTask[];
+  /** The last finished ones, newest first. */
+  done: RunningTask[];
   finished: number;
 }
 
@@ -67,8 +69,12 @@ export interface RunningTask {
   kind: "shell" | "subagent";
   /** `shell`, or the subagent's type. */
   label: string;
+  /** Claude Code's short summary of it; never the command. */
+  description: string | null;
   /** Milliseconds since the epoch when Cerberus first saw it. */
   since: number;
+  /** When it finished, in the same clock; null while it runs. */
+  ended: number | null;
 }
 
 /** "45s", "3m 12s", "1h 04m": how long a task has run. */

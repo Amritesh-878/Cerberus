@@ -1,8 +1,13 @@
 import { createSignal, For, onCleanup, Show } from "solid-js";
 
-import { Card, Note, Row } from "./Cards";
+import { Card, Note } from "./Cards";
 import { CodeIcon } from "./icons";
-import { elapsedText, openOutput, type TabLive } from "./live";
+import {
+  elapsedText,
+  openOutput,
+  type RunningTask,
+  type TabLive,
+} from "./live";
 import type { PanelState } from "./panelPrefs";
 import type { TabId } from "./tree";
 
@@ -110,9 +115,19 @@ export function TasksCard(props: {
   live: TabLive | undefined;
   liveOn: boolean;
   state: PanelState;
+  /** The shown chat can be typed into, so a row can offer Claude Code's own `/tasks` view. */
+  canType: boolean;
+  onType: (text: string) => void;
 }) {
   const now = createSecondClock();
   const running = () => props.live?.tasks ?? [];
+  // Running first, then finished, each newest first.
+  const rows = () => [
+    ...running().slice().reverse(),
+    ...(props.live?.done ?? []),
+  ];
+  const ranFor = (task: RunningTask) =>
+    elapsedText((task.ended ?? now()) - task.since);
   return (
     <Card
       id="tasks"
@@ -130,24 +145,51 @@ export function TasksCard(props: {
           when={props.live}
           fallback={<Note>Restart the chat to see its tasks here</Note>}
         >
-          {(live) => (
-            <>
-              <For each={live().tasks} fallback={<Note>None running</Note>}>
-                {(task) => (
-                  <Row
-                    icon={<span class="mark working" />}
-                    text={task.label}
-                    detail={task.kind === "subagent" ? "subagent" : null}
-                    meta={elapsedText(now() - task.since)}
-                    title={`Running for ${elapsedText(now() - task.since)}, counted from when Cerberus first saw it`}
+          <For each={rows()} fallback={<Note>None yet</Note>}>
+            {(task) => (
+              <button
+                type="button"
+                class="card-row task-row"
+                classList={{ done: task.ended !== null }}
+                disabled={!props.canType}
+                title={
+                  props.canType
+                    ? "Types /tasks into the chat; press Enter there to see its output"
+                    : "Open the running chat to see its tasks"
+                }
+                onClick={() => {
+                  props.onType("/tasks");
+                }}
+              >
+                <span class="row-icon">
+                  <span
+                    class="mark"
+                    classList={{
+                      working: task.ended === null,
+                      idle: task.ended !== null,
+                    }}
                   />
-                )}
-              </For>
-              <Show when={live().finished > 0}>
-                <p class="card-note faint">{live().finished} finished</p>
-              </Show>
-            </>
-          )}
+                </span>
+                <span class="row-text">
+                  <span class="row-main">{task.description ?? task.label}</span>
+                  <span class="row-detail">
+                    {task.kind === "subagent" && task.label !== "subagent"
+                      ? `subagent · ${task.label}`
+                      : task.label}
+                    {task.ended === null ? " · running" : " · done"}
+                  </span>
+                </span>
+                <span class="row-meta">{ranFor(task)}</span>
+              </button>
+            )}
+          </For>
+          <Show
+            when={(props.live?.finished ?? 0) > (props.live?.done.length ?? 0)}
+          >
+            <p class="card-note faint">
+              {props.live?.finished} finished in all
+            </p>
+          </Show>
         </Show>
       </Show>
     </Card>

@@ -63,6 +63,8 @@ pub struct TabLive {
     pub outputs: Vec<Output>,
     /// Background shells and subagents still running, oldest first.
     pub tasks: Vec<Running>,
+    /// The last finished ones, newest first.
+    pub done: Vec<Running>,
     pub finished: u32,
 }
 
@@ -201,7 +203,7 @@ impl Live {
             state.tabs.remove(&link.tab);
             // Its tasks ended with its `claude`.
             if let Some((_, work)) = state.work.get_mut(&link.tab) {
-                work.ended();
+                work.ended(now_ms());
             }
         }
         core.changed();
@@ -294,6 +296,7 @@ impl Core {
                     if let Some((folder, work)) = state.work.get(&shown.tab) {
                         shown.outputs = work.outputs(folder);
                         shown.tasks = work.running();
+                        shown.done = work.recent();
                         shown.finished = work.finished();
                     }
                     shown
