@@ -3092,10 +3092,29 @@ button.card-row:focus-visible,
   display: flex;
   flex-direction: column;
   gap: 6px;
-  align-items: center;
+  align-items: stretch;
+  align-self: stretch;
   padding: 6px 0 0;
   margin: 0;
   list-style: none;
+}
+
+.rail-projects li {
+  position: relative;
+  display: flex;
+  justify-content: center;
+}
+
+/* The active project's mark sits on the rail's left edge, as an activity bar's does. */
+.rail-projects li.active::before {
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  left: 0;
+  width: 3px;
+  content: "";
+  background: var(--accent);
+  border-radius: 0 3px 3px 0;
 }
 
 .rail-project {
@@ -3109,20 +3128,24 @@ button.card-row:focus-visible,
   font-size: 11px;
   font-weight: 600;
   color: var(--dim);
+  letter-spacing: 0.02em;
   cursor: pointer;
-  background: var(--hover);
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  border: 0;
+  border-radius: 9px;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
 }
 
 .rail-project:hover {
   color: var(--text);
-  border-color: #3a3a3a;
+  background: color-mix(in srgb, var(--text) 12%, transparent);
 }
 
 .rail-project.active {
   color: var(--text);
-  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
 }
 
 .rail-project:focus-visible {

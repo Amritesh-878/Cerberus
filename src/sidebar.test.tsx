@@ -114,6 +114,20 @@ test("the collapse button folds the sidebar to a rail of projects and saves it",
   expect(
     [...root.querySelectorAll(".rail-project")].map((b) => b.textContent),
   ).toEqual(["AL", "NS"]);
+  // Each tile names its project in full on hover, and only the active one carries the edge mark.
+  expect(
+    [...root.querySelectorAll(".rail-project")].map((b) =>
+      b.getAttribute("title"),
+    ),
+  ).toEqual(["alpha", "notes site"]);
+  expect(
+    root.querySelectorAll(".rail-projects li.active").length,
+  ).toBeLessThanOrEqual(1);
+  expect(
+    root
+      .querySelector(".rail-projects li.active .rail-project")
+      ?.getAttribute("aria-current") ?? "true",
+  ).toBe("true");
   expect(root.querySelector(".sidebar-edge")).toBeNull();
   expect(side.saves).toEqual([true]);
 
