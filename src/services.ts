@@ -113,6 +113,14 @@ export function tunnelDraft(port: number, draft: Draft): Draft {
   };
 }
 
+/** Which preset the command came from, so its button shows as chosen; an edited command is neither. */
+export function presetOf(command: string): "tunnel" | "dev" | undefined {
+  if (/^cloudflared tunnel --url http:\/\/localhost:\d+$/.test(command)) {
+    return "tunnel";
+  }
+  return command === "npm run dev" ? "dev" : undefined;
+}
+
 export function devServerDraft(draft: Draft): Draft {
   return {
     ...draft,

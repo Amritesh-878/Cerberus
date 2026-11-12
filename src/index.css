@@ -2770,6 +2770,12 @@ button.card-row:focus-visible,
   color: var(--dim);
 }
 
+.service-presets .preset[aria-pressed="true"] {
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  border-color: var(--accent);
+}
+
 .service-port label {
   display: flex;
   gap: 8px;
