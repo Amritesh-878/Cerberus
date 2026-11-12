@@ -1009,7 +1009,7 @@ export function App() {
                 showPage("accounts");
                 setDrawer(false);
               }}
-              onFindChat={() => {
+              onSearch={() => {
                 setFinding(true);
                 setDrawer(false);
               }}
@@ -1635,6 +1635,21 @@ export function App() {
               <FindChat
                 profiles={loaded()}
                 onOpen={openFound}
+                tabs={tree().tabs.map((tab) => ({
+                  id: tab.id,
+                  title: tab.title,
+                  project:
+                    tree().projects.find((p) => p.id === tab.projectId)?.name ??
+                    "Setup",
+                  folder: tab.launch.spec.cwd,
+                  account: tab.launch.account ? tabName(tab.id).account : null,
+                  accountId: tab.launch.account?.id ?? null,
+                  program: tab.launch.program,
+                }))}
+                onSwitch={(id) => {
+                  setFinding(false);
+                  select(id);
+                }}
                 onClose={() => setFinding(false)}
               />
             </Show>

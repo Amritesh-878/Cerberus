@@ -75,7 +75,7 @@ program the new size once it settles, so Claude Code redraws once at the new wid
 
 ### Collapsing the sidebar
 
-The button beside the search box, or Ctrl+Shift+E (Cmd+Shift+E on macOS), folds the sidebar to a
+The button beside the search box at the top, or Ctrl+Shift+E (Cmd+Shift+E on macOS), folds the sidebar to a
 thin rail: one icon per project (its initials), a dot on a project where a chat is waiting on you,
 and an expand button at the top. Clicking a project's icon opens the sidebar with that project
 unfolded. Collapsed or open is saved in `profiles.json`, and the width it opens to stays as you
@@ -299,12 +299,16 @@ The state comes from Claude Code's `sessions` file. For a limit, Cerberus reads 
 type and reset time from the chat's last record, and never shows, logs or stores anything else
 from a transcript.
 
-## Finding a chat
+## Finding a tab or a chat
 
-`claude --resume` lists only the chats of the folder you are in, on the account you are on. **Find
-a chat** (Ctrl+Shift+F, Cmd+Shift+F on macOS, or the search button at the foot of the sidebar)
-searches every account's chats at once:
+`claude --resume` lists only the chats of the folder you are in, on the account you are on. The
+search box at the top of the sidebar (or Ctrl+Shift+F, Cmd+Shift+F on macOS) opens one list for
+your open tabs and every account's chats:
 
+- **Open tabs** come first: every tab whose title, project, folder or account holds all the words
+  you typed; with nothing typed, all of them. Enter or a click shows that tab.
+- **Chats** follow. A chat already open in a tab is listed once, as that tab. Ctrl+K is left to the
+  shell, where it deletes to the end of the line.
 - Before you type, it lists every chat, newest first. Each row has the chat's title (its summary,
   else its first message), its account, its folder, and when its last message was.
 - Words match anywhere, in any case: in the title, the folder or the text of what you and Claude

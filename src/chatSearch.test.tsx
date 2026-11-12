@@ -15,6 +15,7 @@ import {
   sidebarTitles,
 } from "./harness";
 import type { SavedTree } from "./saved";
+import { matchTabs } from "./tabSearch";
 import { emptyTree } from "./tree";
 
 afterEach(cleanup);
@@ -134,16 +135,16 @@ async function openDialog(find: ReturnType<typeof findCore>) {
   return root;
 }
 
-test("Ctrl+Shift+F lists every chat newest first, and arrows move the choice", async () => {
+test("Ctrl+Shift+F lists the open tabs, then every other chat newest first, and arrows move the choice", async () => {
   const find = findCore();
   const root = await openDialog(find);
 
   expect(field(find.finds[0], "query")).toBe("");
-  expect(rows(root)).toEqual([
-    "Fix the api tests",
-    "The planner chat",
-    "Old prototype",
-  ]);
+  // The planner's own chat shows once, as the planner tab.
+  expect(rows(root)).toEqual(["planner", "Fix the api tests", "Old prototype"]);
+  expect(
+    [...root.querySelectorAll(".find-group")].map((g) => g.textContent),
+  ).toEqual(["Open tabs", "Chats"]);
   expect(root.querySelector(".find-status")?.textContent).toBe("3 of 3 chats");
   press("ArrowDown");
   press("ArrowDown");
@@ -159,11 +160,10 @@ test("Ctrl+Shift+F lists every chat newest first, and arrows move the choice", a
   expect(find.of("chat_find_close")).toHaveLength(1);
 });
 
-test("a chat already in a tab switches to that tab", async () => {
+test("Enter on an open tab, the first row, switches to it", async () => {
   const find = findCore();
   const root = await openDialog(find);
 
-  press("ArrowDown");
   press("Enter");
   await settle();
 
@@ -176,6 +176,7 @@ test("a chat opens in a new tab on its account, in the project holding its folde
   const find = findCore();
   const root = await openDialog(find);
 
+  press("ArrowDown");
   press("Enter");
   await settle();
   await settle();
@@ -229,6 +230,7 @@ test("a chat the core won't resume leaves no tab behind and says why", async () 
   });
   const root = await openDialog(find);
 
+  press("ArrowDown");
   press("Enter");
   await settle();
   await settle();
@@ -254,6 +256,7 @@ test("a refused open of a chat from a new folder takes its new project away too"
   ]);
   await settle();
 
+  press("ArrowDown");
   press("Enter");
   await settle();
   await settle();
@@ -279,6 +282,7 @@ test("a refused open keeps its new project when another chat opened into it mean
   await settle();
   answer(find, 0, [{ ...ELSEWHERE, folder: String.raw`D:\other\repo` }]);
   await settle();
+  press("ArrowDown");
   press("Enter");
   await settle();
   press("Escape");
@@ -289,6 +293,9 @@ test("a refused open keeps its new project when another chat opened into it mean
     { ...GONE, folder: String.raw`D:\other\repo\api`, folderExists: true },
   ]);
   await settle();
+  // The first open's tab is listed now too, so the chat is third.
+  press("ArrowDown");
+  press("ArrowDown");
   press("Enter");
   await settle();
   await settle();
@@ -382,4 +389,31 @@ test("the helpers: merging, the holding project and the day", () => {
   expect(whenText(Date.parse("2025-03-02T10:00:00"), now, "en-GB")).toBe(
     "2 Mar 2025",
   );
+});
+
+test("open tabs match by title, project, folder and account, every word", () => {
+  const tab = {
+    id: 3,
+    title: "planner",
+    project: "alpha",
+    folder: String.raw`C:\code\alpha`,
+    account: "work",
+    accountId: 1,
+    program: "claude",
+  };
+  const shell = {
+    ...tab,
+    id: 4,
+    title: "shell",
+    account: null,
+    program: "powershell",
+  };
+  const titles = (query: string) =>
+    matchTabs([tab, shell], query).map((t) => t.title);
+
+  expect(titles("")).toEqual(["planner", "shell"]);
+  expect(titles("PLAN")).toEqual(["planner"]);
+  expect(titles("alpha work")).toEqual(["planner"]);
+  expect(titles("code")).toEqual(["planner", "shell"]);
+  expect(titles("planner personal")).toEqual([]);
 });
