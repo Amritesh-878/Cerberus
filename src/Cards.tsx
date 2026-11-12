@@ -12,30 +12,51 @@ export function Card(props: {
   subtitle?: string;
   /** A button at the right of the title, such as Edit environment. */
   action?: JSX.Element;
+  /** Shown in the title row between the title and the meta, such as a meter. */
+  inline?: JSX.Element;
+  /** The whole card fits its title row, so it never folds; `note` shows under it when there is something to say. */
+  fixed?: boolean;
+  note?: string;
   state: PanelState;
-  children: JSX.Element;
+  children?: JSX.Element;
 }) {
-  const open = () => !props.state.collapsed(props.id);
+  const open = () => props.fixed === true || !props.state.collapsed(props.id);
   return (
-    <section class="card" classList={{ folded: !open() }}>
+    <section
+      class="card"
+      classList={{ folded: !open(), fixed: props.fixed === true }}
+    >
       <h2 class="card-head">
-        <button
-          type="button"
-          class="card-title"
-          aria-expanded={open()}
-          onClick={() => {
-            props.state.toggleCard(props.id);
-          }}
+        <Show
+          when={props.fixed !== true}
+          fallback={<span class="card-title">{props.title}</span>}
         >
-          {props.title}
-          <ChevronIcon />
-        </button>
+          <button
+            type="button"
+            class="card-title"
+            aria-expanded={open()}
+            onClick={() => {
+              props.state.toggleCard(props.id);
+            }}
+          >
+            {props.title}
+            <ChevronIcon />
+          </button>
+        </Show>
+        {props.inline}
         <Show when={props.meta}>
           <span class="card-meta">{props.meta}</span>
         </Show>
         {props.action}
       </h2>
-      <Show when={open()}>
+      <Show when={props.fixed === true ? props.note : undefined}>
+        {(note) => (
+          <div class="card-body">
+            <Note>{note()}</Note>
+          </div>
+        )}
+      </Show>
+      <Show when={open() && props.fixed !== true}>
         <div class="card-body">
           <Show when={props.subtitle}>
             <p class="card-subtitle">{props.subtitle}</p>

@@ -2287,6 +2287,28 @@ button.card-row:focus-visible,
   border-radius: 5px;
 }
 
+.card.fixed .card-title {
+  cursor: default;
+}
+
+.card.fixed .card-head .meter {
+  margin: 0;
+}
+
+.card.fixed .card-head .meter + .card-meta {
+  margin-left: 0;
+}
+
+.card-compact {
+  margin-left: auto;
+  font-weight: 400;
+  color: var(--text);
+}
+
+.card-meta + .card-compact {
+  margin-left: 0;
+}
+
 .card-meta + .card-action {
   margin-left: 0;
 }

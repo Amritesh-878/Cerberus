@@ -153,7 +153,14 @@ test("the context card shows the shown chat's use, and Compact types /compact wi
   expect(context.querySelector(".meter")?.getAttribute("aria-valuenow")).toBe(
     "43",
   );
-  expect(context.textContent).toContain("Opus 5.5");
+  expect(context.querySelector(".meter")?.getAttribute("title")).toBe(
+    "Opus 5.5",
+  );
+  // One row: the title, the meter, the percentage and Compact, with nothing to fold.
+  expect(context.textContent).toBe("Context43%Compact");
+  expect(context.querySelector(".card-body")).toBeNull();
+  expect(context.querySelector("[aria-expanded]")).toBeNull();
+  expect(context.querySelector(".card-compact")).not.toBeNull();
   expect(live.writes).toEqual(["/compact"]);
 });
 

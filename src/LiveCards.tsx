@@ -24,10 +24,16 @@ function createClock() {
   return now;
 }
 
-function Bar(props: { used: number; high?: boolean; label: string }) {
+function Bar(props: {
+  used: number;
+  high?: boolean;
+  label: string;
+  title?: string;
+}) {
   return (
     <div
       class="meter"
+      title={props.title}
       classList={{ high: props.high === true }}
       role="meter"
       aria-label={props.label}
@@ -40,7 +46,7 @@ function Bar(props: { used: number; high?: boolean; label: string }) {
   );
 }
 
-/** The shown chat's context use, and a Compact that types `/compact` for the user to send. */
+/** The shown chat's context use in one row, and a Compact that types `/compact` for the user to send. */
 export function ContextCard(props: {
   live: TabLive | undefined;
   liveOn: boolean;
@@ -49,19 +55,50 @@ export function ContextCard(props: {
   onCompact: () => void;
 }) {
   const context = () => props.live?.context ?? null;
+  // Why there is no meter yet, or nothing when there is one.
+  const why = () => {
+    if (!props.liveOn) return "Live cards are off in Accounts";
+    const live = props.live;
+    if (!live) return "Restart the chat to see its context here";
+    if (live.keptTheirs) {
+      return "Your own status line runs in PowerShell, so this chat can't report here";
+    }
+    return context() === null
+      ? "Shows after the chat's first reply"
+      : undefined;
+  };
   return (
     <Card
       id="context"
       title="Context"
+      fixed
       meta={(() => {
         const used = context();
-        return used === null ? undefined : percentText(used);
+        return used === null || why() !== undefined
+          ? undefined
+          : percentText(used);
       })()}
-      state={props.state}
+      inline={
+        <Show
+          // Wrapped, since a bare 0% would read as false and hide the bar.
+          when={(() => {
+            const used = context();
+            return used === null || why() !== undefined ? undefined : { used };
+          })()}
+        >
+          {(found) => (
+            <Bar
+              used={found().used}
+              label="Context used"
+              title={props.live?.model ?? undefined}
+            />
+          )}
+        </Show>
+      }
       action={
         <button
           type="button"
-          class="card-action text"
+          class="row-button card-compact"
           disabled={!props.canType}
           title={
             props.canType
@@ -75,47 +112,9 @@ export function ContextCard(props: {
           Compact
         </button>
       }
-    >
-      <Show
-        when={props.liveOn}
-        fallback={<Note>Live cards are off in Accounts</Note>}
-      >
-        <Show
-          when={props.live}
-          fallback={<Note>Restart the chat to see its context here</Note>}
-        >
-          {(live) => (
-            <Show
-              when={!live().keptTheirs}
-              fallback={
-                <Note>
-                  Your own status line runs in PowerShell, so this chat can't
-                  report here
-                </Note>
-              }
-            >
-              <Show
-                // Wrapped, since a bare 0% would read as false and hide the bar.
-                when={(() => {
-                  const used = context();
-                  return used === null ? undefined : { used };
-                })()}
-                fallback={<Note>Shows after the chat's first reply</Note>}
-              >
-                {(found) => (
-                  <>
-                    <Bar used={found().used} label="Context used" />
-                    <Show when={live().model}>
-                      {(model) => <p class="card-note faint">{model()}</p>}
-                    </Show>
-                  </>
-                )}
-              </Show>
-            </Show>
-          )}
-        </Show>
-      </Show>
-    </Card>
+      note={why()}
+      state={props.state}
+    />
   );
 }
 
