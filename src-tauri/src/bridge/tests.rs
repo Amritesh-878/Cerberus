@@ -20,7 +20,7 @@ use crate::bridge::mcp::{self, Env};
 use crate::bridge::wire::Written;
 use crate::bridge::wire::{Ask, AskKind, BRIDGE_VAR, Order, Outcome, Reply, TOKEN_VAR};
 use crate::bridge::{
-    Bridge, Decided, Decision, Hooks, Label, Note, Snapshot, TabNote, Ticket, link, lock,
+    Bridge, Decided, Decision, Hooks, Label, Note, Snapshot, TabNote, Ticket, Why, link, lock,
 };
 use crate::saved::TabId;
 
@@ -394,8 +394,8 @@ fn an_edited_message_is_delivered_as_edited_and_the_sender_sees_the_edit() {
 }
 
 #[test]
-fn an_untested_version_is_typed_in_without_enter_and_the_tab_says_prefill_only() {
-    let mut world = World::new("9.9.9");
+fn an_older_version_is_typed_in_without_enter_and_the_tab_says_prefill_only() {
+    let mut world = World::new("2.1.316");
     world.helper(1).send_to_tab("2", "hello\r\nthere");
     let id = world.waiting();
     let typed: Typed = Arc::default();
@@ -422,7 +422,8 @@ fn an_untested_version_is_typed_in_without_enter_and_the_tab_says_prefill_only()
     assert!(world.helper(1).result().0.contains("presses Enter there"));
     assert!(world.bridge.snapshot().notes.contains(&TabNote {
         tab: 2,
-        note: Note::PrefillOnly
+        note: Note::PrefillOnly,
+        why: Some(Why::Version),
     }));
     assert!(world.tabs[&2].inbox.try_recv().is_err());
 }
@@ -583,6 +584,7 @@ fn a_helper_that_never_says_hello_turns_its_tab_off() {
             == [TabNote {
                 tab: 5,
                 note: Note::Off,
+                why: None,
             }]
         {
             break;
@@ -651,7 +653,8 @@ fn on_macos_an_approved_message_is_typed_in() {
     );
     assert!(world.bridge.snapshot().notes.contains(&TabNote {
         tab: 2,
-        note: Note::PrefillOnly
+        note: Note::PrefillOnly,
+        why: Some(Why::Platform),
     }));
 }
 

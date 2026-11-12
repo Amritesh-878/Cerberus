@@ -12,7 +12,7 @@ import {
   SAVED,
   settle,
 } from "./harness";
-import type { BridgeSnapshot } from "./messaging";
+import { type BridgeSnapshot, noteText } from "./messaging";
 import type { SavedTree } from "./saved";
 
 afterEach(cleanup);
@@ -250,7 +250,7 @@ test("closing the other half ends the split", async () => {
 test("a tab's note says when messages are prefill only or off", async () => {
   const app = core({
     pending: [],
-    notes: [{ tab: 6, note: "prefillOnly" }],
+    notes: [{ tab: 6, note: "prefillOnly", why: "version" }],
     senderGone: [],
   });
   const root = await renderApp(() => SAVED, app.core);
@@ -258,6 +258,9 @@ test("a tab's note says when messages are prefill only or off", async () => {
   await open(root, "coder");
   expect(root.querySelector(".messages-note")?.textContent).toBe(
     "messages: prefill only",
+  );
+  expect(root.querySelector(".messages-note")?.getAttribute("title")).toContain(
+    "older than 2.1.317",
   );
   await open(root, "planner");
   expect(root.querySelector(".messages-note")).toBeNull();
@@ -310,4 +313,16 @@ test("the popup says so when the chat that sent its message is gone", async () =
     "The sending chat is gone",
   );
   expect(app.decided).toEqual([]);
+});
+
+test("each prefill-only reason gets its own plain tooltip", () => {
+  const titles = (["platform", "noInbox", "version", null] as const).map(
+    (why) => noteText({ tab: 1, note: "prefillOnly", why }).title,
+  );
+
+  expect(titles[0]).toContain("checked on Windows only");
+  expect(titles[1]).toContain("no inbox of its own");
+  expect(titles[2]).toContain("Update Claude Code, then reopen the tab");
+  expect(titles[3]).toContain("can't take them directly");
+  expect(noteText({ tab: 1, note: "off" }).label).toBe("messages off");
 });

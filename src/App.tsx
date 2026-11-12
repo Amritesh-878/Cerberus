@@ -63,7 +63,7 @@ import {
   createMessaging,
   decide,
   discard,
-  NOTE_TEXT,
+  noteText,
   typeIn,
 } from "./messaging";
 import { createLiveFeed, dismissWarning, warningText } from "./live";
@@ -1133,9 +1133,9 @@ export function App() {
                     <span
                       class="messages-note"
                       role="status"
-                      title={NOTE_TEXT[note()].title}
+                      title={noteText(note()).title}
                     >
-                      {NOTE_TEXT[note()].label}
+                      {noteText(note()).label}
                     </span>
                   )}
                 </Show>

@@ -372,8 +372,10 @@ tab message a Claude Code tab on another of your accounts, and every message wai
   the sending chat closes or its helper ends (killed or crashed), its message leaves the popup, which
   says the sending chat is gone.
 - **Notes.** A tab whose messages can only be typed in shows "messages: prefill only" in the top
-  bar: a Claude Code version Cerberus hasn't tested, or macOS, where inbox delivery isn't checked
-  yet. "messages off" means the tab's helper didn't start within 10 seconds, or ended.
+  bar, and its tooltip says why: Claude Code older than 2.1.317, a Claude Code that reports no inbox,
+  or macOS, where inbox delivery isn't checked yet. A newer Claude Code is tried directly; a message
+  it doesn't show in time falls back to **Type it in instead**. "messages off" means the tab's helper
+  didn't start within 10 seconds, or ended.
 - **Turning it off.** **Accounts > Messages between accounts.** Off, Claude Code tabs start exactly
   as before. A change applies to Claude Code tabs started after it. Your own MCP servers load either
   way.

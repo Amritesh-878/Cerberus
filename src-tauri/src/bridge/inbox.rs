@@ -6,8 +6,8 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-/// Claude Code versions whose inbox framing was checked against a live session.
-pub const TESTED_VERSIONS: [&str; 2] = ["2.1.317", "2.1.318"];
+/// The first Claude Code whose inbox framing was checked against a live session; later ones keep it unless the protocol changes.
+const FIRST_VERSION: [u64; 3] = [2, 1, 317];
 const PEER_PROTOCOL: u64 = 1;
 const WRAPPER: &str = "cross-session-message";
 
@@ -21,9 +21,19 @@ pub struct SessionFacts {
     pub session_id: Option<String>,
 }
 
-/// Whether this Claude Code's inbox takes the framing below.
+/// Whether this Claude Code's inbox takes the framing below; a message it drops anyway falls back to the type-it-in offer.
 pub fn passes_gate(version: Option<&str>, peer_protocol: Option<u64>) -> bool {
-    peer_protocol == Some(PEER_PROTOCOL) && version.is_some_and(|v| TESTED_VERSIONS.contains(&v))
+    peer_protocol == Some(PEER_PROTOCOL)
+        && version
+            .and_then(numbers)
+            .is_some_and(|v| v >= FIRST_VERSION)
+}
+
+/// `2.1.322` as `[2, 1, 322]`; anything else, such as a pre-release tag, is unknown.
+fn numbers(version: &str) -> Option<[u64; 3]> {
+    let mut parts = version.trim().split('.').map(|p| p.parse::<u64>().ok());
+    let found = [parts.next()??, parts.next()??, parts.next()??];
+    parts.next().is_none().then_some(found)
 }
 
 /// The session file whose inbox is `socket`, found in the account's `sessions` folder.
@@ -221,12 +231,24 @@ mod tests {
     }
 
     #[test]
-    fn only_a_tested_version_with_protocol_one_passes() {
-        assert!(passes_gate(Some("2.1.317"), Some(1)));
-        assert!(!passes_gate(Some("2.1.317"), Some(2)));
-        assert!(!passes_gate(Some("9.0.0"), Some(1)));
+    fn the_first_tested_version_or_later_with_protocol_one_passes() {
+        for version in ["2.1.317", "2.1.318", "2.1.322", "2.2.0", "3.0.0"] {
+            assert!(passes_gate(Some(version), Some(1)), "{version}");
+        }
+        for version in [
+            "2.1.316",
+            "2.0.999",
+            "1.9.400",
+            "2.1",
+            "2.1.322-beta",
+            "2.1.322.1",
+            "",
+        ] {
+            assert!(!passes_gate(Some(version), Some(1)), "{version}");
+        }
+        assert!(!passes_gate(Some("2.1.322"), Some(2)));
         assert!(!passes_gate(None, Some(1)));
-        assert!(!passes_gate(Some("2.1.317"), None));
+        assert!(!passes_gate(Some("2.1.322"), None));
     }
 
     #[test]
