@@ -1,5 +1,6 @@
 import { For, onCleanup, onMount } from "solid-js";
 
+import { backdropDismiss } from "./backdrop";
 import { CloseIcon } from "./icons";
 import { shortcutSheet } from "./keys";
 
@@ -45,9 +46,9 @@ export function ShortcutsSheet(props: { onClose: () => void }) {
   return (
     <div
       class="sheet-backdrop"
-      onClick={(event) => {
-        if (event.target === event.currentTarget) props.onClose();
-      }}
+      {...backdropDismiss(() => {
+        props.onClose();
+      })}
     >
       <div
         class="sheet"

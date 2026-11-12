@@ -1,5 +1,6 @@
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 
+import { backdropDismiss } from "./backdrop";
 import { Card, Note, Row } from "./Cards";
 import { CodeIcon, MoreIcon } from "./icons";
 import { elapsedText, openOutput, type Output, type TabLive } from "./live";
@@ -46,9 +47,9 @@ function OutputMenu(props: {
   return (
     <div
       class="popover-backdrop"
-      onClick={(event) => {
-        if (event.target === event.currentTarget) props.onDismiss();
-      }}
+      {...backdropDismiss(() => {
+        props.onDismiss();
+      })}
     >
       <div
         class="popover menu service-menu"

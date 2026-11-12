@@ -1,5 +1,6 @@
 import { createSignal, For, onCleanup, onMount, Show, untrack } from "solid-js";
 
+import { backdropDismiss } from "./backdrop";
 import {
   type Account,
   type AccountId,
@@ -146,9 +147,9 @@ export function TabMenu(props: {
   return (
     <div
       class="popover-backdrop"
-      onClick={(event) => {
-        if (event.target === event.currentTarget) props.onDismiss();
-      }}
+      {...backdropDismiss(() => {
+        props.onDismiss();
+      })}
     >
       <div
         class="popover menu tab-menu"

@@ -8,6 +8,7 @@ import {
   untrack,
 } from "solid-js";
 
+import { backdropDismiss } from "./backdrop";
 import { pickFolder } from "./accounts";
 import {
   type EnvEdit,
@@ -15,6 +16,7 @@ import {
   planFolders,
   tabEnv,
 } from "./environment";
+import { DiscardAsk } from "./DiscardAsk";
 import { BranchIcon, CloseIcon, FolderIcon } from "./icons";
 import { panelChanges } from "./panelData";
 import { keepInside } from "./ShortcutsSheet";
@@ -80,16 +82,34 @@ export function EnvironmentDialog(props: {
       .filter((n) => !(saved() ?? []).includes(n)),
   ];
 
+  const [discarding, setDiscarding] = createSignal(false);
+  const originalTitle = untrack(() => props.tab.title);
+  const dirty = () =>
+    title() !== originalTitle ||
+    cwd() !== spec.cwd ||
+    dirs().join("\n") !== (spec.dirs ?? []).join("\n") ||
+    addedVars().length > 0 ||
+    removedVars().length > 0 ||
+    varName() !== "" ||
+    varValue() !== "";
+
   // Held open while saving, so a pending folder move cannot be followed by a second one.
   const close = () => {
     if (!saving()) props.onClose();
+  };
+  // Escape and the backdrop are easy to hit by accident, so unsaved edits ask first.
+  const leave = () => {
+    if (saving()) return;
+    if (discarding()) setDiscarding(false);
+    else if (dirty()) setDiscarding(true);
+    else props.onClose();
   };
 
   let sheet: HTMLDivElement | undefined;
   onMount(() => {
     const opener = document.activeElement;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") close();
+      if (event.key === "Escape") leave();
       else if (event.key === "Tab" && sheet && keepInside(sheet, event)) {
         event.preventDefault();
       }
@@ -150,12 +170,7 @@ export function EnvironmentDialog(props: {
   };
 
   return (
-    <div
-      class="sheet-backdrop"
-      onClick={(event) => {
-        if (event.target === event.currentTarget) close();
-      }}
-    >
+    <div class="sheet-backdrop" {...backdropDismiss(leave)}>
       <div
         class="sheet env-dialog"
         role="dialog"
@@ -313,6 +328,9 @@ export function EnvironmentDialog(props: {
               {message()}
             </p>
           )}
+        </Show>
+        <Show when={discarding()}>
+          <DiscardAsk onDiscard={close} onKeep={() => setDiscarding(false)} />
         </Show>
         <div class="env-actions">
           <Show

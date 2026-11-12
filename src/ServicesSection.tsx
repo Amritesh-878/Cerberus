@@ -1,5 +1,6 @@
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 
+import { backdropDismiss } from "./backdrop";
 import { ChevronIcon, MoreIcon, PlusIcon, ServicesIcon } from "./icons";
 import { placeBox } from "./place";
 import {
@@ -63,9 +64,9 @@ function ServiceMenu(props: {
   return (
     <div
       class="popover-backdrop"
-      onClick={(event) => {
-        if (event.target === event.currentTarget) props.onDismiss();
-      }}
+      {...backdropDismiss(() => {
+        props.onDismiss();
+      })}
     >
       <div
         class="popover menu service-menu"

@@ -1,6 +1,8 @@
 import { createSignal, For, onCleanup, onMount, Show, untrack } from "solid-js";
 
+import { backdropDismiss } from "./backdrop";
 import { pickFolder } from "./accounts";
+import { DiscardAsk } from "./DiscardAsk";
 import { CloseIcon, FolderIcon } from "./icons";
 import type { ProgramChoice } from "./pty";
 import {
@@ -45,12 +47,17 @@ export function ServiceForm(props: {
   const set = (change: Partial<Draft>) => {
     setDraft((now) => ({ ...now, ...change }));
   };
+  // What the form held once it was ready, so only the user's edits count as unsaved.
+  const [baseline, setBaseline] = createSignal(untrack(draft));
+  const [discarding, setDiscarding] = createSignal(false);
+  const dirty = () => JSON.stringify(draft()) !== JSON.stringify(baseline());
 
   // Asked for only while editing, so the command is in the webview no longer than the form is open.
   if (start) {
     serviceCommand(start.id).then(
       (command) => {
         set({ command });
+        setBaseline(draft());
         setLoaded(true);
       },
       (failure: unknown) => setError(String(failure)),
@@ -60,11 +67,18 @@ export function ServiceForm(props: {
   const close = () => {
     if (!saving()) props.onClose();
   };
+  // Escape and the backdrop are easy to hit by accident, so unsaved edits ask first.
+  const leave = () => {
+    if (saving()) return;
+    if (discarding()) setDiscarding(false);
+    else if (dirty()) setDiscarding(true);
+    else props.onClose();
+  };
   let sheet: HTMLDivElement | undefined;
   onMount(() => {
     const opener = document.activeElement;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") close();
+      if (event.key === "Escape") leave();
       else if (event.key === "Tab" && sheet && keepInside(sheet, event)) {
         event.preventDefault();
       }
@@ -105,12 +119,7 @@ export function ServiceForm(props: {
   };
 
   return (
-    <div
-      class="sheet-backdrop"
-      onClick={(event) => {
-        if (event.target === event.currentTarget) close();
-      }}
-    >
+    <div class="sheet-backdrop" {...backdropDismiss(leave)}>
       <div
         class="sheet env-dialog service-form"
         role="dialog"
@@ -254,6 +263,9 @@ export function ServiceForm(props: {
               {message()}
             </p>
           )}
+        </Show>
+        <Show when={discarding()}>
+          <DiscardAsk onDiscard={close} onKeep={() => setDiscarding(false)} />
         </Show>
         <div class="env-actions">
           <button type="button" class="secondary" onClick={close}>

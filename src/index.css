@@ -2392,6 +2392,24 @@ button.card-row:focus-visible,
   color: var(--dim);
 }
 
+.discard-ask {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  margin-top: 14px;
+  font-size: 12px;
+  background: #2a1f1b;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.discard-ask p {
+  margin: 0;
+}
+
 .env-actions {
   display: flex;
   flex-wrap: wrap;

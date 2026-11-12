@@ -13,6 +13,7 @@ import {
   ptyCore,
   renderApp,
   SAVED,
+  pressAndRelease,
   settle,
   settled,
   sidebarTitles,
@@ -569,7 +570,8 @@ test("a project with no tabs is removed without asking", async () => {
   await newProject(root);
   click(root, "New tab in alpha");
   await settle();
-  root.querySelector<HTMLElement>(".popover-backdrop")?.click();
+  const backdrop = root.querySelector(".popover-backdrop") ?? root;
+  pressAndRelease(backdrop, backdrop);
   await settle();
 
   click(root, "Remove alpha");
