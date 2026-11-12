@@ -13,7 +13,7 @@ import {
   SAVED,
   settle,
 } from "./harness";
-import { current, elapsedText, type LiveView, warningText } from "./live";
+import { elapsedText, type LiveView, warningText, windowState } from "./live";
 import type { SavedTree } from "./saved";
 
 const desktop = vi.hoisted(() => ({ sent: [] as unknown[] }));
@@ -162,6 +162,34 @@ test("the context card shows the shown chat's use, and Compact types /compact wi
   expect(context.querySelector("[aria-expanded]")).toBeNull();
   expect(context.querySelector(".card-compact")).not.toBeNull();
   expect(live.writes).toEqual(["/compact"]);
+});
+
+test("usage kept from before a restart shows dimmed with its time, and a reset window says so", async () => {
+  const live = liveCore();
+  const root = await renderApp(live.profiles, live.core);
+  await open(root, "planner");
+  await emitEvent("live", {
+    ...VIEW,
+    meters: [
+      {
+        account: 1,
+        fiveHour: { used: 30, resetsAt: RESET, asOf: Date.now() - 600_000 },
+        sevenDay: { used: 41, resetsAt: 1, reset: true },
+      },
+    ],
+  });
+  await settle();
+
+  const work = card(root, "Usage").querySelector(
+    ".usage-account + .usage-account",
+  );
+  const lines = [...(work?.querySelectorAll(".usage-line") ?? [])];
+  expect(lines[0]?.classList.contains("kept")).toBe(true);
+  expect(lines[0]?.textContent).toMatch(/30% · resets .+ · as of .+$/);
+  expect(lines[1]?.textContent).toBe("7-dayreset");
+  expect(card(root, "Usage").textContent).toContain(
+    "an account updates after a reply in one of its tabs",
+  );
 });
 
 test("usage has a row per account, unknown until one of its tabs reports", async () => {
@@ -342,7 +370,15 @@ test("the warning text, elapsed time and a window past its reset", () => {
   expect(warningText("work", { used: 86.6, resetsAt: 0 }, "en-US")).toMatch(
     /^work is at 87%, resets \d{1,2}:\d{2}(am|pm)$/,
   );
-  expect(current({ used: 50, resetsAt: 100 }, 99)).not.toBeNull();
-  expect(current({ used: 50, resetsAt: 100 }, 100)).toBeNull();
-  expect(current(null, 0)).toBeNull();
+  expect(windowState({ used: 50, resetsAt: 100 }, 99)).toEqual({
+    kind: "known",
+    used: 50,
+    resetsAt: 100,
+    asOf: null,
+  });
+  expect(windowState({ used: 50, resetsAt: 100 }, 100).kind).toBe("reset");
+  expect(windowState({ used: 50, resetsAt: 200, reset: true }, 100).kind).toBe(
+    "reset",
+  );
+  expect(windowState(null, 0).kind).toBe("unknown");
 });

@@ -2928,6 +2928,10 @@ button.card-row:focus-visible,
   margin: 0;
 }
 
+.usage-line.kept {
+  opacity: 0.6;
+}
+
 .usage-meta,
 .usage-unknown {
   white-space: nowrap;

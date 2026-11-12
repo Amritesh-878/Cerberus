@@ -11,6 +11,31 @@ export interface LiveWindow {
   used: number;
   /** Unix seconds. */
   resetsAt: number;
+  /** Past its reset when the core last looked. */
+  reset?: boolean;
+  /** Kept from before this start: when it was reported, in Unix milliseconds. */
+  asOf?: number | null;
+}
+
+/** How a usage window reads now: its numbers, reset since (Claude Code starts a new one on the next reply), or nothing known. */
+export type WindowState =
+  | { kind: "unknown" }
+  | { kind: "reset" }
+  | { kind: "known"; used: number; resetsAt: number; asOf: number | null };
+
+export function windowState(
+  window: LiveWindow | null | undefined,
+  nowS: number,
+): WindowState {
+  if (!window) return { kind: "unknown" };
+  if (window.reset === true || window.resetsAt <= nowS)
+    return { kind: "reset" };
+  return {
+    kind: "known",
+    used: window.used,
+    resetsAt: window.resetsAt,
+    asOf: window.asOf ?? null,
+  };
 }
 
 export interface TabLive {
@@ -117,14 +142,6 @@ export function warningText(
   locale?: string,
 ): string {
   return `${account} is at ${percentText(warning.used)}, resets ${resetText(warning.resetsAt, locale)}`;
-}
-
-/** A window past its reset is over; Claude Code starts a new one on the next reply. */
-export function current(
-  window: LiveWindow | null | undefined,
-  nowS: number,
-): LiveWindow | null {
-  return window && window.resetsAt > nowS ? window : null;
 }
 
 /** The core's latest view, kept current from its `live` events. */

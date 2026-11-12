@@ -2,7 +2,7 @@
 
 use tauri::{AppHandle, Emitter, Manager, State};
 
-use crate::accounts::{AccountId, Accounts, AccountsError, Profiles};
+use crate::accounts::{AccountId, Accounts, AccountsError, KeptUsage, Profiles};
 use crate::live::files::FileView;
 use crate::live::{DEFAULT_WARN_AT, Live, Sink, View, Warning};
 use crate::saved::TabId;
@@ -33,6 +33,17 @@ impl Sink for AppSink {
 
     fn warned(&self, warning: Warning) {
         let _ = self.0.emit("live-warning", warning);
+    }
+
+    fn restored(&self) -> Vec<KeptUsage> {
+        self.profiles().map(|p| p.usage).unwrap_or_default()
+    }
+
+    fn keep(&self, usage: Vec<KeptUsage>) {
+        // Losing a save only costs the numbers shown after the next restart.
+        if let Err(e) = self.0.state::<Accounts>().keep_usage(usage) {
+            eprintln!("could not keep the usage numbers: {e}");
+        }
     }
 }
 

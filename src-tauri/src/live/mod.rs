@@ -21,7 +21,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 
-use crate::accounts::AccountId;
+use crate::accounts::{AccountId, KeptUsage};
 use crate::bridge::link;
 use crate::live::event::{Event, Line, MOST_LINE, PIPE_VAR, TOKEN_VAR};
 pub use crate::live::meters::{DEFAULT_WARN_AT, Meter, Warning};
@@ -41,6 +41,12 @@ pub trait Sink: Send + Sync + 'static {
     fn changed(&self, view: View);
     /// Once per account per 5-hour window, for the desktop notification.
     fn warned(&self, warning: Warning);
+    /// The limits the last run kept, shown until new reports replace them.
+    fn restored(&self) -> Vec<KeptUsage> {
+        Vec::new()
+    }
+    /// The latest limits changed; called outside the state lock.
+    fn keep(&self, _usage: Vec<KeptUsage>) {}
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
@@ -120,8 +126,11 @@ impl Live {
             dir: dir.join("live"),
             helper,
             shell,
+            state: Mutex::new(State {
+                meters: Meters::restored(&sink.restored(), now_ms()),
+                ..State::default()
+            }),
             sink: Box::new(sink),
-            state: Mutex::default(),
         });
         listen(&core)?;
         Ok(Self { core: Some(core) })
@@ -321,12 +330,21 @@ impl Core {
                 shown.context = status.context.or(shown.context);
                 shown.model = status.model.clone().or(shown.model.take());
             }
+            let before = state.meters.kept();
             state.meters.report(account, &status);
+            let after = state.meters.kept();
             let crossed = status
                 .five_hour
                 .is_some_and(|w| state.warner.check(account, tab, w, warn_at));
-            crossed.then_some(account)
+            (
+                crossed.then_some(account),
+                (after != before).then_some(after),
+            )
         };
+        let (warned, kept) = warned;
+        if let Some(kept) = kept {
+            self.sink.keep(kept);
+        }
         let view = self.view();
         let warning = warned.and_then(|a| view.warnings.iter().find(|w| w.account == a).cloned());
         self.sink.changed(view);
@@ -362,6 +380,14 @@ impl Core {
         }
         self.changed();
     }
+}
+
+fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .and_then(|d| u64::try_from(d.as_millis()).ok())
+        .unwrap_or(0)
 }
 
 fn now_s() -> u64 {

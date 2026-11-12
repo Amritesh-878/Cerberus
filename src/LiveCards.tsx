@@ -5,8 +5,8 @@ import { resetText } from "./board";
 import { Card, Note } from "./Cards";
 import { AccountDot } from "./icons";
 import {
-  current,
-  type LiveWindow,
+  windowState,
+  type WindowState,
   type Meter,
   percentText,
   type TabLive,
@@ -120,15 +120,20 @@ export function ContextCard(props: {
 
 function WindowLine(props: {
   name: string;
-  window: LiveWindow | null;
+  state: WindowState;
   warnAt?: number;
 }) {
+  const known = () => (props.state.kind === "known" ? props.state : undefined);
   return (
-    <div class="usage-line">
+    <div class="usage-line" classList={{ kept: known()?.asOf != null }}>
       <span class="usage-name">{props.name}</span>
       <Show
-        when={props.window}
-        fallback={<span class="usage-unknown">unknown</span>}
+        when={known()}
+        fallback={
+          <span class="usage-unknown">
+            {props.state.kind === "reset" ? "reset" : "unknown"}
+          </span>
+        }
       >
         {(w) => (
           <>
@@ -139,6 +144,12 @@ function WindowLine(props: {
             />
             <span class="usage-meta">
               {percentText(w().used)} · resets {resetText(w().resetsAt)}
+              {(() => {
+                const asOf = w().asOf;
+                return asOf === null
+                  ? ""
+                  : ` · as of ${resetText(Math.floor(asOf / 1000))}`;
+              })()}
             </span>
           </>
         )}
@@ -160,7 +171,7 @@ export function UsageCard(props: {
     <Card
       id="usage"
       title="Usage"
-      subtitle="Plan limits, from each account's latest reply"
+      subtitle="Plan limits; an account updates after a reply in one of its tabs"
       state={props.state}
     >
       <Show
@@ -179,12 +190,12 @@ export function UsageCard(props: {
               </div>
               <WindowLine
                 name="5-hour"
-                window={current(meterOf(account)?.fiveHour, now())}
+                state={windowState(meterOf(account)?.fiveHour, now())}
                 warnAt={props.profiles.warnAt}
               />
               <WindowLine
                 name="7-day"
-                window={current(meterOf(account)?.sevenDay, now())}
+                state={windowState(meterOf(account)?.sevenDay, now())}
               />
             </div>
           )}

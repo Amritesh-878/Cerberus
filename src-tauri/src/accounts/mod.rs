@@ -91,6 +91,27 @@ pub struct Account {
     pub color: Option<String>,
 }
 
+/// One usage window as last reported: percent used and when it resets, in Unix seconds.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageWindow {
+    pub used: f64,
+    pub resets_at: u64,
+}
+
+// JSON has no NaN and reports are checked finite, so `used` always equals itself.
+impl Eq for UsageWindow {}
+
+/// An account's last reported windows and when that report came, in Unix milliseconds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KeptUsage {
+    pub account: AccountId,
+    pub at: u64,
+    pub five_hour: Option<UsageWindow>,
+    pub seven_day: Option<UsageWindow>,
+}
+
 /// The right panel: whether it shows, its width, and the cards folded to their title.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -156,6 +177,9 @@ pub struct Profiles {
     /// Removed accounts, kept so a tab left on one can still carry its chat to another account.
     #[serde(default)]
     pub retired: Vec<Account>,
+    /// Each account's last reported limits, numbers only, so a restart shows them until a new report.
+    #[serde(default)]
+    pub usage: Vec<KeptUsage>,
     // Raised on every save, so the webview can drop a reply that a newer one already replaced.
     #[serde(default)]
     pub revision: u64,
@@ -183,6 +207,7 @@ impl Default for Profiles {
             warn_at: DEFAULT_WARN_AT,
             setup: Some(SetupStep::Install),
             retired: Vec::new(),
+            usage: Vec::new(),
             revision: 0,
             next_id: 0,
         }
@@ -458,6 +483,18 @@ impl Accounts {
     pub fn set_setup(&self, step: Option<SetupStep>) -> Result<Profiles, AccountsError> {
         self.update(|p| {
             p.setup = step;
+            Ok(())
+        })
+    }
+
+    /// Saves the latest limits; an account no longer listed is dropped.
+    pub fn keep_usage(&self, usage: Vec<KeptUsage>) -> Result<Profiles, AccountsError> {
+        self.update(|p| {
+            let known: Vec<AccountId> = p.accounts.iter().map(|a| a.id).collect();
+            p.usage = usage
+                .into_iter()
+                .filter(|u| known.contains(&u.account))
+                .collect();
             Ok(())
         })
     }
@@ -1111,6 +1148,32 @@ mod tests {
         let saved = fs::read_to_string(app.join("profiles.json")).unwrap();
         assert!(saved.contains(r#""alerts": false"#));
         assert!(accounts.set_alerts(true).unwrap().alerts);
+    }
+
+    #[test]
+    fn usage_numbers_are_kept_for_listed_accounts_only() {
+        let home = TestDir::new();
+        let app = home.path().join("app");
+        let accounts = Accounts::new(&app, home.path().to_path_buf());
+        accounts
+            .add("work", home.path().join(".claude-work"))
+            .unwrap();
+        let id = accounts.load().unwrap().accounts[0].id;
+        let kept = |account| KeptUsage {
+            account,
+            at: 1_000,
+            five_hour: Some(UsageWindow {
+                used: 42.5,
+                resets_at: 2_000,
+            }),
+            seven_day: None,
+        };
+
+        accounts.keep_usage(vec![kept(id), kept(id + 7)]).unwrap();
+
+        assert_eq!(accounts.load().unwrap().usage, [kept(id)]);
+        let saved = fs::read_to_string(app.join("profiles.json")).unwrap();
+        assert!(saved.contains(r#""resetsAt": 2000"#));
     }
 
     #[test]

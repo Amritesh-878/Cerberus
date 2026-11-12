@@ -157,8 +157,10 @@ folded cards, starred skills and dismissed PRs are kept in `profiles.json`.
   many have finished. Claude Code offers no way to stop one from outside the chat, so there is no stop
   button; ask the chat, or use its own `/tasks`.
 - **Usage:** one row per account with its 5-hour and 7-day plan use and when each resets, from the
-  newest reply of any tab on that account. "Unknown" until a tab on the account gets a reply; an
-  account signed in with an API key never reports one.
+  newest reply of any tab on that account. The last numbers are kept in the profiles file (numbers
+  and times only), so after a restart they show dimmed with "as of" and the time they came, until a
+  new reply. A window past its reset reads "reset". "Unknown" until a tab on the account has ever
+  had a reply; an account signed in with an API key never reports one.
 - **Changes:** one row per repo among the tab's folders, the main folder's first: lines added and
   removed on the branch since it left the remote's default branch (`origin/HEAD`, else `main` or
   `master`), uncommitted and untracked files included. **Create PR**
