@@ -58,11 +58,12 @@ ends what the app started; on macOS a tab's programs get a hangup when its termi
 
 Drag the sidebar's right edge to resize it, or double-click the edge to reset it.
 
-**Two tabs side by side.** Drag a tab from the sidebar onto the right half of the chat area to show
-it beside the tab on screen; the right half lights up while a drop there would split. Any two tabs
-can share the view. Drag the line between them to resize (the arrow keys move it when it has
-focus), and double-click it for half and half; the share is saved. **Close split** in the bar
-above the two ends it. On a narrow window the two stack instead.
+**Two tabs side by side.** Drag a tab from the sidebar onto either half of the chat area to show
+it on that side of the tab on screen; the half under the pointer lights up. Any two tabs can share
+the view. Drag the line between them to resize (the arrow keys move it when it has focus), and
+double-click it for half and half; the share is saved. **⇄** in the bar above the two swaps their
+sides and keeps the line where it is; **Close split** ends it. On a narrow window the two stack
+instead. Switching windows or pressing a key mid-drag cancels the drag.
 
 The split stays until **Close split** or until either tab closes. Showing another tab or project
 hides it, and showing either of its tabs again brings it back as it was. Messages between accounts

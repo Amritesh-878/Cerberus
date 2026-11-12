@@ -149,15 +149,33 @@ test.each([
   },
 );
 
-test("a tab dropped on the left half or outside the chat opens no split", async () => {
+test("a tab dropped outside the chat opens no split", async () => {
   const root = await renderApp(() => SAVED, core().core);
   await open(root, "planner");
   layOut(root);
 
-  expect(await dragTo(root, "shell", 400, 300)).toBe("split-drop");
   expect(await dragTo(root, "shell", 100, 300)).toBe("split-drop");
 
   expect(root.querySelector(".split-bar")).toBeNull();
+  expect(activeTitle(root)).toBe("planner");
+});
+
+test("a tab dropped on the left half goes on the left, and Swap sides exchanges the halves", async () => {
+  const root = await renderApp(() => SAVED, core().core);
+  await open(root, "planner");
+  layOut(root);
+
+  expect(await dragTo(root, "shell", 400, 300)).toBe("split-drop over left");
+  const title = () => root.querySelector(".split-title")?.textContent;
+  expect(title()).toBe("alpha / shell and alpha / planner");
+  // Views are in tab order: planner, then shell.
+  expect(views(root)).toEqual(["shown split-right", "shown split-left"]);
+
+  click(root.querySelector(".split-bar") ?? root, "Swap sides");
+  await settle();
+
+  expect(title()).toBe("alpha / planner and alpha / shell");
+  expect(views(root)).toEqual(["shown split-left", "shown split-right"]);
   expect(activeTitle(root)).toBe("planner");
 });
 

@@ -2201,6 +2201,12 @@ button.card-row:focus-visible,
   font-size: 12px;
 }
 
+.split-bar button.icon-only {
+  min-width: 30px;
+  padding: 0 8px;
+  font-size: 14px;
+}
+
 .split-title {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2228,7 +2234,7 @@ button.card-row:focus-visible,
   touch-action: none;
 }
 
-/* The right half of the chat area while a tab is dragged out of the sidebar. */
+/* The half of the chat area a dragged tab would land on, the right one until it is over either. */
 .split-drop {
   position: absolute;
   inset: 8px 8px 8px 50%;
@@ -2241,6 +2247,10 @@ button.card-row:focus-visible,
   background: rgb(217 119 87 / 6%);
   border: 1px dashed var(--line);
   border-radius: 8px;
+}
+
+.split-drop.left {
+  inset: 8px 50% 8px 8px;
 }
 
 .split-drop.over {

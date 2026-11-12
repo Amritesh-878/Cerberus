@@ -1,7 +1,7 @@
 import { createRoot, createSignal } from "solid-js";
 import { expect, test } from "vitest";
 
-import { createSplit, dropsToSplit, nextPair } from "./split";
+import { createSplit, dropSide, nextPair } from "./split";
 
 test("a reply between the same two tabs keeps their sides", () => {
   expect(nextPair(undefined, 3, 6)).toEqual([3, 6]);
@@ -47,15 +47,32 @@ test("a tab never splits with itself", () => {
   });
 });
 
-test("a tab dropped on the right half of the chat area splits", () => {
+test("a tab dropped on either half of the chat area lands on that half, and outside on none", () => {
   const area = { left: 200, top: 40, width: 800, height: 600 };
 
-  expect(dropsToSplit(600, 300, area)).toBe(true);
-  expect(dropsToSplit(1000, 640, area)).toBe(true);
-  expect(dropsToSplit(599, 300, area)).toBe(false);
-  expect(dropsToSplit(1001, 300, area)).toBe(false);
-  expect(dropsToSplit(700, 30, area)).toBe(false);
-  expect(dropsToSplit(150, 300, area)).toBe(false);
+  expect(dropSide(600, 300, area)).toBe("right");
+  expect(dropSide(1000, 640, area)).toBe("right");
+  expect(dropSide(599, 300, area)).toBe("left");
+  expect(dropSide(200, 40, area)).toBe("left");
+  expect(dropSide(1001, 300, area)).toBeUndefined();
+  expect(dropSide(700, 30, area)).toBeUndefined();
+  expect(dropSide(150, 300, area)).toBeUndefined();
+});
+
+test("place puts a tab on the asked side of the shown one, and swap exchanges them", () => {
+  createRoot((dispose) => {
+    const split = createSplit(() => 3);
+
+    split.place(5, "left");
+    expect(split.showing()).toEqual([5, 3]);
+    split.swap();
+    expect(split.showing()).toEqual([3, 5]);
+    split.place(3, "right");
+    expect(split.showing()).toEqual([3, 5]);
+    split.place(7, "right");
+    expect(split.showing()).toEqual([3, 7]);
+    dispose();
+  });
 });
 
 test("closing either of its tabs ends it", () => {

@@ -85,7 +85,7 @@ import {
 } from "./saved";
 import { Sidebar } from "./Sidebar";
 import { createSavedWidth } from "./savedWidth";
-import { createSplit, dropsToSplit } from "./split";
+import { createSplit, dropSide, type Side as Half } from "./split";
 import { createStatuses } from "./statuses";
 import { setupGaps, type Step, stepFor } from "./steps";
 import { installed, shellChoice, type Tab, tabFor } from "./tab";
@@ -441,11 +441,11 @@ export function App() {
     else console.error("service:", error);
   };
   let stage: HTMLDivElement | undefined;
-  // Set while a tab is dragged out of the sidebar; `over` once it would split on release.
-  const [dropping, setDropping] = createSignal<{ over: boolean }>();
+  // Set while a tab is dragged out of the sidebar; `side` is the half it would land on if released now.
+  const [dropping, setDropping] = createSignal<{ side: Half | undefined }>();
   const overStage = (x: number, y: number) => {
     const area = stage?.getBoundingClientRect();
-    return area !== undefined && dropsToSplit(x, y, area);
+    return area === undefined ? undefined : dropSide(x, y, area);
   };
   // Read on every move and on the drop, so it follows the tab shown right now.
   const dropInto = (id: TabId) => {
@@ -456,13 +456,13 @@ export function App() {
     return {
       move: (x, y) => {
         setDropping(
-          dropInto(id) === undefined ? undefined : { over: overStage(x, y) },
+          dropInto(id) === undefined ? undefined : { side: overStage(x, y) },
         );
       },
       drop: (x, y) => {
         setDropping(undefined);
-        const into = dropInto(id);
-        if (into !== undefined && overStage(x, y)) split.open(into, id);
+        const side = overStage(x, y);
+        if (dropInto(id) !== undefined && side) split.place(id, side);
       },
       cancel: () => {
         setDropping(undefined);
@@ -1258,6 +1258,17 @@ export function App() {
                     <span class="spacer" />
                     <button
                       type="button"
+                      class="secondary icon-only"
+                      aria-label="Swap sides"
+                      title="Swap the left and right tabs"
+                      onClick={() => {
+                        split.swap();
+                      }}
+                    >
+                      ⇄
+                    </button>
+                    <button
+                      type="button"
                       class="secondary"
                       onClick={() => {
                         split.close();
@@ -1463,7 +1474,13 @@ export function App() {
                 </Show>
                 <Show when={dropping()}>
                   {(over) => (
-                    <div class="split-drop" classList={{ over: over().over }}>
+                    <div
+                      class="split-drop"
+                      classList={{
+                        over: over().side !== undefined,
+                        left: over().side === "left",
+                      }}
+                    >
                       <span>Show side by side</span>
                     </div>
                   )}
