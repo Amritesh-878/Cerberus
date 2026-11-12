@@ -593,6 +593,18 @@ button {
   border-bottom: 1px solid var(--line);
 }
 
+.hand-prompt h2 {
+  margin: 0 0 10px;
+  font-size: 15px;
+}
+
+.hand-prompt p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--dim);
+}
+
 .hand-actions {
   display: flex;
   gap: 8px;

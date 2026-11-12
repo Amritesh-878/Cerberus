@@ -117,7 +117,8 @@ followed. Tracking follows the tab's own account: a `claude` you start with anot
 `CLAUDE_CONFIG_DIR` set in the shell is not followed.
 
 A chat started this way has no Cerberus message helper, so it can't send messages to other
-accounts. The bar above the tab says so and offers **Reopen as Claude tab**, which closes the shell
+accounts. The first time such a chat shows, a popup over the tab says so, with **Reopen as Claude
+tab** and **Not now**; after that the bar above the tab offers the same. Reopening closes the shell
 and that `claude` (asking first while it is working) and starts the same chat again as a Claude
 Code tab, with messages.
 

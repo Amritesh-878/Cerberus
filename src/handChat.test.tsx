@@ -374,3 +374,71 @@ test("Continue on an ended tab after three resumes that found nothing moves the 
   expect(app.pty.spawned).toHaveLength(2);
   expect(shows(root, "planner", "claude")).toBe(true);
 });
+
+test("a chat started by hand asks once, over its tab, to reopen as a Claude tab", async () => {
+  const app = core();
+  const root = await renderApp(() => SAVED, app.core);
+  await open(root, "shell");
+  emit(
+    app.pty.spawned,
+    0,
+    { chat: "started", cwd: ELSEWHERE },
+    { state: "idle" },
+  );
+  await settle();
+
+  const prompt = () => document.querySelector<HTMLElement>(".hand-prompt");
+  expect(prompt()?.textContent).toContain(
+    "can't send or receive messages between accounts",
+  );
+  expect(document.activeElement?.textContent).toBe("Reopen as Claude tab");
+  click(prompt() ?? root, "Not now");
+  await settle();
+  expect(prompt()).toBeNull();
+  // The bar stays for later, and nothing restarted.
+  expect(root.querySelector(".hand-bar")).not.toBeNull();
+  expect(app.reopened).toEqual([]);
+  expect(app.pty.spawned).toHaveLength(1);
+
+  await open(root, "planner");
+  await open(root, "shell");
+  expect(prompt()).toBeNull();
+});
+
+test("the popup's Reopen asks first while Claude works, then reopens the chat", async () => {
+  const app = core();
+  const root = await renderApp(() => SAVED, app.core);
+  await open(root, "shell");
+  emit(
+    app.pty.spawned,
+    0,
+    { chat: "started", cwd: ELSEWHERE },
+    { state: "working" },
+  );
+  await settle();
+  const prompt = () => document.querySelector<HTMLElement>(".hand-prompt");
+
+  click(prompt() ?? root, "Reopen as Claude tab");
+  await settle();
+  expect(prompt()?.textContent).toContain("Claude is working");
+  expect(app.reopened).toEqual([]);
+  click(prompt() ?? root, "Stop and reopen");
+  await settle();
+
+  expect(app.reopened).toEqual([2]);
+  expect(prompt()).toBeNull();
+});
+
+test("a hand chat started in a hidden tab asks when that tab is shown", async () => {
+  const app = core();
+  const root = await renderApp(() => SAVED, app.core);
+  await open(root, "shell");
+  await open(root, "planner");
+  emit(app.pty.spawned, 0, { chat: "started", cwd: null });
+  await settle();
+  expect(document.querySelector(".hand-prompt")).toBeNull();
+
+  await open(root, "shell");
+
+  expect(document.querySelector(".hand-prompt")).not.toBeNull();
+});

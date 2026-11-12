@@ -55,6 +55,7 @@ import { FindChat } from "./FindChat";
 import { EnvironmentDialog } from "./EnvironmentDialog";
 import { createHandChats } from "./handChat";
 import { HandNote } from "./HandNote";
+import { HandPrompt } from "./HandPrompt";
 import { Home } from "./Home";
 import { AccountDot, MenuIcon, PanelIcon } from "./icons";
 import { shortcutFor } from "./keys";
@@ -1245,6 +1246,25 @@ export function App() {
                     working={markOf(board(), id)?.kind === "working"}
                     onReopen={() => {
                       hands.reopen(id);
+                    }}
+                  />
+                )}
+              </Show>
+              <Show
+                when={(() => {
+                  const id = byHandShown();
+                  return id !== undefined && hands.unasked(id) ? id : undefined;
+                })()}
+                keyed
+              >
+                {(id) => (
+                  <HandPrompt
+                    working={markOf(board(), id)?.kind === "working"}
+                    onReopen={() => {
+                      hands.reopen(id);
+                    }}
+                    onNotNow={() => {
+                      hands.answered(id);
                     }}
                   />
                 )}
