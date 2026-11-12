@@ -13,6 +13,7 @@ use crate::sessions::procs::Probes;
 // Long enough for a closed tab's `claude` to finish exiting, short enough to answer a click.
 const EXIT_WAIT: Duration = Duration::from_secs(5);
 const TREE_POLL: Duration = Duration::from_millis(100);
+const WATCHER_POLL: Duration = Duration::from_millis(20);
 
 #[derive(Debug, thiserror::Error)]
 pub enum ContinueError {
@@ -30,6 +31,8 @@ pub enum ContinueError {
     NoChat,
     #[error("{0} is signed out; sign it in from Accounts first")]
     SignedOut(String),
+    #[error("the move stopped before it finished")]
+    Stopped,
     #[error(transparent)]
     Accounts(#[from] AccountsError),
     #[error(transparent)]
@@ -142,21 +145,31 @@ impl RunningTabs {
         let starts = procs.starts;
         let watchers = std::mem::take(&mut procs.watchers);
         drop(tabs);
+        let keep = |watchers: Vec<JoinHandle<()>>| {
+            lock(&self.tabs)
+                .entry(tab)
+                .or_default()
+                .watchers
+                .extend(watchers);
+        };
         // A wrapper such as `claude.cmd` can exit while the `claude` it started is still writing.
         if let Some(root) = root {
             while !(self.probes.below)(root).is_empty() {
                 if Instant::now() >= deadline {
-                    lock(&self.tabs)
-                        .entry(tab)
-                        .or_default()
-                        .watchers
-                        .extend(watchers);
+                    keep(watchers);
                     return false;
                 }
                 thread::sleep(TREE_POLL);
             }
         }
-        // A watcher's last poll could still save a newer chat id; joining it first settles which chat moves.
+        // A watcher's last poll could still save a newer chat id; it must end first, but never holds the move past the wait.
+        while watchers.iter().any(|w| !w.is_finished()) {
+            if Instant::now() >= deadline {
+                keep(watchers);
+                return false;
+            }
+            thread::sleep(WATCHER_POLL);
+        }
         for watcher in watchers {
             let _ = watcher.join();
         }
@@ -626,6 +639,30 @@ mod tests {
         assert!(done.load(Ordering::SeqCst));
         assert!(world.copied(NEWER_ID).is_file());
         assert!(!world.copied(ID).exists());
+    }
+
+    #[test]
+    fn a_watcher_that_never_ends_fails_the_move_after_the_wait() {
+        let world = world();
+        let (release, held) = std::sync::mpsc::channel::<()>();
+        world.running.watching(
+            2,
+            thread::spawn(move || {
+                let _ = held.recv();
+            }),
+        );
+        let started = Instant::now();
+
+        let result = world.continue_to(1, true);
+
+        assert!(matches!(result, Err(ContinueError::Running)), "{result:?}");
+        assert!(started.elapsed() < Duration::from_secs(3));
+        assert!(!world.copied(ID).exists());
+        release.send(()).unwrap();
+        assert!(
+            world.continue_to(1, true).is_ok(),
+            "the kept watcher was waited for"
+        );
     }
 
     #[test]

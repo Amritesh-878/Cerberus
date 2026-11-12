@@ -329,3 +329,48 @@ test("a default title follows the tab's program both ways, and a chosen one stay
   expect(back.tabs[0]?.title).toBe("PowerShell · work");
   expect(back.tabs[0]?.launch).toEqual(launch);
 });
+
+test("Continue on an ended tab after three resumes that found nothing moves the chat and restarts the tab", async () => {
+  const app = core([3]);
+  const continued: unknown[] = [];
+  const root = await renderApp(
+    () => ({ ...SAVED, panel: { ...SAVED.panel, open: true } }),
+    {
+      ...app.core,
+      account_status: () => ({ state: "loggedIn", summary: "Pro" }),
+      panel_changes: () => ({ files: [], branch: null }),
+      panel_prs: () => [],
+      panel_connectors: () => ({ servers: [], unreadable: [] }),
+      panel_skills: () => [],
+      continue_on_account: (args: unknown) => {
+        continued.push(args);
+      },
+    },
+  );
+  await open(root, "planner");
+  for (let run = 0; run < 3; run++) {
+    emit(
+      app.pty.spawned,
+      0,
+      { chat: "started", cwd: null },
+      { chat: "ended", saved: false },
+    );
+    await settle();
+  }
+  expect(shows(root, "planner", "shell")).toBe(true);
+
+  await openMenu(root, "planner");
+  click(
+    root.querySelector(".tab-menu") ?? root,
+    "Continue the ended chat on personal…",
+  );
+  await settle();
+  click(root.querySelector(".menu-confirm") ?? root, "Continue");
+  await settle();
+
+  expect(root.querySelector(".menu-confirm")).toBeNull();
+  expect(continued).toEqual([{ tab: 3, account: 0 }]);
+  expect(app.pty.killed).toEqual([1]);
+  expect(app.pty.spawned).toHaveLength(2);
+  expect(shows(root, "planner", "claude")).toBe(true);
+});
