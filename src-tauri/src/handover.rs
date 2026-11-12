@@ -169,6 +169,8 @@ impl RunningTabs {
                     left.into_iter()
                         .for_each(|pid| (self.probes.stop)(pid, since));
                     stopped = true;
+                    // Looked at again at once, since a stopped process is usually gone already.
+                    continue;
                 }
                 if Instant::now() >= deadline {
                     keep(watchers);
@@ -629,7 +631,18 @@ mod tests {
         world.running.spawned(2, 7, 1_234);
         world.running.ended(2);
 
-        assert!(world.continue_to(1, true).is_ok());
+        // A wait well past the grace, so a slow runner still sees the move finish.
+        let moved = continue_within(
+            &world.saved,
+            &world.accounts,
+            &world.running,
+            |_| Ok(true),
+            2,
+            1,
+            Duration::from_secs(10),
+        );
+
+        assert!(moved.is_ok(), "{moved:?}");
         assert_eq!(STOPPED_SINCE.load(Ordering::SeqCst), 1_234);
         assert!(world.copied(ID).is_file());
     }
