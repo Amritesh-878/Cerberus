@@ -377,14 +377,10 @@ test("a large or binary file says so and offers only VS Code", async () => {
   expect(app.opened).toEqual([{ tab: 3, path: APP }]);
 });
 
-test("the row's menu still opens the file in VS Code", async () => {
+test("the row's VS Code button opens the file there, not in the pane", async () => {
   const app = await start({}, [APP_OUT]);
 
-  outputRow(app.root, "app.ts")
-    .querySelector<HTMLButtonElement>('[aria-haspopup="menu"]')
-    ?.click();
-  await settle();
-  button(app.root, "Open in VS Code").click();
+  button(outputRow(app.root, "app.ts"), "Open app.ts in VS Code").click();
   await settle();
 
   expect(app.opened).toEqual([{ tab: 3, path: APP }]);

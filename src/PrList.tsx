@@ -1,6 +1,6 @@
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 
-import { MoreIcon, PrIcon } from "./icons";
+import { ExternalIcon, MoreIcon, PrIcon } from "./icons";
 import type { PrRow } from "./panelData";
 import type { RepoPrs } from "./panelFeed";
 
@@ -72,17 +72,6 @@ function PrMenu(props: {
         when={confirming()}
         fallback={
           <>
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                pick(() => {
-                  props.actions.open(props.folder, props.pr);
-                });
-              }}
-            >
-              Open on GitHub
-            </button>
             <button
               type="button"
               role="menuitem"
@@ -181,6 +170,17 @@ export function PrList(props: {
                 <span class={`pr-state ${pr().state}`}>
                   {STATE_TEXT[pr().state]}
                 </span>
+                <button
+                  type="button"
+                  class="row-button icon"
+                  aria-label={`Open #${String(number)} on GitHub`}
+                  title="Open on GitHub"
+                  onClick={() => {
+                    props.actions.open(props.repo.folder, pr());
+                  }}
+                >
+                  <ExternalIcon />
+                </button>
                 <button
                   type="button"
                   class="row-button icon"

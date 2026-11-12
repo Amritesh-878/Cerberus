@@ -305,9 +305,7 @@ test("the PR row opens through the core, which holds the URL", async () => {
   const root = await renderApp(core.profiles, core.core);
   await open(root, "planner");
 
-  click(card(root, "Changes"), "More for #21");
-  await settle();
-  click(card(root, "Changes"), "Open on GitHub");
+  click(card(root, "Changes"), "Open #21 on GitHub");
   await settle();
 
   const opened = core.calls.filter((c) => c.cmd === "panel_open_pr");

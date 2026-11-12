@@ -260,6 +260,12 @@ export function CodeIcon() {
   return <Stroke d="M5.5 4.5 2 8l3.5 3.5M10.5 4.5 14 8l-3.5 3.5" size={13} />;
 }
 
+export function ExternalIcon() {
+  return (
+    <Stroke d="M9 2.5h4.5V7M13.5 2.5 7.5 8.5M12 9.5v3.5H3V4h3.5" size={13} />
+  );
+}
+
 export function GearIcon() {
   return (
     <Stroke

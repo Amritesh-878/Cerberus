@@ -147,7 +147,7 @@ folded cards, starred skills and dismissed PRs are kept in `profiles.json`.
 - **Context:** how full the shown chat's context window is, and its model. **Compact** types
   `/compact` into the chat's input; nothing is sent until you press Enter. See Live cards below.
 - **Outputs:** the files the shown chat wrote or edited, newest first, each once, with its folder
-  relative to the tab's. A click shows the file in the file pane (below). The row's **⋯** menu has
+  relative to the tab's. A click shows the file in the file pane (below). The row's **<>** button is
   **Open in VS Code**; without VS Code it opens the file's folder instead, since opening a file the
   chat wrote, such as a script, could run it.
 - **Background tasks:** the chat's background shells and subagents still running, with how long each
@@ -165,7 +165,7 @@ folded cards, starred skills and dismissed PRs are kept in `profiles.json`.
   the diff; it shows only when VS Code's `code` command is on `PATH` (on macOS the app in
   Applications also counts). With the [GitHub CLI](https://cli.github.com) signed in, each repo's
   PRs follow its row, newest first: up to 100 drafts and open PRs, however old, and the newest 100 of any state,
-  five at a time with **Show more**. A PR's **⋯** menu has **Open on GitHub**, **Copy link**, **Dismiss** (hidden until the PR
+  five at a time with **Show more**. A PR row's arrow button opens it on GitHub; its **⋯** menu has **Copy link**, **Dismiss** (hidden until the PR
   changes on GitHub) and, on a draft, **Ready for review**, which asks first and then runs
   `gh pr ready <number>`.
 - **Skills:** the project's `.claude/skills`, the account's `skills` folder, the skills synced

@@ -294,9 +294,11 @@ test("the outputs card lists written files, and its menu opens one through the c
 
   const rows = [...card(root, "Outputs").querySelectorAll(".card-row")];
   expect(rows.map((r) => r.textContent)).toEqual(["app.tssrc", "readme.md"]);
-  rows[0]?.querySelector<HTMLButtonElement>('[aria-haspopup="menu"]')?.click();
-  await settle();
-  click(root, "Open in VS Code");
+  // One action needs no menu: the row's own button opens the file in VS Code.
+  expect(
+    card(root, "Outputs").querySelector('[aria-haspopup="menu"]'),
+  ).toBeNull();
+  click(card(root, "Outputs"), "Open app.ts in VS Code");
   await settle();
   expect(opened).toEqual([{ tab: 3, path: APP_PATH }]);
 });
