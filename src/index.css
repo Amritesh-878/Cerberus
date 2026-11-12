@@ -1802,6 +1802,41 @@ pre {
   scrollbar-color: #3a3a3a transparent;
 }
 
+.panel-cards .card-head {
+  cursor: grab;
+  touch-action: none;
+}
+
+.card.dragging {
+  opacity: 0.55;
+}
+
+/* Where a dragged card would land: a line along the top of the card it goes in front of. */
+.card.drop-before {
+  box-shadow: 0 -3px 0 var(--accent);
+}
+
+.panel-error,
+.panel-reset {
+  order: 1000;
+}
+
+.panel-reset {
+  align-self: center;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--dim);
+  cursor: pointer;
+  background: none;
+  border: 0;
+  border-radius: 4px;
+}
+
+.panel-reset:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+
 .panel-empty {
   padding: 24px 12px;
   margin: 0;

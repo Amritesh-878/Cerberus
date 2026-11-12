@@ -21,6 +21,39 @@ const CLOSED: PanelPrefs = {
 /** Cards that start folded until the user opens them; the core keeps the same list. */
 export const FOLDED_AT_FIRST: readonly PanelCard[] = ["connectors"];
 
+/** The panel's built-in order, which a dragged order replaces until Reset. */
+export const CARD_ORDER: readonly PanelCard[] = [
+  "environment",
+  "context",
+  "outputs",
+  "tasks",
+  "usage",
+  "changes",
+  "skills",
+  "connectors",
+];
+
+/** `saved` first, then any card it leaves out in the built-in order. */
+export function fullOrder(saved: readonly PanelCard[]): PanelCard[] {
+  const known = saved.filter(
+    (card, i) => CARD_ORDER.includes(card) && saved.indexOf(card) === i,
+  );
+  return [...known, ...CARD_ORDER.filter((card) => !known.includes(card))];
+}
+
+/** The order after `card` moves in front of `before`, or to the end. */
+export function movedCard(
+  order: readonly PanelCard[],
+  card: PanelCard,
+  before: PanelCard | undefined,
+): PanelCard[] {
+  const rest = order.filter((c) => c !== card);
+  const at = before === undefined ? -1 : rest.indexOf(before);
+  return at < 0
+    ? [...rest, card]
+    : [...rest.slice(0, at), card, ...rest.slice(at)];
+}
+
 function toggled<T>(list: readonly T[], item: T): T[] {
   return list.includes(item) ? list.filter((i) => i !== item) : [...list, item];
 }
@@ -38,6 +71,12 @@ export interface PanelState {
   toggle: () => void;
   toggleCard: (card: PanelCard) => void;
   toggleFavourite: (account: AccountId, skill: string) => void;
+  /** The card's place in the panel, for its CSS order. */
+  orderOf: (card: PanelCard) => number;
+  /** The user dragged the cards out of the built-in order. */
+  reordered: () => boolean;
+  moveCard: (card: PanelCard, before: PanelCard | undefined) => void;
+  resetOrder: () => void;
   /** While dragging; `save` when the drag ends. */
   drag: (width: number) => void;
   save: () => void;
@@ -128,6 +167,17 @@ export function createPanelState(
         [key]: toggled(now.favourites[key] ?? [], skill),
       };
       change({ ...now, favourites });
+    },
+    orderOf: (card) => fullOrder(prefs().order ?? []).indexOf(card),
+    reordered: () => (prefs().order ?? []).length > 0,
+    moveCard: (card, before) => {
+      const now = untrack(prefs);
+      const next = movedCard(fullOrder(now.order ?? []), card, before);
+      const same = next.every((c, i) => c === CARD_ORDER[i]);
+      change({ ...now, order: same ? [] : next });
+    },
+    resetOrder: () => {
+      change({ ...untrack(prefs), order: [] });
     },
     drag: (width) => {
       edit({ ...untrack(prefs), width });

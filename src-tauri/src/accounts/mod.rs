@@ -126,6 +126,8 @@ pub struct PanelPrefs {
     pub favourites: BTreeMap<String, Vec<String>>,
     /// Dismissed PRs, `owner/repo#n` to the update time they were dismissed at; a newer update shows them again.
     pub dismissed: BTreeMap<String, String>,
+    /// The cards in the order the user dragged them to; empty keeps the built-in order.
+    pub order: Vec<String>,
 }
 
 /// A walkthrough step, saved so a restart part way through setup reopens it there.
@@ -443,6 +445,12 @@ impl Accounts {
         };
         let collapsed = known(&prefs.collapsed, false);
         let expanded = known(&prefs.expanded, true);
+        let mut order: Vec<String> = Vec::new();
+        for card in prefs.order {
+            if PANEL_CARDS.contains(&card.as_str()) && !order.contains(&card) {
+                order.push(card);
+            }
+        }
         let plain = |text: &str, most: usize| {
             !text.is_empty() && text.len() <= most && !text.chars().any(char::is_control)
         };
@@ -474,6 +482,7 @@ impl Accounts {
                 expanded,
                 favourites,
                 dismissed,
+                order,
             };
             Ok(())
         })
@@ -1074,6 +1083,9 @@ mod tests {
                 expanded: ["connectors", "skills"].map(String::from).to_vec(),
                 favourites: BTreeMap::new(),
                 dismissed: BTreeMap::new(),
+                order: ["usage", "bogus", "context", "usage"]
+                    .map(String::from)
+                    .to_vec(),
             })
             .unwrap();
 
@@ -1084,6 +1096,7 @@ mod tests {
             expanded: vec!["connectors".to_owned()],
             favourites: BTreeMap::new(),
             dismissed: BTreeMap::new(),
+            order: vec!["usage".to_owned(), "context".to_owned()],
         };
         assert_eq!(saved.panel, expected);
         assert_eq!(accounts.load().unwrap().panel, expected);

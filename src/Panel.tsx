@@ -385,6 +385,17 @@ export function Panel(props: {
           <Show when={failed()}>
             {(message) => <p class="panel-error">{message()}</p>}
           </Show>
+          <Show when={props.state.reordered()}>
+            <button
+              type="button"
+              class="panel-reset"
+              onClick={() => {
+                props.state.resetOrder();
+              }}
+            >
+              Reset card order
+            </button>
+          </Show>
         </Show>
       </div>
     </aside>

@@ -140,8 +140,10 @@ Ctrl+/ alone stays with the terminal. The start page lists the main ones.
 
 The panel button at the right of the top bar, or Ctrl+Shift+B (Cmd+Shift+B on macOS), shows the
 tab on screen in cards, and follows you as you switch tabs. Drag its left edge to resize it
-(double-click resets it); click a card's title to fold it. Whether it is open, its width, the
-folded cards, starred skills and dismissed PRs are kept in `profiles.json`.
+(double-click resets it); click a card's title to fold it, and drag a card by its title row to move
+it. **Reset card order**, at the foot of the panel once you have moved one, puts them back. Whether
+it is open, its width, the folded cards, their order, starred skills and dismissed PRs are kept in
+`profiles.json`.
 
 - **Environment:** the tab's account with its email and plan, the tab's folders (a click opens one
   in the file manager; an extra folder shows its branch) and the main folder's git branch. The gear

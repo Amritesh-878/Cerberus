@@ -36,6 +36,8 @@ export interface PanelPrefs {
   favourites: Partial<Record<string, string[]>>;
   /** Dismissed PRs by `owner/repo#n`, to the update time they were dismissed at; the core always sends it. */
   dismissed?: Partial<Record<string, string>>;
+  /** The cards in the order the user dragged them to; empty keeps the built-in order. */
+  order?: PanelCard[];
 }
 
 export interface Profiles {
