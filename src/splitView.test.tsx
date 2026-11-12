@@ -93,10 +93,17 @@ async function dragTo(
   at("pointermove", 120, 110);
   at("pointermove", x, y);
   await settle();
+  const ghost = root.querySelector<HTMLElement>(".drag-ghost");
+  // The dragged row follows the pointer, title and all.
+  if (ghost?.textContent !== title) throw new Error(`no ghost of ${title}`);
+  if (!ghost.style.transform.includes(`${String(x + 14)}px`)) {
+    throw new Error("the ghost is not at the pointer");
+  }
   const hint = root.querySelector(".split-drop")?.className;
   if (interrupt) {
     interrupt();
     await settle();
+    if (root.querySelector(".drag-ghost")) throw new Error("the ghost stayed");
     return root.querySelector(".split-drop")?.className;
   }
   at("pointerup", x, y);
@@ -112,6 +119,8 @@ test("a tab dragged onto the right half of the chat opens beside the shown tab",
   layOut(root);
 
   expect(await dragTo(root, "shell", 800, 300)).toBe("split-drop over");
+  // The ghost of the dragged row goes with the drop.
+  expect(root.querySelector(".drag-ghost")).toBeNull();
 
   // The click that ends the drag doesn't select the dragged tab.
   expect(activeTitle(root)).toBe("planner");

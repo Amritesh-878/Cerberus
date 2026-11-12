@@ -57,7 +57,7 @@ import { createHandChats } from "./handChat";
 import { HandNote } from "./HandNote";
 import { HandPrompt } from "./HandPrompt";
 import { Home } from "./Home";
-import { AccountDot, MenuIcon, PanelIcon } from "./icons";
+import { AccountDot, MenuIcon, PanelIcon, ProgramIcon } from "./icons";
 import { shortcutFor } from "./keys";
 import { type Launch, NewTab } from "./NewTab";
 import {
@@ -453,20 +453,29 @@ export function App() {
     const into = shown();
     return inSetup() || into === id ? undefined : into;
   };
+  // The dragged tab's row, drawn under the pointer while it moves.
+  const [ghost, setGhost] = createSignal<{ id: TabId; x: number; y: number }>();
   const dragTab = (id: TabId): TabDragEvents => {
     return {
       move: (x, y) => {
+        setGhost({ id, x, y });
         setDropping(
           dropInto(id) === undefined ? undefined : { side: overStage(x, y) },
         );
       },
       drop: (x, y) => {
-        setDropping(undefined);
+        batch(() => {
+          setGhost(undefined);
+          setDropping(undefined);
+        });
         const side = overStage(x, y);
         if (dropInto(id) !== undefined && side) split.place(id, side);
       },
       cancel: () => {
-        setDropping(undefined);
+        batch(() => {
+          setGhost(undefined);
+          setDropping(undefined);
+        });
       },
     };
   };
@@ -1491,6 +1500,23 @@ export function App() {
                     onWidth={splitShare.drag}
                     onDone={splitShare.save}
                   />
+                </Show>
+                <Show when={ghost()}>
+                  {(at) => (
+                    <div
+                      class="drag-ghost"
+                      aria-hidden="true"
+                      style={{
+                        transform: `translate(${String(at().x + 14)}px, ${String(at().y + 10)}px)`,
+                      }}
+                    >
+                      <ProgramIcon
+                        program={tabById(at().id)?.launch.program ?? ""}
+                        size={13}
+                      />
+                      <span>{tabById(at().id)?.title}</span>
+                    </div>
+                  )}
                 </Show>
                 <Show when={dropping()}>
                   {(over) => (

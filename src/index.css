@@ -2257,6 +2257,34 @@ button.card-row:focus-visible,
   touch-action: none;
 }
 
+/* A dragged tab's row, following the pointer above everything else. */
+.drag-ghost {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 40;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  max-width: 240px;
+  padding: 6px 12px;
+  overflow: hidden;
+  font-size: 13px;
+  color: var(--text);
+  white-space: nowrap;
+  pointer-events: none;
+  background: var(--selected);
+  border: 1px solid #3a3a3a;
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 45%);
+  opacity: 0.92;
+}
+
+.drag-ghost span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* The half of the chat area a dragged tab would land on, the right one until it is over either. */
 .split-drop {
   position: absolute;
