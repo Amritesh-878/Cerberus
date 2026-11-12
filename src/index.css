@@ -11,6 +11,7 @@
   --accent: #d97757;
   --added: #6cc07a;
   --removed: #e5736b;
+  --warn: #e0a43a;
   --sidebar-width: 248px;
 
   color-scheme: dark;
@@ -3013,12 +3014,8 @@ button.card-row:focus-visible,
   border-radius: 3px;
 }
 
-.meter.high span {
-  background: var(--accent);
-}
-
 .usage-account + .usage-account {
-  margin-top: 8px;
+  margin-top: 6px;
 }
 
 .usage-head {
@@ -3035,7 +3032,16 @@ button.card-row:focus-visible,
   min-width: 0;
   padding-left: 18px;
   font-size: 12px;
+  line-height: 18px;
   color: var(--dim);
+}
+
+.meter.warn span {
+  background: var(--warn);
+}
+
+.meter.full span {
+  background: var(--removed);
 }
 
 .usage-name {

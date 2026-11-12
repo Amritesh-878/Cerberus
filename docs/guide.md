@@ -159,8 +159,9 @@ it is open, its width, the folded cards, their order, starred skills and dismiss
   kind, and how long it ran (counted from when Cerberus first saw it, since Claude Code gives no start
   time). A click types `/tasks` into the chat for you to send, where Claude Code shows the output.
   There is no stop button: Claude Code offers no way to stop one from outside the chat.
-- **Usage:** one row per account with its 5-hour and 7-day plan use and when each resets, from the
-  newest reply of any tab on that account. The last numbers are kept in the profiles file (numbers
+- **Usage:** one row per account with its 5-hour and 7-day plan use and how long until each resets
+  ("in 2h 10m"; hover for the clock time), from the newest reply of any tab on that account. Bars
+  take the account's colour, turn amber at the warning percentage and red at 100%. The last numbers are kept in the profiles file (numbers
   and times only), so after a restart they show dimmed with "as of" and the time they came, until a
   new reply. A window past its reset reads "reset". "Unknown" until a tab on the account has ever
   had a reply; an account signed in with an API key never reports one.

@@ -1,10 +1,17 @@
 import { createSignal, For, onCleanup, Show } from "solid-js";
 
-import { type Account, type Profiles, savedColor } from "./accounts";
+import {
+  type Account,
+  accountColor,
+  type Profiles,
+  savedColor,
+} from "./accounts";
 import { resetText } from "./board";
 import { Card, Note } from "./Cards";
 import { AccountDot } from "./icons";
 import {
+  meterLevel,
+  untilText,
   windowState,
   type WindowState,
   type Meter,
@@ -26,22 +33,32 @@ function createClock() {
 
 function Bar(props: {
   used: number;
-  high?: boolean;
   label: string;
   title?: string;
+  /** The fill's colour; a `warn` or `full` level overrides it. */
+  color?: string;
+  level?: "ok" | "warn" | "full";
 }) {
   return (
     <div
       class="meter"
       title={props.title}
-      classList={{ high: props.high === true }}
+      classList={{
+        warn: props.level === "warn",
+        full: props.level === "full",
+      }}
       role="meter"
       aria-label={props.label}
       aria-valuemin={0}
       aria-valuemax={100}
       aria-valuenow={Math.round(props.used)}
     >
-      <span style={{ width: `${String(Math.min(100, props.used))}%` }} />
+      <span
+        style={{
+          width: `${String(Math.min(100, props.used))}%`,
+          background: props.level === "ok" ? props.color : undefined,
+        }}
+      />
     </div>
   );
 }
@@ -121,7 +138,9 @@ export function ContextCard(props: {
 function WindowLine(props: {
   name: string;
   state: WindowState;
-  warnAt?: number;
+  warnAt: number;
+  color: string;
+  nowS: number;
 }) {
   const known = () => (props.state.kind === "known" ? props.state : undefined);
   return (
@@ -139,11 +158,15 @@ function WindowLine(props: {
           <>
             <Bar
               used={w().used}
-              high={props.warnAt !== undefined && w().used >= props.warnAt}
+              level={meterLevel(w().used, props.warnAt)}
+              color={props.color}
               label={`${props.name} used`}
             />
-            <span class="usage-meta">
-              {percentText(w().used)} · resets {resetText(w().resetsAt)}
+            <span
+              class="usage-meta"
+              title={`Resets ${resetText(w().resetsAt)}`}
+            >
+              {percentText(w().used)} · {untilText(w().resetsAt, props.nowS)}
             </span>
             <Show when={w().asOf}>
               {(asOf) => (
@@ -172,7 +195,7 @@ export function UsageCard(props: {
     <Card
       id="usage"
       title="Usage"
-      subtitle="Plan limits; an account updates after a reply in one of its tabs"
+      hint="Plan limits from each account's latest reply; an account updates after a reply in one of its tabs"
       state={props.state}
     >
       <Show
@@ -193,10 +216,21 @@ export function UsageCard(props: {
                 name="5-hour"
                 state={windowState(meterOf(account)?.fiveHour, now())}
                 warnAt={props.profiles.warnAt}
+                color={accountColor(
+                  account.id,
+                  savedColor(props.profiles, account.id),
+                )}
+                nowS={now()}
               />
               <WindowLine
                 name="7-day"
                 state={windowState(meterOf(account)?.sevenDay, now())}
+                warnAt={props.profiles.warnAt}
+                color={accountColor(
+                  account.id,
+                  savedColor(props.profiles, account.id),
+                )}
+                nowS={now()}
               />
             </div>
           )}

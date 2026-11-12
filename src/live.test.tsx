@@ -13,7 +13,14 @@ import {
   SAVED,
   settle,
 } from "./harness";
-import { elapsedText, type LiveView, warningText, windowState } from "./live";
+import {
+  elapsedText,
+  type LiveView,
+  meterLevel,
+  untilText,
+  warningText,
+  windowState,
+} from "./live";
 import type { SavedTree } from "./saved";
 
 const desktop = vi.hoisted(() => ({ sent: [] as unknown[] }));
@@ -186,11 +193,11 @@ test("usage kept from before a restart shows dimmed with its time, and a reset w
   );
   const lines = [...(work?.querySelectorAll(".usage-line") ?? [])];
   expect(lines[0]?.classList.contains("kept")).toBe(true);
-  expect(lines[0]?.textContent).toMatch(/30% · resets .+as of .+$/);
+  expect(lines[0]?.textContent).toMatch(/30% · in .+as of .+$/);
   expect(lines[1]?.textContent).toBe("7-dayreset");
-  expect(card(root, "Usage").textContent).toContain(
-    "an account updates after a reply in one of its tabs",
-  );
+  expect(
+    card(root, "Usage").querySelector(".card-title")?.getAttribute("title"),
+  ).toContain("an account updates after a reply in one of its tabs");
 });
 
 test("usage has a row per account, unknown until one of its tabs reports", async () => {
@@ -205,12 +212,20 @@ test("usage has a row per account, unknown until one of its tabs reports", async
   ].map((row) => row.textContent);
 
   expect(rows[0]).toBe("personal5-hourunknown7-dayunknown");
-  expect(rows[1]).toMatch(/^work5-hour87% · resets .+7-day41% · resets .+$/);
+  expect(rows[1]).toMatch(/^work5-hour87% · in \d+d \d+h7-day41% · in .+$/);
+  const work = card(root, "Usage").querySelector(
+    ".usage-account + .usage-account",
+  );
+  // 87% is past the 85% warning, so the 5-hour bar turns amber; the 7-day keeps the account's colour.
+  const bars = [...(work?.querySelectorAll(".meter") ?? [])];
+  expect(bars[0]?.classList.contains("warn")).toBe(true);
+  expect(bars[1]?.classList.contains("warn")).toBe(false);
   expect(
-    card(root, "Usage")
-      .querySelector(".usage-account + .usage-account .meter")
-      ?.classList.contains("high"),
-  ).toBe(true);
+    (bars[1]?.firstElementChild as HTMLElement | null)?.style.background,
+  ).not.toBe("");
+  expect(work?.querySelector(".usage-meta")?.getAttribute("title")).toMatch(
+    /^Resets /,
+  );
 });
 
 test("a warning offers Continue on, which only opens the usual confirm, and Dismiss tells the core", async () => {
@@ -412,4 +427,11 @@ test("the warning text, elapsed time and a window past its reset", () => {
     "reset",
   );
   expect(windowState(null, 0).kind).toBe("unknown");
+  expect(untilText(10_000 + 2 * 3600 + 10 * 60, 10_000)).toBe("in 2h 10m");
+  expect(untilText(10_000 + 45 * 60, 10_000)).toBe("in 45m");
+  expect(untilText(10_000 + 3 * 86_400 + 4 * 3600, 10_000)).toBe("in 3d 4h");
+  expect(untilText(10_000, 10_000)).toBe("in under a minute");
+  expect(meterLevel(84.9, 85)).toBe("ok");
+  expect(meterLevel(85, 85)).toBe("warn");
+  expect(meterLevel(100, 85)).toBe("full");
 });

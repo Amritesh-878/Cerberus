@@ -17,6 +17,25 @@ export interface LiveWindow {
   asOf?: number | null;
 }
 
+/** "in 2h 10m", "in 45m", "in 3d 4h": how long until a window resets. */
+export function untilText(resetsAt: number, nowS: number): string {
+  const minutes = Math.max(0, Math.ceil((resetsAt - nowS) / 60));
+  if (minutes < 1) return "in under a minute";
+  if (minutes < 60) return `in ${String(minutes)}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `in ${String(hours)}h ${String(minutes % 60)}m`;
+  return `in ${String(Math.floor(hours / 24))}d ${String(hours % 24)}h`;
+}
+
+/** How full a window's bar shows: the account's own colour, amber from the warning line, red when spent. */
+export function meterLevel(
+  used: number,
+  warnAt: number,
+): "ok" | "warn" | "full" {
+  if (used >= 100) return "full";
+  return used >= warnAt ? "warn" : "ok";
+}
+
 /** How a usage window reads now: its numbers, reset since (Claude Code starts a new one on the next reply), or nothing known. */
 export type WindowState =
   | { kind: "unknown" }

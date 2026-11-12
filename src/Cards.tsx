@@ -83,6 +83,8 @@ export function Card(props: {
   meta?: string;
   /** One line under the title while the card is open. */
   subtitle?: string;
+  /** What the card shows, as the title's hover hint. */
+  hint?: string;
   /** A button at the right of the title, such as Edit environment. */
   action?: JSX.Element;
   /** Shown in the title row between the title and the meta, such as a meter. */
@@ -124,11 +126,16 @@ export function Card(props: {
       >
         <Show
           when={props.fixed !== true}
-          fallback={<span class="card-title">{props.title}</span>}
+          fallback={
+            <span class="card-title" title={props.hint}>
+              {props.title}
+            </span>
+          }
         >
           <button
             type="button"
             class="card-title"
+            title={props.hint}
             aria-expanded={open()}
             onClick={() => {
               if (!drag.swallowClick()) props.state.toggleCard(props.id);
