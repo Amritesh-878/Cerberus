@@ -260,7 +260,7 @@ test("a tab's note says when messages are prefill only or off", async () => {
     "messages: prefill only",
   );
   expect(root.querySelector(".messages-note")?.getAttribute("title")).toContain(
-    "older than 2.1.317",
+    "older than 2.1.317 or uses an inbox format",
   );
   await open(root, "planner");
   expect(root.querySelector(".messages-note")).toBeNull();
@@ -322,7 +322,7 @@ test("each prefill-only reason gets its own plain tooltip", () => {
 
   expect(titles[0]).toContain("checked on Windows only");
   expect(titles[1]).toContain("no inbox of its own");
-  expect(titles[2]).toContain("Update Claude Code, then reopen the tab");
+  expect(titles[2]).toContain("Updating Claude Code and reopening the tab");
   expect(titles[3]).toContain("can't take them directly");
   expect(noteText({ tab: 1, note: "off" }).label).toBe("messages off");
 });

@@ -12,11 +12,15 @@ function setup() {
     closed++;
   });
   backdrop.addEventListener("pointerdown", handlers.onPointerDown);
+  backdrop.addEventListener("pointerup", handlers.onPointerUp);
   backdrop.addEventListener("click", handlers.onClick);
   const press = (el: Element) =>
     el.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
-  const release = (el: Element) =>
-    el.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  // The click goes where a browser sends it: the common ancestor of the press and the release.
+  const release = (el: Element, clickOn: Element = el) => {
+    el.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
+    clickOn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  };
   return { backdrop, dialog, press, release, closed: () => closed };
 }
 
@@ -25,6 +29,10 @@ test("only a press and a release both on the backdrop close it", () => {
 
   s.press(s.dialog);
   s.release(s.backdrop);
+  expect(s.closed()).toBe(0);
+
+  s.press(s.backdrop);
+  s.release(s.dialog, s.backdrop);
   expect(s.closed()).toBe(0);
 
   s.press(s.backdrop);

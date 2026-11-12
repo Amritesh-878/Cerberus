@@ -57,7 +57,8 @@ export function ServiceForm(props: {
     serviceCommand(start.id).then(
       (command) => {
         set({ command });
-        setBaseline(draft());
+        // Edits made while it loaded are still unsaved, so only the command joins what was there.
+        setBaseline((was) => ({ ...was, command }));
         setLoaded(true);
       },
       (failure: unknown) => setError(String(failure)),
