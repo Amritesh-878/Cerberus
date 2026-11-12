@@ -183,9 +183,14 @@ test("a refused move keeps the tab on its account, still resumable, and says why
   click(root.querySelector(".tab-menu") ?? root, "Continue on personal…");
   await settle();
 
-  expect(root.querySelector(".tab-alert")?.textContent).toContain(
-    "Could not continue on personal: Error: the other account already has this chat",
+  const popup = document.querySelector<HTMLElement>(".notice-popup");
+  expect(popup?.textContent).toContain("Could not continue on personal");
+  expect(popup?.textContent).toContain(
+    "Error: the other account already has this chat. The chat stays on its account.",
   );
+  click(popup ?? root, "OK");
+  await settle();
+  expect(document.querySelector(".notice-popup")).toBeNull();
   expect(activeTitle(root)).toBe("Claude Code · work");
   expect(app.pty.spawned.map((s) => field(s, "account"))).toEqual([1]);
 });
