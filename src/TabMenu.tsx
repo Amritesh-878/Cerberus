@@ -258,6 +258,10 @@ export function TabMenu(props: {
                   ? `Close this tab's shell and continue the ended chat on ${account().name}?`
                   : `Close this chat and continue it on ${account().name}?`}
               </p>
+              <p class="menu-confirm-note">
+                Anything it left running, such as a dev server, is stopped too.
+                Use a service to keep one running.
+              </p>
               <div class="confirm-actions">
                 <button
                   type="button"

@@ -152,6 +152,15 @@ test("a running chat asks first, and Cancel leaves it alone", async () => {
   expect(root.querySelector(".menu-confirm")?.textContent).toContain(
     "Close this chat and continue it on personal?",
   );
+  // The move ends what the chat left running, so the confirm says so before it happens.
+  expect(
+    root
+      .querySelector(".menu-confirm-note")
+      ?.textContent.replace(/\s+/g, " ")
+      .trim(),
+  ).toBe(
+    "Anything it left running, such as a dev server, is stopped too. Use a service to keep one running.",
+  );
   click(root.querySelector(".menu-confirm") ?? root, "Cancel");
   await settle();
 
