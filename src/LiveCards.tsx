@@ -160,13 +160,15 @@ function WindowLine(props: {
               used={w().used}
               level={meterLevel(w().used, props.warnAt)}
               color={props.color}
-              label={`${props.name} used`}
+              label={`${props.name === "5h" ? "5-hour" : "7-day"} used`}
             />
             <span
               class="usage-meta"
               title={`Resets ${resetText(w().resetsAt)}`}
             >
-              {percentText(w().used)} · {untilText(w().resetsAt, props.nowS)}
+              {/* The account's row already shows the 5-hour use. */}
+              {props.name === "5h" ? "" : `${percentText(w().used)} · `}
+              {untilText(w().resetsAt, props.nowS)}
             </span>
             <Show when={w().asOf}>
               {(asOf) => (
@@ -211,9 +213,15 @@ export function UsageCard(props: {
                   color={savedColor(props.profiles, account.id)}
                 />
                 <span class="row-main">{account.name}</span>
+                <span class="usage-top" title="5-hour use">
+                  {(() => {
+                    const five = windowState(meterOf(account)?.fiveHour, now());
+                    return five.kind === "known" ? percentText(five.used) : "";
+                  })()}
+                </span>
               </div>
               <WindowLine
-                name="5-hour"
+                name="5h"
                 state={windowState(meterOf(account)?.fiveHour, now())}
                 warnAt={props.profiles.warnAt}
                 color={accountColor(
@@ -223,7 +231,7 @@ export function UsageCard(props: {
                 nowS={now()}
               />
               <WindowLine
-                name="7-day"
+                name="7d"
                 state={windowState(meterOf(account)?.sevenDay, now())}
                 warnAt={props.profiles.warnAt}
                 color={accountColor(

@@ -3045,7 +3045,17 @@ button.card-row:focus-visible,
 }
 
 .usage-name {
-  flex: 0 0 44px;
+  flex: 0 0 18px;
+}
+
+.usage-top {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.usage-line .meter {
+  height: 4px;
 }
 
 .usage-line .meter {
@@ -3061,7 +3071,7 @@ button.card-row:focus-visible,
 /* Under the bar, so a narrow panel never scrolls sideways. */
 .usage-asof {
   flex-basis: 100%;
-  padding-left: 52px;
+  padding-left: 44px;
   font-size: 11px;
 }
 

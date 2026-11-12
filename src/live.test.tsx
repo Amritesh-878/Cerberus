@@ -193,8 +193,8 @@ test("usage kept from before a restart shows dimmed with its time, and a reset w
   );
   const lines = [...(work?.querySelectorAll(".usage-line") ?? [])];
   expect(lines[0]?.classList.contains("kept")).toBe(true);
-  expect(lines[0]?.textContent).toMatch(/30% · in .+as of .+$/);
-  expect(lines[1]?.textContent).toBe("7-dayreset");
+  expect(lines[0]?.textContent).toMatch(/5hin .+as of .+$/);
+  expect(lines[1]?.textContent).toBe("7dreset");
   expect(
     card(root, "Usage").querySelector(".card-title")?.getAttribute("title"),
   ).toContain("an account updates after a reply in one of its tabs");
@@ -211,8 +211,8 @@ test("usage has a row per account, unknown until one of its tabs reports", async
     ...card(root, "Usage").querySelectorAll<HTMLElement>(".usage-account"),
   ].map((row) => row.textContent);
 
-  expect(rows[0]).toBe("personal5-hourunknown7-dayunknown");
-  expect(rows[1]).toMatch(/^work5-hour87% · in \d+d \d+h7-day41% · in .+$/);
+  expect(rows[0]).toBe("personal5hunknown7dunknown");
+  expect(rows[1]).toMatch(/^work87%5hin \d+d \d+h7d41% · in .+$/);
   const work = card(root, "Usage").querySelector(
     ".usage-account + .usage-account",
   );
