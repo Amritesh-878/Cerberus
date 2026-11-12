@@ -233,11 +233,95 @@ fn a_miss_exits_with_one() {
 
 #[test]
 fn bad_usage_exits_with_two_without_reading_the_tree() {
-    let checked = check(&args("open"), no_app, || {
+    let checked = check(&args("start alpha"), no_app, || {
         panic!("read the tree for bad usage")
     });
 
     assert_eq!(checked, Checked::Exit(BAD_USAGE, USAGE.to_owned()));
+}
+
+#[test]
+fn open_with_no_name_lists_the_projects_and_their_tab_counts() {
+    let checked = check(&args("open"), no_app, || Ok(tree()));
+
+    assert_eq!(
+        checked,
+        Checked::Exit(
+            BAD_USAGE,
+            format!(
+                "{USAGE}
+Projects:
+  alpha (4 tabs)
+  Alpha (0 tabs)
+  Beta (1 tab)
+  gamma (0 tabs)
+  delta (0 tabs)"
+            )
+        )
+    );
+}
+
+#[test]
+fn open_with_no_name_asks_a_running_app_first_and_falls_back_to_the_usage() {
+    let from_app = check(
+        &args("open"),
+        |_| {
+            Ok(Some((
+                BAD_USAGE,
+                "usage
+Projects:
+  live (1 tab)"
+                    .to_owned(),
+            )))
+        },
+        || panic!("read the file while an app answered"),
+    );
+    let unreadable = check(&args("open"), no_app, || Err(TreeError::InUse));
+    let empty = check(&args("open"), no_app, || Ok(SavedTree::default()));
+
+    assert_eq!(
+        from_app,
+        Checked::Exit(
+            BAD_USAGE,
+            "usage
+Projects:
+  live (1 tab)"
+                .to_owned()
+        )
+    );
+    assert_eq!(unreadable, Checked::Exit(BAD_USAGE, USAGE.to_owned()));
+    assert_eq!(
+        empty,
+        Checked::Exit(
+            BAD_USAGE,
+            format!(
+                "{USAGE}
+No projects are saved yet."
+            )
+        )
+    );
+}
+
+#[test]
+fn a_match_by_folder_name_says_which_folder() {
+    let tree = tree();
+    let by_folder = resolve(&tree, &spec("beta-site", None)).unwrap();
+    let by_name = resolve(&tree, &spec("beta", Some("server"))).unwrap();
+
+    assert_eq!(
+        opening(&by_folder),
+        "Opening Beta (its folder is beta-site)"
+    );
+    assert_eq!(opening(&by_name), "Opening Beta / server");
+}
+
+#[test]
+fn each_identifier_has_its_own_pipe() {
+    assert_ne!(
+        pipe::name("com.cerberus.terminal"),
+        pipe::name("com.cerberus.testbuild")
+    );
+    assert!(pipe::name("com.cerberus.terminal").contains("com.cerberus.terminal-open-"));
 }
 
 #[test]

@@ -422,7 +422,10 @@ tab's variables are in `tree.db`; it never appears in the list, logs or error me
 
 The project matches by name, then the same name in any case, then its folder's name; the tab by
 title the same way. Words after `open` are joined, so `cerberus open my app/planner` needs no
-quotes. A running Cerberus answers from its open window; otherwise the saved file is read.
+quotes. A running Cerberus answers from its open window; otherwise the saved file is read. A
+match by folder name says so: `Opening alpha (its folder is cerberus)`. The command talks only to
+the installed Cerberus, never to a build with another identifier. `cerberus open` with no name
+prints the usage and each project with its tab count, and exits with 2.
 
 Exit codes: 0 opened, 1 no match or more than one (it lists them), 2 bad usage. Only project
 names, folders and tab titles are printed, never chat content. With no arguments it starts the

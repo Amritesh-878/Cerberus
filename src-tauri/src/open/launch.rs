@@ -4,7 +4,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::open::shell::{arguments, checked, own_arguments, say};
 use crate::open::{
-    BAD_USAGE, Checked, Command, MISSED, Spec, Target, USAGE, opening, parse, pipe, resolve,
+    BAD_USAGE, Checked, Command, MISSED, Spec, Target, opening, parse, pipe, resolve, usage_for,
 };
 use crate::saved::Saved;
 
@@ -75,7 +75,8 @@ pub fn on_second_launch(app: &AppHandle, args: Vec<String>, _cwd: String) {
 
 fn answer(app: &AppHandle, args: &[String]) -> (i32, String) {
     let Some(Command::Open(spec)) = parse(args) else {
-        return (BAD_USAGE, USAGE.to_owned());
+        let tree = || Some(app.try_state::<Saved>()?.load().ok()?.tree);
+        return (BAD_USAGE, usage_for(args, tree));
     };
     match show(app, &spec) {
         Ok(opened) => {

@@ -102,6 +102,7 @@ In a terminal on macOS, the editing keys of Terminal.app:
 ```sh
 cerberus open alpha/planner   # project alpha, tab planner
 cerberus open alpha           # project alpha: the tab last shown since launch, else its first
+cerberus open                 # lists the projects and their tab counts
 ```
 
 It starts Cerberus if needed, or brings the window forward, and shows that tab. A name matches in
