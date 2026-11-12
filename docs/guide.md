@@ -310,6 +310,8 @@ searches every account's chats at once:
   words, and words with other characters such as a path, must appear as typed. An exact match ranks
   above a typo.
 - A row shows a line around its best match, an exact one before a typo.
+- Paste a chat's id, alone or as `claude --resume <id>`, and the list shows just that chat on
+  whichever account has it, so a resume that failed in a shell tab is one paste away.
 - Arrow keys move, Enter (or a click) opens, Escape closes.
 - **Opening** a chat that is already in a tab switches to that tab. Otherwise a new Claude tab starts
   on the chat's own account, in its recorded folder, inside the project that holds that folder (or a

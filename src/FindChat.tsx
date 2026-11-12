@@ -158,7 +158,7 @@ export function FindChat(props: {
             <SearchIcon />
             <input
               type="search"
-              placeholder="Find a chat on any account"
+              placeholder="Words from a chat, or its id"
               aria-label="Find a chat"
               value={query()}
               onInput={(event) => {
