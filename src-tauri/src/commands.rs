@@ -201,7 +201,7 @@ pub fn pty_spawn(
     }
     let pid = manager.pid(id);
     if let (Some(tab), Some(pid)) = (tab, pid) {
-        running.spawned(tab, pid);
+        running.spawned(tab, pid, started_ms);
     }
     if let (Some(config_dir), Some(pid)) = (claude_home, pid) {
         let watched = Watched {

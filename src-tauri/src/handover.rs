@@ -13,6 +13,8 @@ use crate::sessions::procs::Probes;
 // Long enough for a closed tab's `claude` to finish exiting, short enough to answer a click.
 const EXIT_WAIT: Duration = Duration::from_secs(5);
 const TREE_POLL: Duration = Duration::from_millis(100);
+// A chat's own background shells and servers get this long to end with it before they are ended.
+const LEFT_GRACE: Duration = Duration::from_millis(1500);
 const WATCHER_POLL: Duration = Duration::from_millis(20);
 
 #[derive(Debug, thiserror::Error)]
@@ -50,8 +52,8 @@ struct TabProcs {
     live: usize,
     /// Counts every start, so a program that came and went while a move waited is still noticed.
     starts: u64,
-    /// The tab's last program, kept after it exits so anything it left running can be waited for.
-    root: Option<u32>,
+    /// The tab's last program and when it started (Unix milliseconds), kept after it exits so anything it left running can be waited for.
+    root: Option<(u32, u64)>,
     watchers: Vec<JoinHandle<()>>,
 }
 
@@ -100,8 +102,8 @@ impl RunningTabs {
         procs.starts += 1;
     }
 
-    pub fn spawned(&self, tab: TabId, pid: u32) {
-        lock(&self.tabs).entry(tab).or_default().root = Some(pid);
+    pub fn spawned(&self, tab: TabId, pid: u32, started_ms: u64) {
+        lock(&self.tabs).entry(tab).or_default().root = Some((pid, started_ms));
     }
 
     pub fn watching(&self, tab: TabId, watcher: JoinHandle<()>) {
@@ -153,8 +155,20 @@ impl RunningTabs {
                 .extend(watchers);
         };
         // A wrapper such as `claude.cmd` can exit while the `claude` it started is still writing.
-        if let Some(root) = root {
-            while !(self.probes.below)(root).is_empty() {
+        if let Some((root, since)) = root {
+            // The chat was stopped before it could end its own background shells, so after a grace they are ended for it.
+            let grace = Instant::now() + LEFT_GRACE.min(wait / 2);
+            let mut stopped = false;
+            loop {
+                let left = (self.probes.below)(root);
+                if left.is_empty() {
+                    break;
+                }
+                if !stopped && Instant::now() >= grace {
+                    left.into_iter()
+                        .for_each(|pid| (self.probes.stop)(pid, since));
+                    stopped = true;
+                }
                 if Instant::now() >= deadline {
                     keep(watchers);
                     return false;
@@ -321,10 +335,13 @@ mod tests {
         false
     }
 
+    fn stop_nothing(_: u32, _: u64) {}
+
     fn quiet() -> RunningTabs {
         RunningTabs::with(Probes {
             below: nothing_below,
             is_running: nothing_running,
+            stop: stop_nothing,
         })
     }
 
@@ -527,9 +544,10 @@ mod tests {
         let world = world_with(RunningTabs::with(Probes {
             below: below_for_a_while,
             is_running: nothing_running,
+            stop: stop_nothing,
         }));
         world.running.started(2);
-        world.running.spawned(2, 7);
+        world.running.spawned(2, 7, 0);
         world.running.ended(2);
 
         assert!(world.continue_to(1, true).is_ok());
@@ -541,9 +559,10 @@ mod tests {
         let world = world_with(RunningTabs::with(Probes {
             below: below_for_ever,
             is_running: nothing_running,
+            stop: stop_nothing,
         }));
         world.running.started(2);
-        world.running.spawned(2, 7);
+        world.running.spawned(2, 7, 0);
         world.running.ended(2);
 
         assert!(matches!(
@@ -551,6 +570,39 @@ mod tests {
             Err(ContinueError::Running)
         ));
         assert!(!world.copied(ID).exists());
+    }
+
+    static STOPPED: AtomicBool = AtomicBool::new(false);
+    static STOPPED_SINCE: AtomicUsize = AtomicUsize::new(0);
+
+    fn below_until_stopped(_: u32) -> Vec<u32> {
+        if STOPPED.load(Ordering::SeqCst) {
+            Vec::new()
+        } else {
+            vec![99]
+        }
+    }
+
+    fn stop_and_record(pid: u32, since: u64) {
+        assert_eq!(pid, 99);
+        STOPPED_SINCE.store(usize::try_from(since).unwrap(), Ordering::SeqCst);
+        STOPPED.store(true, Ordering::SeqCst);
+    }
+
+    #[test]
+    fn what_a_stopped_chat_left_running_is_ended_after_a_grace_so_the_move_goes_on() {
+        let world = world_with(RunningTabs::with(Probes {
+            below: below_until_stopped,
+            is_running: nothing_running,
+            stop: stop_and_record,
+        }));
+        world.running.started(2);
+        world.running.spawned(2, 7, 1_234);
+        world.running.ended(2);
+
+        assert!(world.continue_to(1, true).is_ok());
+        assert_eq!(STOPPED_SINCE.load(Ordering::SeqCst), 1_234);
+        assert!(world.copied(ID).is_file());
     }
 
     static TREE_HELD: AtomicBool = AtomicBool::new(false);
@@ -572,9 +624,10 @@ mod tests {
         let world = world_with(RunningTabs::with(Probes {
             below: below_while_held,
             is_running: nothing_running,
+            stop: stop_nothing,
         }));
         world.running.started(2);
-        world.running.spawned(2, 7);
+        world.running.spawned(2, 7, 0);
         world.running.ended(2);
         let during_the_wait = |events: &[Event]| {
             TREE_HELD.store(true, Ordering::SeqCst);

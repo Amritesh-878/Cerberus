@@ -337,7 +337,10 @@ logged or kept: it lives in memory while the dialog is open and is dropped when 
 
 Right-click a Claude Code tab and pick **Continue on `<account>`…** to carry its chat to another
 of your accounts, for example to keep work and personal chats apart. If the chat is running,
-Cerberus asks before closing it, and the row says "Moving to `<account>`…" until it lands.
+Cerberus asks before closing it, and the row says "Moving to `<account>`…" until it lands. Closing
+it also ends what the chat left running, such as its background shells, as Claude Code does on a
+normal exit; only processes started by that chat are ended. The limit banner's **Continue on** runs
+the same steps.
 
 On a tab whose chat ended (now a shell), the item reads **Continue the ended chat on
 `<account>`…**: it moves that tab's ended chat, which is the last `claude` you ran in its shell if
@@ -349,7 +352,7 @@ folder under a temporary name, renaming it once complete, then reopens the tab t
 `claude --resume`. The original stays on the first account. When the other account already has an
 older copy, it is kept as `<id>.jsonl.cerberus-old`, never deleted. It refuses when the other
 account is signed out or has that chat open right now. On any failure the tab stays where it was
-and says why; in the rare case that putting the older copy back fails too, the message says part of
+and a popup says why; in the rare case that putting the older copy back fails too, the message says part of
 it stays under a `.cerberus-old` name. The copy moves files only; Cerberus never reads what is in
 them.
 

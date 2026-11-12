@@ -2542,6 +2542,18 @@ button.card-row:focus-visible,
   color: var(--dim);
 }
 
+.notice-popup h2 {
+  margin: 0 0 10px;
+  font-size: 15px;
+}
+
+.notice-popup p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--dim);
+}
+
 .discard-ask {
   display: flex;
   flex-wrap: wrap;

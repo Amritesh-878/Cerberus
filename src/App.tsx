@@ -60,6 +60,7 @@ import { Home } from "./Home";
 import { AccountDot, MenuIcon, PanelIcon, ProgramIcon } from "./icons";
 import { shortcutFor } from "./keys";
 import { type Launch, NewTab } from "./NewTab";
+import { NoticePopup } from "./NoticePopup";
 import {
   createMessaging,
   decide,
@@ -592,6 +593,11 @@ export function App() {
       return next;
     });
   };
+  // Why a chat could not move, shown as a popup so it is never missed.
+  const [moveFailed, setMoveFailed] = createSignal<{
+    account: string;
+    reason: string;
+  }>();
   const continueOn = (id: TabId, account: Account) => {
     if (moving().has(id)) return;
     setMovingTab(id, account.name);
@@ -613,7 +619,7 @@ export function App() {
         restart();
       },
       (error: unknown) => {
-        setAlert(id, `Could not continue on ${account.name}: ${String(error)}`);
+        setMoveFailed({ account: account.name, reason: String(error) });
         restart();
       },
     );
@@ -1631,6 +1637,17 @@ export function App() {
                   onSave={(change) => saveEnvironment(tab().id, change)}
                   onClose={() => {
                     setEditing(undefined);
+                  }}
+                />
+              )}
+            </Show>
+            <Show when={moveFailed()}>
+              {(failed) => (
+                <NoticePopup
+                  title={`Could not continue on ${failed().account}`}
+                  message={`${failed().reason}. The chat stays on its account.`}
+                  onClose={() => {
+                    setMoveFailed(undefined);
                   }}
                 />
               )}

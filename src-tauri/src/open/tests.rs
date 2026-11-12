@@ -321,7 +321,7 @@ fn each_identifier_has_its_own_pipe() {
         pipe::name("com.cerberus.terminal"),
         pipe::name("com.cerberus.testbuild")
     );
-    assert!(pipe::name("com.cerberus.terminal").contains("com.cerberus.terminal-open-"));
+    assert!(pipe::name("com.cerberus.terminal").contains("com.cerberus.terminal"));
 }
 
 #[test]

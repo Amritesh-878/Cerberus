@@ -423,7 +423,12 @@ fn an_older_version_is_typed_in_without_enter_and_the_tab_says_prefill_only() {
     assert!(world.bridge.snapshot().notes.contains(&TabNote {
         tab: 2,
         note: Note::PrefillOnly,
-        why: Some(Why::Version),
+        // macOS is prefill only before its version is even looked at.
+        why: Some(if cfg!(windows) {
+            Why::Version
+        } else {
+            Why::Platform
+        }),
     }));
     assert!(world.tabs[&2].inbox.try_recv().is_err());
 }
