@@ -1,6 +1,6 @@
 //! The app's side of the live cards: accounts and threshold in, views and warnings out.
 
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::accounts::{AccountId, Accounts, AccountsError, KeptUsage, Profiles};
 use crate::blocking::blocking;
@@ -48,15 +48,16 @@ impl Sink for AppSink {
     }
 }
 
-#[tauri::command(async)]
-pub fn live_view(live: State<'_, Live>) -> View {
-    live.view()
+// Not memory only: drawing the view reads the profiles file through the account sink.
+#[tauri::command]
+pub async fn live_view(app: AppHandle) -> View {
+    blocking(move || app.state::<Live>().view()).await
 }
 
 /// Hides an account's warning until its next 5-hour window.
-#[tauri::command(async)]
-pub fn live_dismiss(live: State<'_, Live>, account: AccountId) {
-    live.dismiss(account);
+#[tauri::command]
+pub async fn live_dismiss(app: AppHandle, account: AccountId) {
+    blocking(move || app.state::<Live>().dismiss(account)).await;
 }
 
 /// Opens a file the tab's chat wrote; any other path is refused.

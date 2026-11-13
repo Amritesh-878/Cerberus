@@ -47,12 +47,10 @@ mod tests {
     }
 
     /// Commands that only touch memory, so they may run inline on a worker; any other plain `fn` command would block one.
-    const INLINE: [&str; 9] = [
+    const INLINE: [&str; 7] = [
         "bridge_discard",
         "bridge_snapshot",
         "chat_find_close",
-        "live_dismiss",
-        "live_view",
         "open_take",
         "pty_ack",
         "service_unwatch",
