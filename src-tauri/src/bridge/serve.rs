@@ -2,8 +2,9 @@
 
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, Weak, mpsc};
+use std::sync::{Arc, Mutex, PoisonError, Weak, mpsc};
 use std::thread;
+use std::time::{Duration, Instant};
 
 use crate::bridge::queue::run_of;
 use crate::bridge::wire::{Ask, AskKind, MOST_LINE, MOST_MESSAGE, Order, Outcome, Reply, TabEntry};
@@ -12,6 +13,9 @@ use crate::saved::TabId;
 
 // Every tab holds one connection open and one per waiting message; more than this is not Cerberus.
 const MOST_CONNECTIONS: usize = 256;
+/// How long a new helper waits for the one it replaces to be seen gone, as when Claude Code restarts its servers.
+const TAKEOVER_WAIT: Duration = Duration::from_secs(2);
+const TAKEOVER_POLL: Duration = Duration::from_millis(25);
 
 pub fn listen(core: &Arc<Core>) -> io::Result<()> {
     let mut listener = link::Listener::bind(&core.name)?;
@@ -119,30 +123,54 @@ fn listening(
     (messaging, pipe): (bool, Option<String>),
     run: &str,
 ) -> io::Result<()> {
-    write_line(&stream, &Order::Ready)?;
     let peer = link::Peer::of(&stream);
-    let ended = {
+    let listen = Arc::new(Mutex::new(stream));
+    // Held until Ready is written, so no order reaches the helper ahead of it.
+    let first = listen.lock().unwrap_or_else(PoisonError::into_inner);
+    let deadline = Instant::now() + TAKEOVER_WAIT;
+    let ended = loop {
         let mut state = core.state();
         let Some(link) = state.links.get_mut(token) else {
             return Ok(());
         };
+        // The token is in every process the chat starts, so only a helper whose own run has ended is replaced.
+        if link
+            .hello
+            .as_ref()
+            .is_some_and(|h| h.watched && h.run != run)
+        {
+            if Instant::now() >= deadline {
+                eprintln!("bridge: turned away a second helper for tab {}", link.tab);
+                return Ok(());
+            }
+            drop(state);
+            thread::sleep(TAKEOVER_POLL);
+            continue;
+        }
         let again = link.hello.is_some();
         let tab = link.tab;
         link.hello = Some(Hello {
             messaging,
             pipe,
-            listen: Arc::new(Mutex::new(stream)),
+            listen: Arc::clone(&listen),
             run: run.to_owned(),
+            watched: peer.is_ok(),
         });
         // A second hello is a restarted helper, whose earlier calls ended with it; its own may already be queued.
-        if again {
+        break if again {
             state.queue.drop_from(tab, run)
         } else {
             Vec::new()
-        }
+        };
     };
+    let ready = write_line(&first, &Order::Ready);
+    drop(first);
     for pending in ended {
         let _ = pending.waiter.try_send(Outcome::Cancelled);
+    }
+    if let Err(e) = ready {
+        helper_gone(core, token, run);
+        return Err(e);
     }
     core.changed();
     match peer {
@@ -165,7 +193,7 @@ fn watch(core: Weak<Core>, token: String, run: String, peer: link::Peer) {
     }
 }
 
-fn helper_gone(core: &Core, token: &str, run: &str) {
+pub(super) fn helper_gone(core: &Core, token: &str, run: &str) {
     let waiters = {
         let mut state = core.state();
         let Some(link) = state.links.get_mut(token) else {

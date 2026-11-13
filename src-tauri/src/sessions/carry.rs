@@ -57,6 +57,11 @@ pub fn copy_to_folder(
     id: &str,
     running_by: &dyn Fn(u32, Option<u64>) -> bool,
 ) -> Result<(), CarryError> {
+    // Paths that differ only where the slug puts `-` share one project, so the chat is there already.
+    let to = slug(to_cwd);
+    if to == slug(from_cwd) && to.len() <= SLUG_MAX {
+        return Ok(());
+    }
     let ops = Ops {
         copy: &mut |source, target| fs::copy(source, target).map(|_| ()),
         rename: &mut |source, target| fs::rename(source, target),
@@ -586,6 +591,18 @@ mod tests {
                 .join(format!("{ID}.jsonl"))
                 .is_file()
         );
+    }
+
+    #[test]
+    fn a_folder_that_shares_the_chats_project_copies_nothing() {
+        let dir = TestDir::new();
+        let project = chat_in(&dir, "personal", CWD);
+        let config = dir.path().join("personal");
+        let before = fs::read_dir(&project).unwrap().count();
+
+        copy_to_folder(&config, CWD, r"C:\work-app", ID, &|_, _| false).unwrap();
+
+        assert_eq!(fs::read_dir(&project).unwrap().count(), before);
     }
 
     #[test]

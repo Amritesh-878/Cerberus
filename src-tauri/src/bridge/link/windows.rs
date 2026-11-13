@@ -3,20 +3,13 @@ use std::io;
 use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
 use std::ptr;
 
-use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE, LocalFree};
-use windows_sys::Win32::Security::Authorization::{
-    ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW,
-};
-use windows_sys::Win32::Security::{
-    GetTokenInformation, PSECURITY_DESCRIPTOR, SECURITY_ATTRIBUTES, TOKEN_QUERY, TOKEN_USER,
-    TokenUser,
-};
-use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
+use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
+
+use crate::winsec::Security;
 
 pub type Stream = File;
 
 const BUFFER: u32 = 64 * 1024;
-const SDDL_REVISION_1: u32 = 1;
 
 pub fn name_for(id: &str) -> String {
     format!(r"\\.\pipe\cerberus-bridge-{id}")
@@ -100,77 +93,6 @@ impl Listener {
     }
 }
 
-/// A security descriptor that lets only this user, and the system, open the pipe.
-struct Security(PSECURITY_DESCRIPTOR);
-
-// The descriptor is read-only after it is made, and freed once in `Drop`.
-unsafe impl Send for Security {}
-
-impl Security {
-    fn current_user_only() -> io::Result<Self> {
-        let sddl = format!("D:P(A;;GA;;;{})(A;;GA;;;SY)", user_sid()?);
-        let wide: Vec<u16> = sddl.encode_utf16().chain([0]).collect();
-        let mut descriptor: PSECURITY_DESCRIPTOR = ptr::null_mut();
-        let made = unsafe {
-            ConvertStringSecurityDescriptorToSecurityDescriptorW(
-                wide.as_ptr(),
-                SDDL_REVISION_1,
-                &raw mut descriptor,
-                ptr::null_mut(),
-            )
-        };
-        if made == 0 {
-            return Err(io::Error::last_os_error());
-        }
-        Ok(Self(descriptor))
-    }
-}
-
-impl Drop for Security {
-    fn drop(&mut self) {
-        unsafe { LocalFree(self.0) };
-    }
-}
-
-/// This process's user as an SDDL SID string, such as `S-1-5-21-…`.
-fn user_sid() -> io::Result<String> {
-    let mut token: HANDLE = ptr::null_mut();
-    if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &raw mut token) } == 0 {
-        return Err(io::Error::last_os_error());
-    }
-    let result = sid_of(token);
-    unsafe { CloseHandle(token) };
-    result
-}
-
-fn sid_of(token: HANDLE) -> io::Result<String> {
-    let mut size = 0u32;
-    unsafe { GetTokenInformation(token, TokenUser, ptr::null_mut(), 0, &raw mut size) };
-    // u64 words keep the buffer aligned for the TOKEN_USER read below.
-    let mut buf = vec![0u64; (size as usize).div_ceil(8).max(1)];
-    let filled = unsafe {
-        GetTokenInformation(
-            token,
-            TokenUser,
-            buf.as_mut_ptr().cast(),
-            size,
-            &raw mut size,
-        )
-    };
-    if filled == 0 {
-        return Err(io::Error::last_os_error());
-    }
-    let user = unsafe { &*buf.as_ptr().cast::<TOKEN_USER>() };
-    let mut text: *mut u16 = ptr::null_mut();
-    if unsafe { ConvertSidToStringSidW(user.User.Sid, &raw mut text) } == 0 {
-        return Err(io::Error::last_os_error());
-    }
-    let len = (0..).take_while(|&i| unsafe { *text.add(i) } != 0).count();
-    let sid = String::from_utf16_lossy(unsafe { std::slice::from_raw_parts(text, len) });
-    unsafe { LocalFree(text.cast()) };
-    Ok(sid)
-}
-
 fn instance(name: &str, security: &Security, first: bool) -> io::Result<File> {
     use windows_sys::Win32::Storage::FileSystem::{
         FILE_FLAG_FIRST_PIPE_INSTANCE, PIPE_ACCESS_DUPLEX,
@@ -180,11 +102,7 @@ fn instance(name: &str, security: &Security, first: bool) -> io::Result<File> {
         PIPE_UNLIMITED_INSTANCES, PIPE_WAIT,
     };
     let wide: Vec<u16> = name.encode_utf16().chain([0]).collect();
-    let attributes = SECURITY_ATTRIBUTES {
-        nLength: u32::try_from(size_of::<SECURITY_ATTRIBUTES>()).unwrap_or(0),
-        lpSecurityDescriptor: security.0,
-        bInheritHandle: 0,
-    };
+    let attributes = security.attributes();
     let open_mode = PIPE_ACCESS_DUPLEX
         | if first {
             FILE_FLAG_FIRST_PIPE_INSTANCE
@@ -227,11 +145,6 @@ fn wait_for_client(pipe: File) -> io::Result<File> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn the_user_sid_is_a_sid() {
-        assert!(user_sid().unwrap().starts_with("S-1-"));
-    }
 
     #[test]
     fn a_second_listener_cannot_take_the_name() {

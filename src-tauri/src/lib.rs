@@ -22,6 +22,8 @@ mod saved;
 mod services;
 mod sessions;
 mod suggestions;
+#[cfg(windows)]
+mod winsec;
 
 use std::sync::Arc;
 

@@ -158,6 +158,8 @@ struct Hello {
     pipe: Option<String>,
     listen: Arc<Mutex<link::Stream>>,
     run: String,
+    /// Whether the helper's exit is watched, which is what ends its run; an unwatched one may be replaced.
+    watched: bool,
 }
 
 struct TabLink {
