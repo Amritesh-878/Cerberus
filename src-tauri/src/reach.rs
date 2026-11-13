@@ -37,15 +37,11 @@ fn keep_answering(
             continue;
         }
         let (tx, dir) = (tx.clone(), dir.clone());
-        // A thread that cannot start leaves the folder unasked, so it is treated like one that did not answer.
-        if thread::Builder::new()
-            .spawn(move || {
-                let _ = tx.send((at, probe(&dir)));
-            })
-            .is_ok()
-        {
-            asked.push(at);
-        }
+        // Asked even when its thread cannot start: no answer comes, so it is left out like one that hung.
+        let _ = thread::Builder::new().spawn(move || {
+            let _ = tx.send((at, probe(&dir)));
+        });
+        asked.push(at);
     }
     drop(tx);
     let deadline = now + wait;
