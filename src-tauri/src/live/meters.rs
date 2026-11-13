@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use serde::Serialize;
 
-use crate::accounts::AccountId;
+use crate::accounts::{AccountId, KeptUsage, UsageWindow};
 use crate::live::event::{Status, Window};
 use crate::saved::TabId;
 
@@ -18,6 +18,10 @@ pub struct WindowView {
     pub used: f64,
     /// Unix seconds.
     pub resets_at: u64,
+    /// The window has reset since this report, so its use starts again from nothing.
+    pub reset: bool,
+    /// Set for numbers kept from before this start: when they were reported, in Unix milliseconds.
+    pub as_of: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -37,9 +41,66 @@ struct Kept {
 #[derive(Debug, Default)]
 pub struct Meters {
     by_account: BTreeMap<AccountId, Kept>,
+    /// Reports older than this came before the app started, so they show with their time.
+    since_ms: u64,
 }
 
 impl Meters {
+    /// Starts from the numbers kept by the last run; a report from now on replaces each window.
+    pub fn restored(kept: &[KeptUsage], since_ms: u64) -> Self {
+        let window = |at: u64, w: Option<UsageWindow>| {
+            w.map(|w| {
+                (
+                    at,
+                    Window {
+                        used: w.used,
+                        resets_at: w.resets_at,
+                    },
+                )
+            })
+        };
+        Self {
+            by_account: kept
+                .iter()
+                .map(|k| {
+                    (
+                        k.account,
+                        Kept {
+                            five_hour: window(k.at, k.five_hour),
+                            seven_day: window(k.at, k.seven_day),
+                        },
+                    )
+                })
+                .collect(),
+            since_ms,
+        }
+    }
+
+    /// What the profiles file keeps: each account's newest windows and the newer report time.
+    pub fn kept(&self) -> Vec<KeptUsage> {
+        let saved = |w: Option<(u64, Window)>| {
+            w.map(|(_, w)| UsageWindow {
+                used: w.used,
+                resets_at: w.resets_at,
+            })
+        };
+        self.by_account
+            .iter()
+            .map(|(&account, kept)| KeptUsage {
+                account,
+                at: kept
+                    .five_hour
+                    .into_iter()
+                    .chain(kept.seven_day)
+                    .map(|(at, _)| at)
+                    .max()
+                    .unwrap_or(0),
+                five_hour: saved(kept.five_hour),
+                seven_day: saved(kept.seven_day),
+            })
+            .collect()
+    }
+
     /// Each window keeps the newest report that had it, so a tab with no reply yet clears nothing.
     pub fn report(&mut self, account: AccountId, status: &Status) {
         let kept = self.by_account.entry(account).or_default();
@@ -53,12 +114,20 @@ impl Meters {
     }
 
     pub fn view(&self, now_s: u64) -> Vec<Meter> {
+        let shown = |kept: Option<(u64, Window)>| {
+            kept.map(|(at, w)| WindowView {
+                used: w.used,
+                resets_at: w.resets_at,
+                reset: w.resets_at <= now_s,
+                as_of: (at < self.since_ms).then_some(at),
+            })
+        };
         self.by_account
             .iter()
             .map(|(&account, kept)| Meter {
                 account,
-                five_hour: live_window(kept.five_hour, now_s).map(shown),
-                seven_day: live_window(kept.seven_day, now_s).map(shown),
+                five_hour: shown(kept.five_hour),
+                seven_day: shown(kept.seven_day),
             })
             .collect()
     }
@@ -74,13 +143,6 @@ fn newer(kept: &mut Option<(u64, Window)>, at: u64, found: Option<Window>) {
 
 fn live_window(kept: Option<(u64, Window)>, now_s: u64) -> Option<Window> {
     kept.map(|(_, w)| w).filter(|w| w.resets_at > now_s)
-}
-
-fn shown(w: Window) -> WindowView {
-    WindowView {
-        used: w.used,
-        resets_at: w.resets_at,
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -227,13 +289,41 @@ mod tests {
     }
 
     #[test]
-    fn a_window_past_its_reset_is_unknown_again() {
+    fn a_window_past_its_reset_shows_as_reset_and_no_longer_warns() {
         let mut meters = Meters::default();
         meters.report(1, &status(10, Some(99.0), None));
 
-        assert_eq!(meters.view(RESET)[0].five_hour, None);
+        assert_eq!(meters.view(RESET)[0].five_hour.map(|w| w.reset), Some(true));
+        assert_eq!(
+            meters.view(RESET - 1)[0].five_hour.map(|w| w.reset),
+            Some(false)
+        );
         assert_eq!(meters.five_hour(1, RESET), None);
         assert!(meters.five_hour(1, RESET - 1).is_some());
+    }
+
+    #[test]
+    fn kept_numbers_show_with_their_time_until_a_new_report_replaces_them() {
+        let mut meters = Meters::default();
+        meters.report(1, &status(5_000, Some(40.0), Some(12.0)));
+        let kept = meters.kept();
+        assert_eq!(kept[0].at, 5_000);
+        assert_eq!(kept[0].five_hour.map(|w| w.used), Some(40.0));
+
+        let mut restarted = Meters::restored(&kept, 9_000);
+        let first = restarted.view(NOW)[0].clone();
+        assert_eq!(first.five_hour.and_then(|w| w.as_of), Some(5_000));
+        assert_eq!(first.seven_day.and_then(|w| w.as_of), Some(5_000));
+
+        restarted.report(1, &status(9_500, Some(55.0), None));
+        let after = restarted.view(NOW)[0].clone();
+        assert_eq!(
+            after.five_hour.map(|w| (w.used, w.as_of)),
+            Some((55.0, None))
+        );
+        // A window the new report left out keeps its old time.
+        assert_eq!(after.seven_day.and_then(|w| w.as_of), Some(5_000));
+        assert_eq!(restarted.kept()[0].at, 9_500);
     }
 
     #[test]

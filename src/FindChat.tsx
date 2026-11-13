@@ -10,16 +10,20 @@ import {
   startFind,
   whenText,
 } from "./chatSearch";
-import { AccountDot, CloseIcon, SearchIcon } from "./icons";
+import { AccountDot, CloseIcon, ProgramIcon, SearchIcon } from "./icons";
 import { keepInside } from "./ShortcutsSheet";
-import { folderName } from "./tree";
+import { matchTabs, type TabEntry } from "./tabSearch";
+import { folderName, type TabId } from "./tree";
 
 // Long enough to skip the searches between quick keystrokes, short enough to feel live.
 const TYPING_MS = 120;
 
-/** Searches every account's chats; Enter or a click opens one, in its folder on its account. */
+/** One list for open tabs and every account's chats: Enter on a tab shows it, on a chat opens it in its folder on its account. */
 export function FindChat(props: {
   profiles: Profiles;
+  /** Every open tab, in the sidebar's order. */
+  tabs: TabEntry[];
+  onSwitch: (tab: TabId) => void;
   /** Opens the chat, in `folder` when its own is gone; the dialog closes once it resolves. */
   onOpen: (chat: FoundChat, folder?: string) => Promise<void>;
   onClose: () => void;
@@ -60,6 +64,26 @@ export function FindChat(props: {
     );
   };
 
+  // A chat already open in a tab shows once, as that tab, even when only its words matched.
+  const shownTabs = () => {
+    const matched = matchTabs(props.tabs, query());
+    const viaChats = chats()
+      .map((chat) => chat.openIn)
+      .filter((id): id is number => id !== null)
+      .filter((id) => !matched.some((t) => t.id === id))
+      .map((id) => props.tabs.find((t) => t.id === id))
+      .filter((tab): tab is TabEntry => tab !== undefined);
+    return [...matched, ...viaChats];
+  };
+  const shownChats = () => chats().filter((chat) => chat.openIn === null);
+  const rowCount = () => shownTabs().length + shownChats().length;
+  const pick = (at: number) => {
+    const tabs = shownTabs();
+    const tab = tabs[at];
+    if (tab) props.onSwitch(tab.id);
+    else open(shownChats()[at - tabs.length]);
+  };
+
   const accountName = (id: number | null) =>
     id === null
       ? "Default account"
@@ -93,7 +117,7 @@ export function FindChat(props: {
   let sheet: HTMLDivElement | undefined;
   let list: HTMLUListElement | undefined;
   const move = (by: number) => {
-    const count = chats().length;
+    const count = rowCount();
     if (count === 0) return;
     setSelected((at) => Math.max(0, Math.min(count - 1, at + by)));
     queueMicrotask(() => {
@@ -120,7 +144,7 @@ export function FindChat(props: {
         !(event.target instanceof HTMLButtonElement)
       ) {
         event.preventDefault();
-        open(chats()[selected()]);
+        pick(selected());
       } else if (event.key === "Tab" && sheet && keepInside(sheet, event)) {
         event.preventDefault();
       }
@@ -147,7 +171,7 @@ export function FindChat(props: {
         class="sheet find-chat"
         role="dialog"
         aria-modal="true"
-        aria-label="Find a chat"
+        aria-label="Search tabs and chats"
         tabIndex={-1}
         ref={(el) => {
           sheet = el;
@@ -158,12 +182,13 @@ export function FindChat(props: {
             <SearchIcon />
             <input
               type="search"
-              placeholder="Find a chat on any account"
-              aria-label="Find a chat"
+              placeholder="Tabs, or words from a chat, or its id"
+              aria-label="Search tabs and chats"
               value={query()}
               onInput={(event) => {
                 const text = event.currentTarget.value;
                 setQuery(text);
+                setSelected(0);
                 setGone(undefined);
                 clearTimeout(typing);
                 typing = setTimeout(() => {
@@ -216,29 +241,75 @@ export function FindChat(props: {
         <ul
           class="find-list"
           role="listbox"
-          aria-label="Chats"
+          aria-label="Tabs and chats"
           ref={(el) => {
             list = el;
           }}
         >
-          <For each={chats()}>
-            {(chat, at) => (
+          <Show when={shownTabs().length > 0}>
+            <li class="find-group" role="presentation">
+              Open tabs
+            </li>
+          </Show>
+          <For each={shownTabs()}>
+            {(tab, at) => (
               <li
                 role="option"
                 aria-selected={at() === selected()}
-                class="find-row"
+                class="find-row find-tab"
                 classList={{ selected: at() === selected() }}
-                title={chat.folder ?? undefined}
+                title={tab.folder ?? undefined}
                 onPointerMove={() => setSelected(at())}
+                onClick={() => {
+                  props.onSwitch(tab.id);
+                }}
+              >
+                <div class="find-line">
+                  <ProgramIcon program={tab.program} size={13} />
+                  <span class="find-title">{tab.title}</span>
+                </div>
+                <div class="find-line find-meta">
+                  <span>{tab.project}</span>
+                  <Show when={tab.account}>
+                    {(name) => (
+                      <>
+                        <AccountDot
+                          id={tab.accountId ?? 0}
+                          color={savedColor(props.profiles, tab.accountId ?? 0)}
+                        />
+                        <span>{name()}</span>
+                      </>
+                    )}
+                  </Show>
+                  <Show when={tab.folder}>
+                    {(folder) => (
+                      <span class="find-folder">{folderName(folder())}</span>
+                    )}
+                  </Show>
+                </div>
+              </li>
+            )}
+          </For>
+          <li class="find-group" role="presentation">
+            Chats
+          </li>
+          <For each={shownChats()}>
+            {(chat, index) => (
+              <li
+                role="option"
+                aria-selected={shownTabs().length + index() === selected()}
+                class="find-row"
+                classList={{
+                  selected: shownTabs().length + index() === selected(),
+                }}
+                title={chat.folder ?? undefined}
+                onPointerMove={() => setSelected(shownTabs().length + index())}
                 onClick={() => {
                   open(chat);
                 }}
               >
                 <div class="find-line">
                   <span class="find-title">{chat.title}</span>
-                  <Show when={chat.openIn !== null}>
-                    <span class="find-tag">open</span>
-                  </Show>
                   <span class="find-when">{whenText(chat.last)}</span>
                 </div>
                 <div class="find-line find-meta">
@@ -271,15 +342,17 @@ export function FindChat(props: {
             when={done() !== undefined}
             fallback={
               chats().length > 0
-                ? `${String(chats().length)} so far…`
-                : "Searching…"
+                ? `${String(chats().length)} chats so far…`
+                : "Searching chats…"
             }
           >
             {chats().length === 0
               ? query().trim() === ""
                 ? "No chats yet"
                 : "No chats match"
-              : `${String(chats().length)} of ${String(done())} chats`}
+              : shownChats().length === 0
+                ? "Every chat found is open in a tab above"
+                : `${String(shownChats().length)} of ${String(done())} chats`}
           </Show>
         </p>
         <Show when={error()}>

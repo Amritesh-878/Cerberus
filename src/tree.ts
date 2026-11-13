@@ -204,12 +204,10 @@ export function moveTab(tree: Tree, id: TabId, parentId: TabId | null): Tree {
   };
 }
 
-function rowsOf(tabs: TreeTab[], matches: (tab: TreeTab) => boolean): Row[] {
+function rowsOf(tabs: TreeTab[]): Row[] {
   const rows: Row[] = [];
   for (const top of tabs.filter((t) => t.parentId === null)) {
-    const kids = tabs.filter((t) => t.parentId === top.id);
-    const shown = kids.filter(matches);
-    if (!matches(top) && shown.length === 0) continue;
+    const shown = tabs.filter((t) => t.parentId === top.id);
     rows.push({ tab: top, sub: false, last: false });
     shown.forEach((kid, i) => {
       rows.push({
@@ -223,29 +221,12 @@ function rowsOf(tabs: TreeTab[], matches: (tab: TreeTab) => boolean): Row[] {
 }
 
 /** Setup tabs first, then each project; a search keeps a planner whose sub-tabs match. */
-export function groups(
-  tree: Tree,
-  search: string,
-  accountName: (tab: TreeTab) => string,
-): Group[] {
-  const needle = search.trim().toLowerCase();
-  const matches = (tab: TreeTab) =>
-    needle === "" ||
-    tab.title.toLowerCase().includes(needle) ||
-    accountName(tab).toLowerCase().includes(needle);
-  const setup = rowsOf(
-    tree.tabs.filter((t) => t.projectId === null),
-    matches,
-  );
-  const projects = tree.projects
-    .map((project) => ({
-      project,
-      rows: rowsOf(
-        tree.tabs.filter((t) => t.projectId === project.id),
-        matches,
-      ),
-    }))
-    .filter((group) => needle === "" || group.rows.length > 0);
+export function groups(tree: Tree): Group[] {
+  const setup = rowsOf(tree.tabs.filter((t) => t.projectId === null));
+  const projects = tree.projects.map((project) => ({
+    project,
+    rows: rowsOf(tree.tabs.filter((t) => t.projectId === project.id)),
+  }));
   return setup.length > 0
     ? [{ project: null, rows: setup }, ...projects]
     : projects;
@@ -253,7 +234,7 @@ export function groups(
 
 /** Tab ids in the order the sidebar lists them. */
 export function tabOrder(tree: Tree): TabId[] {
-  return groups(tree, "", () => "").flatMap((g) => g.rows.map((r) => r.tab.id));
+  return groups(tree).flatMap((g) => g.rows.map((r) => r.tab.id));
 }
 
 /** The tab to show after `id` closes: the next one in the list, else the one before. */

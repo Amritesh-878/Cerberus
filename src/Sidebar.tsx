@@ -74,7 +74,8 @@ export function Sidebar(props: {
   onRemoveProject: (id: ProjectId) => void;
   onNewProject: () => void;
   onAccounts: () => void;
-  onFindChat?: () => void;
+  /** Opens the one search over open tabs and every account's chats. */
+  onSearch?: () => void;
   /** Setup is running, so only its own tabs show and nothing here can leave it. */
   locked: boolean;
   /** A project picked on the rail, unfolded and scrolled to; `n` repeats a pick of the same one. */
@@ -83,7 +84,6 @@ export function Sidebar(props: {
   /** Where a tab dragged out of the list goes; absent, rows don't drag. */
   onDragTab?: (id: TabId) => TabDragEvents | undefined;
 }) {
-  const [search, setSearch] = createSignal("");
   const [renaming, setRenaming] = createSignal<TabId>();
   const [folded, setFolded] = createSignal<ReadonlySet<ProjectId>>(new Set());
   const [menu, setMenu] = createSignal<{
@@ -106,17 +106,11 @@ export function Sidebar(props: {
   };
   // Rows kept across rebuilds, so a late save or a search does not reset a rename in progress.
   const listed = createMemo<Group[]>(
-    (previous) =>
-      reuseRows(
-        previous,
-        groups(props.tree, search(), (tab) => accountOf(tab)?.name ?? ""),
-      ),
+    (previous) => reuseRows(previous, groups(props.tree)),
     [],
   );
   const isFolded = (group: Group) =>
-    group.project !== null &&
-    search().trim() === "" &&
-    folded().has(group.project.id);
+    group.project !== null && folded().has(group.project.id);
   const toggle = (id: ProjectId) => {
     const next = new Set(folded());
     if (!next.delete(id)) next.add(id);
@@ -146,16 +140,18 @@ export function Sidebar(props: {
     <aside class="sidebar">
       <Show when={!props.locked}>
         <div class="sidebar-top">
-          <label class="search">
+          <button
+            type="button"
+            class="search search-open"
+            aria-label="Search tabs and chats"
+            title="Search open tabs and every account's chats (Ctrl+Shift+F)"
+            onClick={() => {
+              props.onSearch?.();
+            }}
+          >
             <SearchIcon />
-            <input
-              type="search"
-              placeholder="Search tabs"
-              aria-label="Search tabs"
-              value={search()}
-              onInput={(event) => setSearch(event.currentTarget.value)}
-            />
-          </label>
+            <span>Search tabs and chats</span>
+          </button>
           <Show when={props.onCollapse}>
             <button
               type="button"
@@ -261,9 +257,6 @@ export function Sidebar(props: {
             </section>
           )}
         </Index>
-        <Show when={search().trim() !== "" && listed().length === 0}>
-          <p class="hint tree-empty">No tabs match.</p>
-        </Show>
       </nav>
       <Show when={menu()}>
         {(open) => (
@@ -309,19 +302,6 @@ export function Sidebar(props: {
         >
           <FolderIcon /> New project
         </button>
-        <Show when={props.onFindChat}>
-          <button
-            type="button"
-            class="icon-button"
-            aria-label="Find a chat"
-            title="Find a chat on any account"
-            onClick={() => {
-              props.onFindChat?.();
-            }}
-          >
-            <SearchIcon />
-          </button>
-        </Show>
         <button
           type="button"
           class="icon-button"

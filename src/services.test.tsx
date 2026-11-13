@@ -7,6 +7,7 @@ import {
   devServerDraft,
   overallPhase,
   portOf,
+  presetOf,
   type ServiceRow,
   type ServicesView,
   servicesSummary,
@@ -248,6 +249,14 @@ test("a bad port is refused, and Dev server fills npm run dev", async () => {
 
   expect(input(root, "Name").value).toBe("dev server");
   expect(input(root, "Command").value).toBe("npm run dev");
+  const pressed = () =>
+    [...form.querySelectorAll(".preset")].map((b) =>
+      b.getAttribute("aria-pressed"),
+    );
+  expect(pressed()).toEqual(["false", "true"]);
+  type(input(root, "Command"), "npm run dev -- --port 9");
+  await settle();
+  expect(pressed()).toEqual(["false", "false"]);
 });
 
 test("Edit reads the command from the core and saves the change to that service", async () => {
@@ -385,6 +394,14 @@ test("the helpers behind the form and the rows", () => {
   expect(portOf("8o")).toBeUndefined();
   expect(tunnelDraft(3000, { ...BLANK, name: "mine" }).name).toBe("mine");
   expect(devServerDraft(BLANK).command).toBe("npm run dev");
+  expect(presetOf("cloudflared tunnel --url http://localhost:8080")).toBe(
+    "tunnel",
+  );
+  expect(presetOf("cloudflared tunnel --url http://example.com")).toBe(
+    undefined,
+  );
+  expect(presetOf("npm run dev")).toBe("dev");
+  expect(presetOf("")).toBe(undefined);
   expect(shortUrl("http://localhost:5173/")).toBe("localhost:5173");
   expect(menuItems("crashed")).toEqual(["start", "output", "edit", "remove"]);
   expect(menuItems("restarting")[0]).toBe("stop");

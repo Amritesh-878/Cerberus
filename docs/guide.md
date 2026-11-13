@@ -58,11 +58,12 @@ ends what the app started; on macOS a tab's programs get a hangup when its termi
 
 Drag the sidebar's right edge to resize it, or double-click the edge to reset it.
 
-**Two tabs side by side.** Drag a tab from the sidebar onto the right half of the chat area to show
-it beside the tab on screen; the right half lights up while a drop there would split. Any two tabs
-can share the view. Drag the line between them to resize (the arrow keys move it when it has
-focus), and double-click it for half and half; the share is saved. **Close split** in the bar
-above the two ends it. On a narrow window the two stack instead.
+**Two tabs side by side.** Drag a tab from the sidebar onto either half of the chat area to show
+it on that side of the tab on screen; the half under the pointer lights up. Any two tabs can share
+the view. Drag the line between them to resize (the arrow keys move it when it has focus), and
+double-click it for half and half; the share is saved. **⇄** in the bar above the two swaps their
+sides and keeps the line where it is; **Close split** ends it. On a narrow window the two stack
+instead. Switching windows or pressing a key mid-drag cancels the drag.
 
 The split stays until **Close split** or until either tab closes. Showing another tab or project
 hides it, and showing either of its tabs again brings it back as it was. Messages between accounts
@@ -74,7 +75,7 @@ program the new size once it settles, so Claude Code redraws once at the new wid
 
 ### Collapsing the sidebar
 
-The button beside the search box, or Ctrl+Shift+E (Cmd+Shift+E on macOS), folds the sidebar to a
+The button beside the search box at the top, or Ctrl+Shift+E (Cmd+Shift+E on macOS), folds the sidebar to a
 thin rail: one icon per project (its initials), a dot on a project where a chat is waiting on you,
 and an expand button at the top. Clicking a project's icon opens the sidebar with that project
 unfolded. Collapsed or open is saved in `profiles.json`, and the width it opens to stays as you
@@ -116,7 +117,8 @@ followed. Tracking follows the tab's own account: a `claude` you start with anot
 `CLAUDE_CONFIG_DIR` set in the shell is not followed.
 
 A chat started this way has no Cerberus message helper, so it can't send messages to other
-accounts. The bar above the tab says so and offers **Reopen as Claude tab**, which closes the shell
+accounts. The first time such a chat shows, a popup over the tab says so, with **Reopen as Claude
+tab** and **Not now**; after that the bar above the tab offers the same. Reopening closes the shell
 and that `claude` (asking first while it is working) and starts the same chat again as a Claude
 Code tab, with messages.
 
@@ -138,8 +140,10 @@ Ctrl+/ alone stays with the terminal. The start page lists the main ones.
 
 The panel button at the right of the top bar, or Ctrl+Shift+B (Cmd+Shift+B on macOS), shows the
 tab on screen in cards, and follows you as you switch tabs. Drag its left edge to resize it
-(double-click resets it); click a card's title to fold it. Whether it is open, its width, the
-folded cards, starred skills and dismissed PRs are kept in `profiles.json`.
+(double-click resets it); click a card's title to fold it, and drag a card by its title row to move
+it. **Reset card order**, at the foot of the panel once you have moved one, puts them back. Whether
+it is open, its width, the folded cards, their order, starred skills and dismissed PRs are kept in
+`profiles.json`.
 
 - **Environment:** the tab's account with its email and plan, the tab's folders (a click opens one
   in the file manager; an extra folder shows its branch) and the main folder's git branch. The gear
@@ -147,16 +151,20 @@ folded cards, starred skills and dismissed PRs are kept in `profiles.json`.
 - **Context:** how full the shown chat's context window is, and its model. **Compact** types
   `/compact` into the chat's input; nothing is sent until you press Enter. See Live cards below.
 - **Outputs:** the files the shown chat wrote or edited, newest first, each once, with its folder
-  relative to the tab's. A click shows the file in the file pane (below). The row's **⋯** menu has
+  relative to the tab's. A click shows the file in the file pane (below). The row's **<>** button is
   **Open in VS Code**; without VS Code it opens the file's folder instead, since opening a file the
   chat wrote, such as a script, could run it.
-- **Background tasks:** the chat's background shells and subagents still running, with how long each
-  has run (counted from when Cerberus first saw it, since Claude Code gives no start time), and how
-  many have finished. Claude Code offers no way to stop one from outside the chat, so there is no stop
-  button; ask the chat, or use its own `/tasks`.
-- **Usage:** one row per account with its 5-hour and 7-day plan use and when each resets, from the
-  newest reply of any tab on that account. "Unknown" until a tab on the account gets a reply; an
-  account signed in with an API key never reports one.
+- **Background tasks:** the chat's background shells and subagents, running ones first, then the last
+  20 finished, each by Claude Code's short description (kept in memory only, never the command), its
+  kind, and how long it ran (counted from when Cerberus first saw it, since Claude Code gives no start
+  time). A click types `/tasks` into the chat for you to send, where Claude Code shows the output.
+  There is no stop button: Claude Code offers no way to stop one from outside the chat.
+- **Usage:** one row per account with its 5-hour and 7-day plan use and how long until each resets
+  ("in 2h 10m"; hover for the clock time), from the newest reply of any tab on that account. Bars
+  take the account's colour, turn amber at the warning percentage and red at 100%. The last numbers are kept in the profiles file (numbers
+  and times only), so after a restart they show dimmed with "as of" and the time they came, until a
+  new reply. A window past its reset reads "reset". "Unknown" until a tab on the account has ever
+  had a reply; an account signed in with an API key never reports one.
 - **Changes:** one row per repo among the tab's folders, the main folder's first: lines added and
   removed on the branch since it left the remote's default branch (`origin/HEAD`, else `main` or
   `master`), uncommitted and untracked files included. **Create PR**
@@ -165,7 +173,7 @@ folded cards, starred skills and dismissed PRs are kept in `profiles.json`.
   the diff; it shows only when VS Code's `code` command is on `PATH` (on macOS the app in
   Applications also counts). With the [GitHub CLI](https://cli.github.com) signed in, each repo's
   PRs follow its row, newest first: up to 100 drafts and open PRs, however old, and the newest 100 of any state,
-  five at a time with **Show more**. A PR's **⋯** menu has **Open on GitHub**, **Copy link**, **Dismiss** (hidden until the PR
+  five at a time with **Show more**. A PR row's arrow button opens it on GitHub; its **⋯** menu has **Copy link**, **Dismiss** (hidden until the PR
   changes on GitHub) and, on a draft, **Ready for review**, which asks first and then runs
   `gh pr ready <number>`.
 - **Skills:** the project's `.claude/skills`, the account's `skills` folder, the skills synced
@@ -292,12 +300,16 @@ The state comes from Claude Code's `sessions` file. For a limit, Cerberus reads 
 type and reset time from the chat's last record, and never shows, logs or stores anything else
 from a transcript.
 
-## Finding a chat
+## Finding a tab or a chat
 
-`claude --resume` lists only the chats of the folder you are in, on the account you are on. **Find
-a chat** (Ctrl+Shift+F, Cmd+Shift+F on macOS, or the search button at the foot of the sidebar)
-searches every account's chats at once:
+`claude --resume` lists only the chats of the folder you are in, on the account you are on. The
+search box at the top of the sidebar (or Ctrl+Shift+F, Cmd+Shift+F on macOS) opens one list for
+your open tabs and every account's chats:
 
+- **Open tabs** come first: every tab whose title, project, folder or account holds all the words
+  you typed; with nothing typed, all of them. Enter or a click shows that tab.
+- **Chats** follow. A chat already open in a tab is listed once, as that tab. Ctrl+K is left to the
+  shell, where it deletes to the end of the line.
 - Before you type, it lists every chat, newest first. Each row has the chat's title (its summary,
   else its first message), its account, its folder, and when its last message was.
 - Words match anywhere, in any case: in the title, the folder or the text of what you and Claude
@@ -309,6 +321,8 @@ searches every account's chats at once:
   words, and words with other characters such as a path, must appear as typed. An exact match ranks
   above a typo.
 - A row shows a line around its best match, an exact one before a typo.
+- Paste a chat's id, alone or as `claude --resume <id>`, and the list shows just that chat on
+  whichever account has it, so a resume that failed in a shell tab is one paste away.
 - Arrow keys move, Enter (or a click) opens, Escape closes.
 - **Opening** a chat that is already in a tab switches to that tab. Otherwise a new Claude tab starts
   on the chat's own account, in its recorded folder, inside the project that holds that folder (or a

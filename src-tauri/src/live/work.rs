@@ -11,6 +11,8 @@ use crate::live::event::{Subagent, Task, TaskKind, Tasks, Wrote};
 const MOST_OUTPUTS: usize = 50;
 /// Finished task ids kept so a late list cannot show one as running again.
 const MOST_DONE: usize = 256;
+/// Finished tasks the card lists, newest first.
+const MOST_RECENT: usize = 20;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -30,8 +32,12 @@ pub struct Running {
     pub kind: TaskKind,
     /// `shell`, or the subagent's type.
     pub label: String,
+    /// Claude Code's short summary of it, in memory only.
+    pub description: Option<String>,
     /// Milliseconds since the Unix epoch when Cerberus first saw it; Claude Code gives no start time.
     pub since: u64,
+    /// When it was seen to finish, in the same clock; `None` while it runs.
+    pub ended: Option<u64>,
 }
 
 #[derive(Debug, Default)]
@@ -39,6 +45,7 @@ pub struct Work {
     outputs: VecDeque<(String, u64)>,
     running: BTreeMap<String, Running>,
     done: VecDeque<String>,
+    recent: VecDeque<Running>,
     finished: u32,
 }
 
@@ -59,10 +66,16 @@ impl Work {
             .cloned()
             .collect();
         for id in gone {
-            self.finish(&id);
+            self.finish(&id, tasks.at);
         }
         for task in tasks.tasks.iter().filter(|t| t.running) {
             self.start(task, tasks.at);
+            // A subagent's own start hook has no description; the turn's list fills it in.
+            if let (Some(row), Some(description)) =
+                (self.running.get_mut(&task.id), &task.description)
+            {
+                row.description.get_or_insert_with(|| description.clone());
+            }
         }
     }
 
@@ -73,10 +86,11 @@ impl Work {
                 kind: TaskKind::Subagent,
                 running: true,
                 agent_type: event.agent_type.clone(),
+                description: None,
             };
             self.start(&task, event.at);
         } else {
-            self.finish(&event.id);
+            self.finish(&event.id, event.at);
         }
     }
 
@@ -97,16 +111,22 @@ impl Work {
                 id: task.id.clone(),
                 kind: task.kind,
                 label,
+                description: task.description.clone(),
                 since: at,
+                ended: None,
             },
         );
     }
 
-    fn finish(&mut self, id: &str) {
+    fn finish(&mut self, id: &str, at: u64) {
         if self.done.iter().any(|d| d == id) {
             return;
         }
-        self.running.remove(id);
+        if let Some(mut row) = self.running.remove(id) {
+            row.ended = Some(at.max(row.since));
+            self.recent.push_front(row);
+            self.recent.truncate(MOST_RECENT);
+        }
         self.finished = self.finished.saturating_add(1);
         self.done.push_back(id.to_owned());
         if self.done.len() > MOST_DONE {
@@ -114,12 +134,17 @@ impl Work {
         }
     }
 
-    /// The chat ended, so whatever was running ended with it.
-    pub fn ended(&mut self) {
+    /// The chat ended at `at`, so whatever was running ended with it.
+    pub fn ended(&mut self, at: u64) {
         let ids: Vec<String> = self.running.keys().cloned().collect();
         for id in ids {
-            self.finish(&id);
+            self.finish(&id, at);
         }
+    }
+
+    /// Finished tasks, newest first.
+    pub fn recent(&self) -> Vec<Running> {
+        self.recent.iter().cloned().collect()
     }
 
     pub fn outputs(&self, tab_folder: &Path) -> Vec<Output> {
@@ -183,6 +208,7 @@ mod tests {
             kind,
             running,
             agent_type: (kind == TaskKind::Subagent).then(|| "general-purpose".into()),
+            description: Some(format!("about {id}")),
         }
     }
 
@@ -252,6 +278,42 @@ mod tests {
         work.listed(&listed(30, vec![task("b2", TaskKind::Shell, false)]));
         assert!(work.running().is_empty());
         assert_eq!(work.finished(), 2);
+        let recent = work.recent();
+        let done: Vec<(&str, Option<&str>, u64, Option<u64>)> = recent
+            .iter()
+            .map(|r| (r.id.as_str(), r.description.as_deref(), r.since, r.ended))
+            .collect();
+        assert_eq!(
+            done,
+            [
+                ("b2", Some("about b2"), 20, Some(30)),
+                ("b1", Some("about b1"), 10, Some(30)),
+            ]
+        );
+    }
+
+    #[test]
+    fn only_the_last_twenty_finished_tasks_are_listed_and_a_subagent_gets_its_description_later() {
+        let mut work = Work::default();
+        for i in 0..25 {
+            let id = format!("s{i}");
+            work.listed(&listed(i, vec![task(&id, TaskKind::Shell, true)]));
+            work.listed(&listed(i, vec![]));
+        }
+        assert_eq!(work.recent().len(), MOST_RECENT);
+        assert_eq!(work.recent()[0].id, "s24");
+
+        work.subagent(&Subagent {
+            at: 100,
+            id: "a9".into(),
+            agent_type: None,
+            started: true,
+        });
+        assert_eq!(work.running()[0].description, None);
+        work.listed(&listed(101, vec![task("a9", TaskKind::Subagent, true)]));
+        assert_eq!(work.running()[0].description.as_deref(), Some("about a9"));
+        work.ended(150);
+        assert_eq!(work.recent()[0].ended, Some(150));
     }
 
     #[test]

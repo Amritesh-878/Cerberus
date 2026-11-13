@@ -74,7 +74,7 @@ const OTHER_CHORDS: Chords = [
   ["closeTab", "Ctrl+Shift+W"],
   // Ctrl+B is Claude Code's background-task key, so the panel takes it only with Shift.
   ["panel", "Ctrl+Shift+B"],
-  // Ctrl+F stays with the terminal; Find a chat takes it only with Shift.
+  // Ctrl+F stays with the terminal; the search takes it only with Shift.
   ["findChat", "Ctrl+Shift+F"],
   // Ctrl+E is the end of the line in Claude Code's input, so the sidebar takes it only with Shift.
   ["sidebar", "Ctrl+Shift+E"],
@@ -214,7 +214,7 @@ const SHEET_ROWS: readonly (readonly [Shortcut, string])[] = [
   ["closeTab", "Close tab"],
   ["nextWaiting", "Next chat waiting on you"],
   ["panel", "Show or hide the right panel"],
-  ["findChat", "Find a chat on any account"],
+  ["findChat", "Search tabs and chats"],
   ["sidebar", "Collapse or expand the sidebar"],
   ["shortcuts", "Show or hide this sheet"],
 ];

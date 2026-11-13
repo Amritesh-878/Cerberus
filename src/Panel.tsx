@@ -291,6 +291,8 @@ export function Panel(props: {
               onOpenFile={props.onOpenFile}
             />
             <TasksCard
+              canType={props.canType}
+              onType={props.onType}
               live={props.live.tabs.find((t) => t.tab === props.tab?.id)}
               liveOn={props.profiles.live}
               state={props.state}
@@ -382,6 +384,17 @@ export function Panel(props: {
           </Card>
           <Show when={failed()}>
             {(message) => <p class="panel-error">{message()}</p>}
+          </Show>
+          <Show when={props.state.reordered()}>
+            <button
+              type="button"
+              class="panel-reset"
+              onClick={() => {
+                props.state.resetOrder();
+              }}
+            >
+              Reset card order
+            </button>
           </Show>
         </Show>
       </div>

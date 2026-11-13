@@ -11,6 +11,7 @@ import {
   devServerDraft,
   portOf,
   type ServiceRow,
+  presetOf,
   serviceCommand,
   tunnelDraft,
 } from "./services";
@@ -149,15 +150,17 @@ export function ServiceForm(props: {
             <span>Start from</span>
             <button
               type="button"
-              class="secondary small"
+              class="secondary small preset"
               aria-expanded={asking()}
+              aria-pressed={presetOf(draft().command) === "tunnel"}
               onClick={() => setAsking((now) => !now)}
             >
               cloudflared tunnel
             </button>
             <button
               type="button"
-              class="secondary small"
+              class="secondary small preset"
+              aria-pressed={presetOf(draft().command) === "dev"}
               onClick={() => {
                 setAsking(false);
                 setDraft((now) => devServerDraft(now));

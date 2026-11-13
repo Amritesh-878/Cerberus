@@ -172,6 +172,37 @@ fn an_empty_search_lists_every_accounts_chats_newest_first() {
 }
 
 #[test]
+fn a_pasted_id_finds_that_chat_on_whichever_account_has_it() {
+    let fx = corpus();
+    let finder = ChatFinder::default();
+    let sources = || vec![fx.work.clone(), fx.home.clone()];
+
+    for typed in [
+        THREE.to_owned(),
+        format!("claude --resume {THREE}"),
+        format!("  '{}' ", THREE.to_uppercase()),
+    ] {
+        let chats = search(&finder, sources(), &typed, HashMap::new());
+        let found: Vec<(&str, Option<u32>)> =
+            chats.iter().map(|c| (c.id.as_str(), c.account)).collect();
+        assert_eq!(found, [(THREE, Some(2))], "{typed}");
+    }
+    let missing = "44444444-4444-4444-8444-444444444444";
+    assert!(search(&finder, sources(), missing, HashMap::new()).is_empty());
+}
+
+#[test]
+fn only_an_id_shaped_word_counts_as_an_id() {
+    assert_eq!(
+        session_id_in(&format!("claude --resume {ONE}")).as_deref(),
+        Some(ONE)
+    );
+    assert_eq!(session_id_in("login bug"), None);
+    assert_eq!(session_id_in("11111111-1111-4111-8111"), None);
+    assert_eq!(session_id_in("1111111g-1111-4111-8111-111111111111"), None);
+}
+
+#[test]
 fn words_find_a_chat_on_any_account_with_a_line_around_the_match() {
     let fx = corpus();
     let finder = ChatFinder::default();

@@ -31,11 +31,12 @@ export function SidebarRail(props: {
       <ul class="rail-projects">
         <For each={props.projects}>
           {(project) => (
-            <li>
+            <li classList={{ active: props.active === project.id }}>
               <button
                 type="button"
                 class="rail-project"
                 classList={{ active: props.active === project.id }}
+                aria-current={props.active === project.id ? "true" : undefined}
                 aria-label={
                   props.waiting(project.id)
                     ? `${project.name}, a chat is waiting on you`

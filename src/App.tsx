@@ -55,8 +55,9 @@ import { FindChat } from "./FindChat";
 import { EnvironmentDialog } from "./EnvironmentDialog";
 import { createHandChats } from "./handChat";
 import { HandNote } from "./HandNote";
+import { HandPrompt } from "./HandPrompt";
 import { Home } from "./Home";
-import { AccountDot, MenuIcon, PanelIcon } from "./icons";
+import { AccountDot, MenuIcon, PanelIcon, ProgramIcon } from "./icons";
 import { shortcutFor } from "./keys";
 import { type Launch, NewTab } from "./NewTab";
 import { NoticePopup } from "./NoticePopup";
@@ -86,7 +87,7 @@ import {
 } from "./saved";
 import { Sidebar } from "./Sidebar";
 import { createSavedWidth } from "./savedWidth";
-import { createSplit, dropsToSplit } from "./split";
+import { createSplit, dropSide, type Side as Half } from "./split";
 import { createStatuses } from "./statuses";
 import { setupGaps, type Step, stepFor } from "./steps";
 import { installed, shellChoice, type Tab, tabFor } from "./tab";
@@ -442,31 +443,40 @@ export function App() {
     else console.error("service:", error);
   };
   let stage: HTMLDivElement | undefined;
-  // Set while a tab is dragged out of the sidebar; `over` once it would split on release.
-  const [dropping, setDropping] = createSignal<{ over: boolean }>();
+  // Set while a tab is dragged out of the sidebar; `side` is the half it would land on if released now.
+  const [dropping, setDropping] = createSignal<{ side: Half | undefined }>();
   const overStage = (x: number, y: number) => {
     const area = stage?.getBoundingClientRect();
-    return area !== undefined && dropsToSplit(x, y, area);
+    return area === undefined ? undefined : dropSide(x, y, area);
   };
   // Read on every move and on the drop, so it follows the tab shown right now.
   const dropInto = (id: TabId) => {
     const into = shown();
     return inSetup() || into === id ? undefined : into;
   };
+  // The dragged tab's row, drawn under the pointer while it moves.
+  const [ghost, setGhost] = createSignal<{ id: TabId; x: number; y: number }>();
   const dragTab = (id: TabId): TabDragEvents => {
     return {
       move: (x, y) => {
+        setGhost({ id, x, y });
         setDropping(
-          dropInto(id) === undefined ? undefined : { over: overStage(x, y) },
+          dropInto(id) === undefined ? undefined : { side: overStage(x, y) },
         );
       },
       drop: (x, y) => {
-        setDropping(undefined);
-        const into = dropInto(id);
-        if (into !== undefined && overStage(x, y)) split.open(into, id);
+        batch(() => {
+          setGhost(undefined);
+          setDropping(undefined);
+        });
+        const side = overStage(x, y);
+        if (dropInto(id) !== undefined && side) split.place(id, side);
       },
       cancel: () => {
-        setDropping(undefined);
+        batch(() => {
+          setGhost(undefined);
+          setDropping(undefined);
+        });
       },
     };
   };
@@ -1005,7 +1015,7 @@ export function App() {
                 showPage("accounts");
                 setDrawer(false);
               }}
-              onFindChat={() => {
+              onSearch={() => {
                 setFinding(true);
                 setDrawer(false);
               }}
@@ -1255,6 +1265,25 @@ export function App() {
                   />
                 )}
               </Show>
+              <Show
+                when={(() => {
+                  const id = byHandShown();
+                  return id !== undefined && hands.unasked(id) ? id : undefined;
+                })()}
+                keyed
+              >
+                {(id) => (
+                  <HandPrompt
+                    working={markOf(board(), id)?.kind === "working"}
+                    onReopen={() => {
+                      hands.reopen(id);
+                    }}
+                    onNotNow={() => {
+                      hands.answered(id);
+                    }}
+                  />
+                )}
+              </Show>
               <Show when={split.showing()}>
                 {(pair) => (
                   <div class="split-bar">
@@ -1262,6 +1291,17 @@ export function App() {
                       {tabName(pair()[0]).place} and {tabName(pair()[1]).place}
                     </span>
                     <span class="spacer" />
+                    <button
+                      type="button"
+                      class="secondary icon-only"
+                      aria-label="Swap sides"
+                      title="Swap the left and right tabs"
+                      onClick={() => {
+                        split.swap();
+                      }}
+                    >
+                      ⇄
+                    </button>
                     <button
                       type="button"
                       class="secondary"
@@ -1467,9 +1507,36 @@ export function App() {
                     onDone={splitShare.save}
                   />
                 </Show>
+                <Show when={ghost()}>
+                  {(at) => (
+                    <div
+                      class="drag-ghost"
+                      aria-hidden="true"
+                      style={{
+                        transform: `translate(${String(at().x + 14)}px, ${String(at().y + 10)}px)`,
+                      }}
+                    >
+                      <ProgramIcon
+                        program={
+                          ended().has(at().id)
+                            ? "shell"
+                            : (tabById(at().id)?.launch.program ?? "")
+                        }
+                        size={13}
+                      />
+                      <span>{tabById(at().id)?.title}</span>
+                    </div>
+                  )}
+                </Show>
                 <Show when={dropping()}>
                   {(over) => (
-                    <div class="split-drop" classList={{ over: over().over }}>
+                    <div
+                      class="split-drop"
+                      classList={{
+                        over: over().side !== undefined,
+                        left: over().side === "left",
+                      }}
+                    >
                       <span>Show side by side</span>
                     </div>
                   )}
@@ -1589,6 +1656,22 @@ export function App() {
               <FindChat
                 profiles={loaded()}
                 onOpen={openFound}
+                tabs={tree().tabs.map((tab) => ({
+                  id: tab.id,
+                  title: tab.title,
+                  project:
+                    tree().projects.find((p) => p.id === tab.projectId)?.name ??
+                    "Setup",
+                  folder: tab.launch.spec.cwd,
+                  account: tab.launch.account ? tabName(tab.id).account : null,
+                  accountId: tab.launch.account?.id ?? null,
+                  // An ended chat's tab runs the shell, as its sidebar icon shows.
+                  program: ended().has(tab.id) ? "shell" : tab.launch.program,
+                }))}
+                onSwitch={(id) => {
+                  setFinding(false);
+                  select(id);
+                }}
                 onClose={() => setFinding(false)}
               />
             </Show>

@@ -1,12 +1,19 @@
 import { createSignal, For, onCleanup, Show } from "solid-js";
 
-import { type Account, type Profiles, savedColor } from "./accounts";
+import {
+  type Account,
+  accountColor,
+  type Profiles,
+  savedColor,
+} from "./accounts";
 import { resetText } from "./board";
 import { Card, Note } from "./Cards";
 import { AccountDot } from "./icons";
 import {
-  current,
-  type LiveWindow,
+  meterLevel,
+  untilText,
+  windowState,
+  type WindowState,
   type Meter,
   percentText,
   type TabLive,
@@ -24,23 +31,39 @@ function createClock() {
   return now;
 }
 
-function Bar(props: { used: number; high?: boolean; label: string }) {
+function Bar(props: {
+  used: number;
+  label: string;
+  title?: string;
+  /** The fill's colour; a `warn` or `full` level overrides it. */
+  color?: string;
+  level?: "ok" | "warn" | "full";
+}) {
   return (
     <div
       class="meter"
-      classList={{ high: props.high === true }}
+      title={props.title}
+      classList={{
+        warn: props.level === "warn",
+        full: props.level === "full",
+      }}
       role="meter"
       aria-label={props.label}
       aria-valuemin={0}
       aria-valuemax={100}
       aria-valuenow={Math.round(props.used)}
     >
-      <span style={{ width: `${String(Math.min(100, props.used))}%` }} />
+      <span
+        style={{
+          width: `${String(Math.min(100, props.used))}%`,
+          background: props.level === "ok" ? props.color : undefined,
+        }}
+      />
     </div>
   );
 }
 
-/** The shown chat's context use, and a Compact that types `/compact` for the user to send. */
+/** The shown chat's context use in one row, and a Compact that types `/compact` for the user to send. */
 export function ContextCard(props: {
   live: TabLive | undefined;
   liveOn: boolean;
@@ -49,19 +72,50 @@ export function ContextCard(props: {
   onCompact: () => void;
 }) {
   const context = () => props.live?.context ?? null;
+  // Why there is no meter yet, or nothing when there is one.
+  const why = () => {
+    if (!props.liveOn) return "Live cards are off in Accounts";
+    const live = props.live;
+    if (!live) return "Restart the chat to see its context here";
+    if (live.keptTheirs) {
+      return "Your own status line runs in PowerShell, so this chat can't report here";
+    }
+    return context() === null
+      ? "Shows after the chat's first reply"
+      : undefined;
+  };
   return (
     <Card
       id="context"
       title="Context"
+      fixed
       meta={(() => {
         const used = context();
-        return used === null ? undefined : percentText(used);
+        return used === null || why() !== undefined
+          ? undefined
+          : percentText(used);
       })()}
-      state={props.state}
+      inline={
+        <Show
+          // Wrapped, since a bare 0% would read as false and hide the bar.
+          when={(() => {
+            const used = context();
+            return used === null || why() !== undefined ? undefined : { used };
+          })()}
+        >
+          {(found) => (
+            <Bar
+              used={found().used}
+              label="Context used"
+              title={props.live?.model ?? undefined}
+            />
+          )}
+        </Show>
+      }
       action={
         <button
           type="button"
-          class="card-action text"
+          class="row-button card-compact"
           disabled={!props.canType}
           title={
             props.canType
@@ -75,72 +129,54 @@ export function ContextCard(props: {
           Compact
         </button>
       }
-    >
-      <Show
-        when={props.liveOn}
-        fallback={<Note>Live cards are off in Accounts</Note>}
-      >
-        <Show
-          when={props.live}
-          fallback={<Note>Restart the chat to see its context here</Note>}
-        >
-          {(live) => (
-            <Show
-              when={!live().keptTheirs}
-              fallback={
-                <Note>
-                  Your own status line runs in PowerShell, so this chat can't
-                  report here
-                </Note>
-              }
-            >
-              <Show
-                // Wrapped, since a bare 0% would read as false and hide the bar.
-                when={(() => {
-                  const used = context();
-                  return used === null ? undefined : { used };
-                })()}
-                fallback={<Note>Shows after the chat's first reply</Note>}
-              >
-                {(found) => (
-                  <>
-                    <Bar used={found().used} label="Context used" />
-                    <Show when={live().model}>
-                      {(model) => <p class="card-note faint">{model()}</p>}
-                    </Show>
-                  </>
-                )}
-              </Show>
-            </Show>
-          )}
-        </Show>
-      </Show>
-    </Card>
+      note={why()}
+      state={props.state}
+    />
   );
 }
 
 function WindowLine(props: {
   name: string;
-  window: LiveWindow | null;
-  warnAt?: number;
+  state: WindowState;
+  warnAt: number;
+  color: string;
+  nowS: number;
 }) {
+  const known = () => (props.state.kind === "known" ? props.state : undefined);
   return (
-    <div class="usage-line">
+    <div class="usage-line" classList={{ kept: known()?.asOf != null }}>
       <span class="usage-name">{props.name}</span>
       <Show
-        when={props.window}
-        fallback={<span class="usage-unknown">unknown</span>}
+        when={known()}
+        fallback={
+          <span class="usage-unknown">
+            {props.state.kind === "reset" ? "reset" : "unknown"}
+          </span>
+        }
       >
         {(w) => (
           <>
             <Bar
               used={w().used}
-              high={props.warnAt !== undefined && w().used >= props.warnAt}
-              label={`${props.name} used`}
+              level={meterLevel(w().used, props.warnAt)}
+              color={props.color}
+              label={`${props.name === "5h" ? "5-hour" : "7-day"} used`}
             />
-            <span class="usage-meta">
-              {percentText(w().used)} · resets {resetText(w().resetsAt)}
+            <span
+              class="usage-meta"
+              title={`Resets ${resetText(w().resetsAt)}`}
+            >
+              {/* The account's row already shows the 5-hour use. */}
+              {props.name === "5h" ? "" : `${percentText(w().used)} · `}
+              {untilText(w().resetsAt, props.nowS)}
             </span>
+            <Show when={w().asOf}>
+              {(asOf) => (
+                <span class="usage-asof">
+                  as of {resetText(Math.floor(asOf() / 1000))}
+                </span>
+              )}
+            </Show>
           </>
         )}
       </Show>
@@ -161,7 +197,7 @@ export function UsageCard(props: {
     <Card
       id="usage"
       title="Usage"
-      subtitle="Plan limits, from each account's latest reply"
+      hint="Plan limits from each account's latest reply; an account updates after a reply in one of its tabs"
       state={props.state}
     >
       <Show
@@ -177,15 +213,32 @@ export function UsageCard(props: {
                   color={savedColor(props.profiles, account.id)}
                 />
                 <span class="row-main">{account.name}</span>
+                <span class="usage-top" title="5-hour use">
+                  {(() => {
+                    const five = windowState(meterOf(account)?.fiveHour, now());
+                    return five.kind === "known" ? percentText(five.used) : "";
+                  })()}
+                </span>
               </div>
               <WindowLine
-                name="5-hour"
-                window={current(meterOf(account)?.fiveHour, now())}
+                name="5h"
+                state={windowState(meterOf(account)?.fiveHour, now())}
                 warnAt={props.profiles.warnAt}
+                color={accountColor(
+                  account.id,
+                  savedColor(props.profiles, account.id),
+                )}
+                nowS={now()}
               />
               <WindowLine
-                name="7-day"
-                window={current(meterOf(account)?.sevenDay, now())}
+                name="7d"
+                state={windowState(meterOf(account)?.sevenDay, now())}
+                warnAt={props.profiles.warnAt}
+                color={accountColor(
+                  account.id,
+                  savedColor(props.profiles, account.id),
+                )}
+                nowS={now()}
               />
             </div>
           )}

@@ -21,6 +21,7 @@ import {
   settledResize,
   type SpawnSpec,
 } from "./pty";
+import { endedScreen } from "./endedScreen";
 import { throttle } from "./throttle";
 
 const FIT_INTERVAL_MS = 30;
@@ -32,8 +33,18 @@ const MISSING_NOTICE_MS = 10_000;
 const RESUMING = "Resuming chat…";
 const MISSING = "The saved chat is gone, so this is a new one.";
 const ENDED = "The chat ended. Resume chat is in the tab's menu.";
-const ENDED_LINE =
-  "\r\n\x1b[2m[the chat ended; this tab is now a shell]\x1b[0m\r\n";
+
+/** The rows on screen as text, top to bottom. */
+function visibleLines(term: Terminal): string[] {
+  const buffer = term.buffer.active;
+  const lines: string[] = [];
+  for (let row = 0; row < term.rows; row++) {
+    lines.push(
+      buffer.getLine(buffer.viewportY + row)?.translateToString() ?? "",
+    );
+  }
+  return lines;
+}
 
 function canvasesOf(term: Terminal): HTMLCanvasElement[] {
   return [...(term.element?.querySelectorAll("canvas") ?? [])];
@@ -185,9 +196,13 @@ export function TerminalView(props: {
           exit: (code, ended) => {
             if (disposed) return;
             if (ended) {
-              term.write(ENDED_LINE);
               props.onEnded();
-              session = start(null);
+              // Read once the chat's last bytes are drawn, and start the shell after, so its prompt is never cleared.
+              term.write("", () => {
+                if (disposed) return;
+                term.write(endedScreen(visibleLines(term)));
+                session = start(null);
+              });
               return;
             }
             term.write(

@@ -14,18 +14,21 @@ export function nextPair(
   return [from, to];
 }
 
-/** Whether a tab dropped at (x, y) lands on the right half of the chat area, where it splits with the shown one. */
-export function dropsToSplit(
+export type Side = "left" | "right";
+
+/** Which half of the chat area a tab dropped at (x, y) lands on, to split with the shown one there; outside it, none. */
+export function dropSide(
   x: number,
   y: number,
   area: { left: number; top: number; width: number; height: number },
-): boolean {
-  return (
-    x >= area.left + area.width / 2 &&
+): Side | undefined {
+  const inside =
+    x >= area.left &&
     x <= area.left + area.width &&
     y >= area.top &&
-    y <= area.top + area.height
-  );
+    y <= area.top + area.height;
+  if (!inside) return undefined;
+  return x >= area.left + area.width / 2 ? "right" : "left";
 }
 
 /** Two chats side by side whenever one of them is shown, kept while other tabs show, until closed. */
@@ -50,6 +53,16 @@ export function createSplit(shown: () => TabId | undefined) {
     },
     open: (from: TabId, to: TabId) => {
       if (from !== to) setPair((now) => nextPair(now, from, to));
+    },
+    /** Puts `id` on `side` of the shown tab, as a drop on that half does. */
+    place: (id: TabId, side: Side) => {
+      const into = shown();
+      if (into === undefined || into === id) return;
+      setPair(side === "left" ? [id, into] : [into, id]);
+    },
+    /** Exchanges the halves; the divider stays where it is. */
+    swap: () => {
+      setPair((now) => (now ? [now[1], now[0]] : now));
     },
     close: () => {
       setPair(undefined);

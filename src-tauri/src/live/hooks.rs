@@ -9,6 +9,8 @@ const MOST_NAME: usize = 64;
 const MOST_PATH: usize = 4096;
 /// More running tasks than this in one report is not a real session.
 const MOST_TASKS: usize = 64;
+/// A task's description shows in one row; the rest is Claude Code's own `/tasks` view.
+const MOST_DESCRIPTION: usize = 120;
 
 /// The tools whose `file_path` (or `notebook_path`) is a file the chat wrote.
 const WRITE_TOOLS: [&str; 4] = ["Write", "Edit", "MultiEdit", "NotebookEdit"];
@@ -37,6 +39,9 @@ pub struct Task {
     pub running: bool,
     /// A subagent's type, such as `general-purpose`; a name from settings, not the chat's words.
     pub agent_type: Option<String>,
+    /// Claude Code's short summary, held in memory only and never the command it runs.
+    #[serde(default)]
+    pub description: Option<String>,
 }
 
 /// The session's background tasks as Claude Code listed them when a turn ended.
@@ -91,6 +96,8 @@ struct TaskIn {
     status: Option<String>,
     #[serde(default)]
     agent_type: Option<String>,
+    #[serde(default)]
+    description: Option<String>,
 }
 
 /// The kept fields of one hook input, or `None` when it is not one Cerberus listens to.
@@ -154,6 +161,7 @@ pub fn checked(event: Event) -> Option<Event> {
                 .filter(|task| id_like(&task.id))
                 .map(|task| Task {
                     agent_type: task.agent_type.as_deref().and_then(name_like),
+                    description: task.description.as_deref().and_then(description_like),
                     ..task
                 })
                 .take(MOST_TASKS)
@@ -179,7 +187,21 @@ fn task(found: TaskIn) -> Option<Task> {
         kind,
         running: found.status.as_deref() == Some("running"),
         agent_type: found.agent_type.as_deref().and_then(name_like),
+        description: found.description.as_deref().and_then(description_like),
     })
+}
+
+/// One line of plain text: control characters become spaces, runs of space close up, and it stops at the cap.
+fn description_like(s: &str) -> Option<String> {
+    let line: String = s
+        .chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    let capped: String = line.chars().take(MOST_DESCRIPTION).collect();
+    (!capped.is_empty()).then_some(capped)
 }
 
 fn id_like(s: &str) -> bool {
@@ -232,9 +254,9 @@ pub(crate) mod tests {
         "last_assistant_message": "FAKE-SECRET-reply",
         "background_tasks": [
             {"id": "b2pmf3p7m", "type": "shell", "status": "running",
-             "description": "FAKE-SECRET-desc", "command": "FAKE-SECRET-command --token x"},
+             "description": "Run the\u001b[31m dev\nserver", "command": "FAKE-SECRET-command --token x"},
             {"id": "aec41a0ac0cf62716", "type": "subagent", "status": "running",
-             "description": "FAKE-SECRET-agentdesc", "agent_type": "general-purpose"},
+             "description": "Review the diff", "agent_type": "general-purpose"},
             {"id": "x", "type": "cron", "status": "running"}
         ],
         "session_crons": [{"prompt": "FAKE-SECRET-cron"}]
@@ -274,7 +296,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn a_stop_keeps_each_tasks_id_kind_and_state_only() {
+    fn a_stop_keeps_each_tasks_id_kind_state_and_description_never_its_command() {
         let kept = hook_from(FAKE_STOP.as_bytes(), 9).unwrap();
 
         assert_eq!(
@@ -287,12 +309,14 @@ pub(crate) mod tests {
                         kind: TaskKind::Shell,
                         running: true,
                         agent_type: None,
+                        description: Some("Run the [31m dev server".into()),
                     },
                     Task {
                         id: "aec41a0ac0cf62716".into(),
                         kind: TaskKind::Subagent,
                         running: true,
                         agent_type: Some("general-purpose".into()),
+                        description: Some("Review the diff".into()),
                     },
                 ]
             })

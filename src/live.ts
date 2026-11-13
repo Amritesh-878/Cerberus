@@ -11,6 +11,50 @@ export interface LiveWindow {
   used: number;
   /** Unix seconds. */
   resetsAt: number;
+  /** Past its reset when the core last looked. */
+  reset?: boolean;
+  /** Kept from before this start: when it was reported, in Unix milliseconds. */
+  asOf?: number | null;
+}
+
+/** "in 2h 10m", "in 45m", "in 3d 4h": how long until a window resets. */
+export function untilText(resetsAt: number, nowS: number): string {
+  const minutes = Math.max(0, Math.ceil((resetsAt - nowS) / 60));
+  if (minutes < 1) return "in under a minute";
+  if (minutes < 60) return `in ${String(minutes)}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `in ${String(hours)}h ${String(minutes % 60)}m`;
+  return `in ${String(Math.floor(hours / 24))}d ${String(hours % 24)}h`;
+}
+
+/** How full a window's bar shows: the account's own colour, amber from the warning line, red when spent. */
+export function meterLevel(
+  used: number,
+  warnAt: number,
+): "ok" | "warn" | "full" {
+  if (used >= 100) return "full";
+  return used >= warnAt ? "warn" : "ok";
+}
+
+/** How a usage window reads now: its numbers, reset since (Claude Code starts a new one on the next reply), or nothing known. */
+export type WindowState =
+  | { kind: "unknown" }
+  | { kind: "reset" }
+  | { kind: "known"; used: number; resetsAt: number; asOf: number | null };
+
+export function windowState(
+  window: LiveWindow | null | undefined,
+  nowS: number,
+): WindowState {
+  if (!window) return { kind: "unknown" };
+  if (window.reset === true || window.resetsAt <= nowS)
+    return { kind: "reset" };
+  return {
+    kind: "known",
+    used: window.used,
+    resetsAt: window.resetsAt,
+    asOf: window.asOf ?? null,
+  };
 }
 
 export interface TabLive {
@@ -25,6 +69,8 @@ export interface TabLive {
   outputs: Output[];
   /** Background shells and subagents still running, oldest first. */
   tasks: RunningTask[];
+  /** The last finished ones, newest first. */
+  done: RunningTask[];
   finished: number;
 }
 
@@ -42,8 +88,12 @@ export interface RunningTask {
   kind: "shell" | "subagent";
   /** `shell`, or the subagent's type. */
   label: string;
+  /** Claude Code's short summary of it; never the command. */
+  description: string | null;
   /** Milliseconds since the epoch when Cerberus first saw it. */
   since: number;
+  /** When it finished, in the same clock; null while it runs. */
+  ended: number | null;
 }
 
 /** "45s", "3m 12s", "1h 04m": how long a task has run. */
@@ -117,14 +167,6 @@ export function warningText(
   locale?: string,
 ): string {
   return `${account} is at ${percentText(warning.used)}, resets ${resetText(warning.resetsAt, locale)}`;
-}
-
-/** A window past its reset is over; Claude Code starts a new one on the next reply. */
-export function current(
-  window: LiveWindow | null | undefined,
-  nowS: number,
-): LiveWindow | null {
-  return window && window.resetsAt > nowS ? window : null;
 }
 
 /** The core's latest view, kept current from its `live` events. */

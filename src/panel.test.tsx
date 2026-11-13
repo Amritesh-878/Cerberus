@@ -17,6 +17,7 @@ import {
   settle,
 } from "./harness";
 import { type Changes, type Skill, skillCommand } from "./panelData";
+import { fullOrder, movedCard } from "./panelPrefs";
 import type { SavedTree } from "./saved";
 
 afterEach(cleanup);
@@ -305,9 +306,7 @@ test("the PR row opens through the core, which holds the URL", async () => {
   const root = await renderApp(core.profiles, core.core);
   await open(root, "planner");
 
-  click(card(root, "Changes"), "More for #21");
-  await settle();
-  click(card(root, "Changes"), "Open on GitHub");
+  click(card(root, "Changes"), "Open #21 on GitHub");
   await settle();
 
   const opened = core.calls.filter((c) => c.cmd === "panel_open_pr");
@@ -568,4 +567,70 @@ test("a bridge report re-reads the shown tab's connectors, so cerberus comes and
   await emitEvent("bridge", { pending: [], notes: [] });
   await settle();
   expect(card(root, "Connectors").textContent).not.toContain("cerberus");
+});
+
+test("a dragged order keeps every card once, and a move lands in front of the card asked for", () => {
+  expect(fullOrder(["usage", "context", "usage"]).slice(0, 3)).toEqual([
+    "usage",
+    "context",
+    "environment",
+  ]);
+  expect(fullOrder([]).length).toBe(8);
+  const order = fullOrder([]);
+  expect(movedCard(order, "usage", "context").slice(0, 3)).toEqual([
+    "environment",
+    "usage",
+    "context",
+  ]);
+  expect(movedCard(order, "environment", undefined).at(-1)).toBe("environment");
+});
+
+test("dragging a card's header moves it, saves the order, and Reset card order puts it back", async () => {
+  const core = panelCore(withPanel({ open: true }));
+  const root = await renderApp(core.profiles, core.core);
+  await open(root, "planner");
+  // Stacked 100 px apart in the built-in order, as the panel lays them out.
+  for (const section of root.querySelectorAll<HTMLElement>(
+    ".panel-cards > .card",
+  )) {
+    const top = 100 * Number(section.style.order);
+    section.getBoundingClientRect = () => new DOMRect(0, top, 300, 100);
+  }
+  const head = card(root, "Usage").querySelector<HTMLElement>(".card-head");
+  if (!head) throw new Error("no head");
+  head.setPointerCapture = () => undefined;
+  head.hasPointerCapture = () => false;
+  const at = (type: string, y: number) => {
+    head.dispatchEvent(
+      new PointerEvent(type, {
+        bubbles: true,
+        clientY: y,
+        button: 0,
+        buttons: 1,
+      }),
+    );
+  };
+
+  at("pointerdown", 450);
+  at("pointermove", 140);
+  await settle();
+  expect(card(root, "Context").classList.contains("drop-before")).toBe(true);
+  at("pointerup", 140);
+  card(root, "Usage").querySelector<HTMLButtonElement>(".card-title")?.click();
+  await settle();
+
+  expect(core.saved.at(-1)?.order?.slice(0, 3)).toEqual([
+    "environment",
+    "usage",
+    "context",
+  ]);
+  expect(card(root, "Usage").style.order).toBe("1");
+  // The click that ended the drag didn't fold the card.
+  expect(card(root, "Usage").classList.contains("folded")).toBe(false);
+
+  click(root, "Reset card order");
+  await settle();
+  expect(core.saved.at(-1)?.order).toEqual([]);
+  expect(card(root, "Usage").style.order).toBe("4");
+  expect(root.querySelector(".panel-reset")).toBeNull();
 });

@@ -231,9 +231,14 @@ test("Open on GitHub and Copy link go through the core by number", async () => {
   const root = await renderApp(core.profiles, core.core);
   await open(root, "planner");
 
-  click(await menu(root, 12), "Copy link");
+  const items = [
+    ...(await menu(root, 12)).querySelectorAll('[role="menuitem"]'),
+  ].map((b) => b.textContent.trim());
+  // Open has its own button on the row, so the menu keeps the rest.
+  expect(items).toEqual(["Copy link", "Ready for review…", "Dismiss"]);
+  click(prRow(root, 12), "Copy link");
   await settle();
-  click(await menu(root, 11), "Open on GitHub");
+  click(prRow(root, 11), "Open #11 on GitHub");
   await settle();
 
   const args = (cmd: string) =>

@@ -51,10 +51,8 @@ function sample(): Tree {
   return tree;
 }
 
-const ids = (tree: Tree, search = "") =>
-  groups(tree, search, (t) => t.launch.account?.name ?? "").map((g) =>
-    g.rows.map((r) => (r.sub ? -r.tab.id : r.tab.id)),
-  );
+const ids = (tree: Tree) =>
+  groups(tree).map((g) => g.rows.map((r) => (r.sub ? -r.tab.id : r.tab.id)));
 
 test("a project is named after its folder", () => {
   expect(folderName(String.raw`C:\code\alpha`)).toBe("alpha");
@@ -147,14 +145,6 @@ test("a move that would break the tree is ignored", () => {
   expect(moveTab(tree, 99, null)).toBe(tree);
 });
 
-test("a search keeps the planner of a matching sub-tab and drops empty projects", () => {
-  const tree = renameTab(sample(), 4, "API tests");
-
-  expect(ids(tree, "api")).toEqual([[2, -4]]);
-  expect(ids(tree, "work")).toEqual([[2, -3, -4, 5], [7]]);
-  expect(ids(tree, "nothing")).toEqual([]);
-});
-
 test("setup tabs list first, outside any project", () => {
   const [tree] = addTab(
     sample(),
@@ -162,14 +152,14 @@ test("setup tabs list first, outside any project", () => {
     launch("claude"),
   );
 
-  const listed = groups(tree, "", () => "");
+  const listed = groups(tree);
 
   expect(listed[0]?.project).toBeNull();
   expect(listed[0]?.rows.map((r) => [r.tab.id, r.sub])).toEqual([[8, false]]);
 });
 
 test("the tree line stops at a planner's last sub-tab", () => {
-  const rows = groups(sample(), "", () => "")[0]?.rows ?? [];
+  const rows = groups(sample())[0]?.rows ?? [];
 
   expect(rows.map((r) => [r.tab.id, r.last])).toEqual([
     [2, false],
@@ -199,13 +189,10 @@ test("stepping through tabs follows the sidebar and wraps", () => {
 
 test("a rebuild keeps every row whose tab did not change", () => {
   const tree = sample();
-  const before = groups(tree, "", () => "");
+  const before = groups(tree);
   const renamed = renameTab(tree, 3, "Login form");
 
-  const after = reuseRows(
-    before,
-    groups(renamed, "", () => ""),
-  );
+  const after = reuseRows(before, groups(renamed));
 
   const alpha = after[0]?.rows ?? [];
   expect(alpha.map((r) => r === before[0]?.rows[alpha.indexOf(r)])).toEqual([
@@ -219,12 +206,9 @@ test("a rebuild keeps every row whose tab did not change", () => {
 
 test("a rebuild with nothing changed returns the same groups", () => {
   const tree = sample();
-  const before = groups(tree, "", () => "");
+  const before = groups(tree);
 
-  const after = reuseRows(
-    before,
-    groups(tree, "", () => "x"),
-  );
+  const after = reuseRows(before, groups(tree));
 
   expect(after.every((g, i) => g === before[i])).toBe(true);
 });

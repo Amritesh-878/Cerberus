@@ -114,11 +114,19 @@ impl ChatFinder {
     ) -> u64 {
         let search = self.current.fetch_add(1, Ordering::AcqRel) + 1;
         let finder = self.clone();
-        let query = Query::new(text);
+        // A pasted id, alone or in `claude --resume <id>`, finds that chat on whichever account has it.
+        let wanted = session_id_in(text);
+        let query = Query::new(if wanted.is_some() { "" } else { text });
         let send = Arc::new(send);
         let sender = Arc::clone(&send);
         let started = thread::Builder::new().spawn(move || {
-            finder.run(search, &sources, &query, &open, &*sender);
+            finder.run(
+                search,
+                &sources,
+                (&query, wanted.as_deref()),
+                &open,
+                &*sender,
+            );
         });
         if started.is_err() {
             send(Batch::Done {
@@ -139,12 +147,19 @@ impl ChatFinder {
         &self,
         search: u64,
         sources: &[Source],
-        query: &Query,
+        (query, wanted): (&Query, Option<&str>),
         open: &HashMap<String, TabId>,
         send: &dyn Fn(Batch),
     ) {
         let cancelled = || self.current.load(Ordering::Acquire) != search;
         let mut files = list(sources);
+        if let Some(wanted) = wanted {
+            files.retain(|(path, _, _)| {
+                path.file_stem()
+                    .and_then(|s| s.to_str())
+                    .is_some_and(|id| id.eq_ignore_ascii_case(wanted))
+            });
+        }
         // Newest first, so the chats most likely wanted show before the rest are read.
         files.sort_by_key(|f| std::cmp::Reverse(f.2.modified));
         let mut folders: HashMap<String, bool> = HashMap::new();
@@ -238,6 +253,21 @@ impl ChatFinder {
         let found = read(&bytes, query, cancelled)?;
         found.matched.then_some((listed, found.rank, found.snippet))
     }
+}
+
+/// The first chat id in `text`, shaped as Claude Code writes them (8-4-4-4-12 hex digits), lower-cased.
+pub fn session_id_in(text: &str) -> Option<String> {
+    let shaped = |word: &str| {
+        let parts: Vec<&str> = word.split('-').collect();
+        parts.len() == 5
+            && parts
+                .iter()
+                .zip([8, 4, 4, 4, 12])
+                .all(|(part, len)| part.len() == len && part.chars().all(|c| c.is_ascii_hexdigit()))
+    };
+    text.split(|c: char| c.is_whitespace() || matches!(c, '"' | '\'' | '`' | '=' | ',' | ';'))
+        .find(|word| shaped(word))
+        .map(str::to_ascii_lowercase)
 }
 
 /// Every `projects/<folder>/<id>.jsonl` of every source, with its account and stamp.

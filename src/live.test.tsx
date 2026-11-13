@@ -13,7 +13,14 @@ import {
   SAVED,
   settle,
 } from "./harness";
-import { current, elapsedText, type LiveView, warningText } from "./live";
+import {
+  elapsedText,
+  type LiveView,
+  meterLevel,
+  untilText,
+  warningText,
+  windowState,
+} from "./live";
 import type { SavedTree } from "./saved";
 
 const desktop = vi.hoisted(() => ({ sent: [] as unknown[] }));
@@ -105,6 +112,7 @@ const VIEW: LiveView = {
       keptTheirs: false,
       outputs: [],
       tasks: [],
+      done: [],
       finished: 0,
     },
   ],
@@ -153,8 +161,43 @@ test("the context card shows the shown chat's use, and Compact types /compact wi
   expect(context.querySelector(".meter")?.getAttribute("aria-valuenow")).toBe(
     "43",
   );
-  expect(context.textContent).toContain("Opus 5.5");
+  expect(context.querySelector(".meter")?.getAttribute("title")).toBe(
+    "Opus 5.5",
+  );
+  // One row: the title, the meter, the percentage and Compact, with nothing to fold.
+  expect(context.textContent).toBe("Context43%Compact");
+  expect(context.querySelector(".card-body")).toBeNull();
+  expect(context.querySelector("[aria-expanded]")).toBeNull();
+  expect(context.querySelector(".card-compact")).not.toBeNull();
   expect(live.writes).toEqual(["/compact"]);
+});
+
+test("usage kept from before a restart shows dimmed with its time, and a reset window says so", async () => {
+  const live = liveCore();
+  const root = await renderApp(live.profiles, live.core);
+  await open(root, "planner");
+  await emitEvent("live", {
+    ...VIEW,
+    meters: [
+      {
+        account: 1,
+        fiveHour: { used: 30, resetsAt: RESET, asOf: Date.now() - 600_000 },
+        sevenDay: { used: 41, resetsAt: 1, reset: true },
+      },
+    ],
+  });
+  await settle();
+
+  const work = card(root, "Usage").querySelector(
+    ".usage-account + .usage-account",
+  );
+  const lines = [...(work?.querySelectorAll(".usage-line") ?? [])];
+  expect(lines[0]?.classList.contains("kept")).toBe(true);
+  expect(lines[0]?.textContent).toMatch(/5hin .+as of .+$/);
+  expect(lines[1]?.textContent).toBe("7dreset");
+  expect(
+    card(root, "Usage").querySelector(".card-title")?.getAttribute("title"),
+  ).toContain("an account updates after a reply in one of its tabs");
 });
 
 test("usage has a row per account, unknown until one of its tabs reports", async () => {
@@ -168,13 +211,21 @@ test("usage has a row per account, unknown until one of its tabs reports", async
     ...card(root, "Usage").querySelectorAll<HTMLElement>(".usage-account"),
   ].map((row) => row.textContent);
 
-  expect(rows[0]).toBe("personal5-hourunknown7-dayunknown");
-  expect(rows[1]).toMatch(/^work5-hour87% · resets .+7-day41% · resets .+$/);
+  expect(rows[0]).toBe("personal5hunknown7dunknown");
+  expect(rows[1]).toMatch(/^work87%5hin \d+d \d+h7d41% · in .+$/);
+  const work = card(root, "Usage").querySelector(
+    ".usage-account + .usage-account",
+  );
+  // 87% is past the 85% warning, so the 5-hour bar turns amber; the 7-day keeps the account's colour.
+  const bars = [...(work?.querySelectorAll(".meter") ?? [])];
+  expect(bars[0]?.classList.contains("warn")).toBe(true);
+  expect(bars[1]?.classList.contains("warn")).toBe(false);
   expect(
-    card(root, "Usage")
-      .querySelector(".usage-account + .usage-account .meter")
-      ?.classList.contains("high"),
-  ).toBe(true);
+    (bars[1]?.firstElementChild as HTMLElement | null)?.style.background,
+  ).not.toBe("");
+  expect(work?.querySelector(".usage-meta")?.getAttribute("title")).toMatch(
+    /^Resets /,
+  );
 });
 
 test("a warning offers Continue on, which only opens the usual confirm, and Dismiss tells the core", async () => {
@@ -287,14 +338,16 @@ test("the outputs card lists written files, and its menu opens one through the c
 
   const rows = [...card(root, "Outputs").querySelectorAll(".card-row")];
   expect(rows.map((r) => r.textContent)).toEqual(["app.tssrc", "readme.md"]);
-  rows[0]?.querySelector<HTMLButtonElement>('[aria-haspopup="menu"]')?.click();
-  await settle();
-  click(root, "Open in VS Code");
+  // One action needs no menu: the row's own button opens the file in VS Code.
+  expect(
+    card(root, "Outputs").querySelector('[aria-haspopup="menu"]'),
+  ).toBeNull();
+  click(card(root, "Outputs"), "Open app.ts in VS Code");
   await settle();
   expect(opened).toEqual([{ tab: 3, path: APP_PATH }]);
 });
 
-test("the tasks card shows what runs and for how long, a finished count, and no stop button", async () => {
+test("the tasks card lists running then finished tasks by description, and a click types /tasks", async () => {
   const live = liveCore();
   const root = await renderApp(live.profiles, live.core);
   await open(root, "planner");
@@ -305,8 +358,32 @@ test("the tasks card shows what runs and for how long, a finished count, and no 
       {
         ...VIEW.tabs[0],
         tasks: [
-          { id: "b1", kind: "shell", label: "shell", since },
-          { id: "a1", kind: "subagent", label: "general-purpose", since },
+          {
+            id: "b1",
+            kind: "shell",
+            label: "shell",
+            description: "Run the dev server",
+            since,
+            ended: null,
+          },
+          {
+            id: "a1",
+            kind: "subagent",
+            label: "general-purpose",
+            description: null,
+            since,
+            ended: null,
+          },
+        ],
+        done: [
+          {
+            id: "b0",
+            kind: "shell",
+            label: "shell",
+            description: "Build the app",
+            since: 1_000,
+            ended: 63_000,
+          },
         ],
         finished: 3,
       },
@@ -316,13 +393,19 @@ test("the tasks card shows what runs and for how long, a finished count, and no 
 
   const tasks = card(root, "Background tasks");
   expect(tasks.querySelector(".card-meta")?.textContent).toBe("2 running");
-  const rows = [...tasks.querySelectorAll(".card-row")].map(
+  const rows = [...tasks.querySelectorAll(".task-row")].map(
     (r) => r.textContent,
   );
-  expect(rows[0]).toMatch(/^shell1m 1[4-6]s$/);
-  expect(rows[1]).toMatch(/^general-purposesubagent1m 1[4-6]s$/);
-  expect(tasks.textContent).toContain("3 finished");
-  expect(tasks.querySelector("button:not(.card-title)")).toBeNull();
+  expect(rows[0]).toMatch(
+    /^general-purposesubagent · general-purpose · running1m 1[4-6]s$/,
+  );
+  expect(rows[1]).toMatch(/^Run the dev servershell · running1m 1[4-6]s$/);
+  expect(rows[2]).toBe("Build the appshell · done1m 02s");
+  expect(tasks.textContent).toContain("3 finished in all");
+
+  click(tasks, "Build the appshell · done1m 02s");
+  await settle();
+  expect(live.writes).toEqual(["/tasks"]);
 });
 
 test("the warning text, elapsed time and a window past its reset", () => {
@@ -333,7 +416,22 @@ test("the warning text, elapsed time and a window past its reset", () => {
   expect(warningText("work", { used: 86.6, resetsAt: 0 }, "en-US")).toMatch(
     /^work is at 87%, resets \d{1,2}:\d{2}(am|pm)$/,
   );
-  expect(current({ used: 50, resetsAt: 100 }, 99)).not.toBeNull();
-  expect(current({ used: 50, resetsAt: 100 }, 100)).toBeNull();
-  expect(current(null, 0)).toBeNull();
+  expect(windowState({ used: 50, resetsAt: 100 }, 99)).toEqual({
+    kind: "known",
+    used: 50,
+    resetsAt: 100,
+    asOf: null,
+  });
+  expect(windowState({ used: 50, resetsAt: 100 }, 100).kind).toBe("reset");
+  expect(windowState({ used: 50, resetsAt: 200, reset: true }, 100).kind).toBe(
+    "reset",
+  );
+  expect(windowState(null, 0).kind).toBe("unknown");
+  expect(untilText(10_000 + 2 * 3600 + 10 * 60, 10_000)).toBe("in 2h 10m");
+  expect(untilText(10_000 + 45 * 60, 10_000)).toBe("in 45m");
+  expect(untilText(10_000 + 3 * 86_400 + 4 * 3600, 10_000)).toBe("in 3d 4h");
+  expect(untilText(10_000, 10_000)).toBe("in under a minute");
+  expect(meterLevel(84.9, 85)).toBe("ok");
+  expect(meterLevel(85, 85)).toBe("warn");
+  expect(meterLevel(100, 85)).toBe("full");
 });
