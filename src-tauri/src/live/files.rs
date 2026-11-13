@@ -69,7 +69,8 @@ pub fn view(path: &Path, head: impl FnOnce(&Path) -> Option<Vec<u8>>) -> FileVie
     FileView::Text { text, base }
 }
 
-fn is_private(path: &Path) -> bool {
+/// `.credentials.json` and `history.jsonl` in any case; callers check the resolved path too, so a link is caught.
+pub fn is_private(path: &Path) -> bool {
     path.file_name()
         .and_then(|name| name.to_str())
         .is_some_and(|name| PRIVATE.iter().any(|p| name.eq_ignore_ascii_case(p)))

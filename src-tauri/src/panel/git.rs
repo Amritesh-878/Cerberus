@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
+use crate::live::files::is_private;
 use crate::run::run;
 
 const TIMEOUT: Duration = Duration::from_secs(5);
@@ -235,7 +236,15 @@ fn numstat(diff: &str) -> (u64, u64) {
 
 // Binary and oversized files count as none, as git's own numstat counts binaries.
 fn text_lines(path: &Path) -> u64 {
-    let Ok(file) = File::open(path) else {
+    // Opened through the resolved path, so the file checked is the file read.
+    let Ok(real) = std::fs::canonicalize(path) else {
+        return 0;
+    };
+    // Never opened, not even to count lines, as in the file pane.
+    if is_private(path) || is_private(&real) {
+        return 0;
+    }
+    let Ok(file) = File::open(&real) else {
         return 0;
     };
     if file
@@ -397,6 +406,20 @@ mod tests {
         assert_eq!(repo.branch.as_deref(), Some("main"));
         assert_eq!(repo.base, None);
         assert_eq!((repo.added, repo.removed), (4, 0));
+    }
+
+    #[test]
+    fn an_untracked_credentials_or_history_file_is_never_counted() {
+        let dir = TestDir::new();
+        sh(dir.path(), &["init", "-q"]);
+        fs::write(dir.path().join("a.txt"), lines(2, "a")).unwrap();
+        fs::write(dir.path().join(".credentials.json"), lines(5, "c")).unwrap();
+        fs::create_dir(dir.path().join("old")).unwrap();
+        fs::write(dir.path().join("old").join("History.JSONL"), lines(7, "h")).unwrap();
+
+        let repo = git().repo(dir.path()).unwrap();
+
+        assert_eq!((repo.added, repo.removed), (2, 0));
     }
 
     #[test]
