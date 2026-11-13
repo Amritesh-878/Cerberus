@@ -40,6 +40,7 @@ pub enum PtyError {
     NotFound(String),
     #[error("folder not found: {0}")]
     NoSuchDir(String),
+    #[cfg(windows)]
     #[error("{0} runs through cmd, which cannot pass an argument holding a quote or a line break")]
     BatchArgument(String),
     #[error("could not start {program}: {reason}")]
