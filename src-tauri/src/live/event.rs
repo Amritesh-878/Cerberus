@@ -7,8 +7,8 @@ pub use crate::live::hooks::{Subagent, Task, TaskKind, Tasks, Wrote};
 
 /// A status line input is a few KiB; anything far larger is not one.
 pub const MOST_INPUT: usize = 1024 * 1024;
-/// One event line from the helper, token and fields included.
-pub const MOST_LINE: u64 = 4 * 1024;
+/// One event line from the helper, token and fields included; the largest checked event is about 45 KiB.
+pub const MOST_LINE: u64 = 64 * 1024;
 const MOST_SESSION: usize = 128;
 const MOST_MODEL: usize = 64;
 // Unix seconds past this are milliseconds or garbage, not a reset time.

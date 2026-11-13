@@ -231,6 +231,40 @@ fn path_like(s: &str) -> bool {
 pub(crate) mod tests {
     use super::*;
 
+    #[test]
+    fn the_largest_tasks_or_wrote_event_fits_in_one_line() {
+        let fits = |event: Event| {
+            let line = crate::live::event::Line {
+                token: "f".repeat(64),
+                event: checked(event).unwrap(),
+            };
+            let bytes = serde_json::to_string(&line).unwrap().len();
+            assert!(
+                u64::try_from(bytes).unwrap() <= crate::live::event::MOST_LINE,
+                "{bytes} bytes"
+            );
+        };
+        // Four UTF-8 bytes per character is the most a description can cost.
+        let task = |n: usize| Task {
+            id: format!("{n:0>64}"),
+            kind: TaskKind::Subagent,
+            running: true,
+            agent_type: Some("a".repeat(MOST_NAME)),
+            description: Some("\u{1F600}".repeat(MOST_DESCRIPTION)),
+        };
+
+        fits(Event::Tasks(Tasks {
+            at: u64::MAX,
+            tasks: (0..MOST_TASKS).map(task).collect(),
+        }));
+        // Each backslash doubles in JSON.
+        fits(Event::Wrote(Wrote {
+            at: u64::MAX,
+            tool: "NotebookEdit".to_owned(),
+            path: format!(r"C:\{}", r"\".repeat(MOST_PATH - 3)),
+        }));
+    }
+
     /// Shaped like 2.1.319's PostToolUse for Write, with fake secrets everywhere but the kept fields.
     pub const FAKE_WRITE: &str = r#"{
         "session_id": "747dc9d6-05c0-4623-aa7a-06d23f871b07",
