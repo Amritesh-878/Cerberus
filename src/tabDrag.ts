@@ -10,19 +10,59 @@ const DRAG_START_PX = 6;
 
 type Press = PointerEvent & { currentTarget: HTMLElement };
 
+// Another window taking focus (a snipping tool, Alt+Tab) can swallow the release, so these end a drag too.
+const ABANDON_EVENTS = [
+  "blur",
+  "keydown",
+  "visibilitychange",
+  "pointermove",
+  "mousemove",
+  "dragend",
+  "drop",
+] as const;
+
 /** Pointer handlers for a tab's row, with pointer events since the webview's own drag and drop is the window's on Windows; `events` absent, the row doesn't drag. */
 export function tabDrag() {
   let start: { pointer: number; x: number; y: number } | undefined;
-  let dragging = false;
+  let held: { row: HTMLElement; events: TabDragEvents } | undefined;
   // A drop ends with a click on the row, which must not select the dragged tab.
   let swallowClick = false;
-  const end = (event: Press) => {
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
+  let unwatch = () => {};
+
+  const end = (row: HTMLElement, pointer: number) => {
+    if (row.hasPointerCapture(pointer)) row.releasePointerCapture(pointer);
     start = undefined;
-    dragging = false;
+    held = undefined;
+    unwatch();
   };
+  // Ends a drag whose release never came, so the chat area's drop overlay goes with it.
+  const abandon = () => {
+    const pointer = start?.pointer;
+    const was = held;
+    if (pointer === undefined || !was) return;
+    end(was.row, pointer);
+    was.events.cancel();
+  };
+  const watch = () => {
+    const check = (event: Event) => {
+      // A move with no button held means the release happened where this window couldn't see it.
+      if (event instanceof MouseEvent && event.buttons !== 0) return;
+      if (event.type === "visibilitychange" && !document.hidden) return;
+      abandon();
+    };
+    for (const type of ABANDON_EVENTS) {
+      const target = type === "visibilitychange" ? document : window;
+      target.addEventListener(type, check, true);
+    }
+    unwatch = () => {
+      for (const type of ABANDON_EVENTS) {
+        const target = type === "visibilitychange" ? document : window;
+        target.removeEventListener(type, check, true);
+      }
+      unwatch = () => {};
+    };
+  };
+
   return {
     onPointerDown: (event: Press) => {
       swallowClick = false;
@@ -35,27 +75,35 @@ export function tabDrag() {
     },
     onPointerMove: (event: Press, events: TabDragEvents | undefined) => {
       if (event.pointerId !== start?.pointer) return;
-      if (!dragging) {
+      if (event.buttons === 0) {
+        if (held) abandon();
+        else end(event.currentTarget, event.pointerId);
+        return;
+      }
+      if (!held) {
         const far =
           Math.hypot(event.clientX - start.x, event.clientY - start.y) >=
           DRAG_START_PX;
         if (!far || !events) return;
-        dragging = true;
+        held = { row: event.currentTarget, events };
+        watch();
       }
       events?.move(event.clientX, event.clientY);
     },
     onPointerUp: (event: Press, events: TabDragEvents | undefined) => {
       if (event.pointerId !== start?.pointer) return;
-      if (dragging) {
+      const dragged = held !== undefined;
+      end(event.currentTarget, event.pointerId);
+      if (dragged) {
         swallowClick = true;
         events?.drop(event.clientX, event.clientY);
       }
-      end(event);
     },
     onPointerCancel: (event: Press, events: TabDragEvents | undefined) => {
       if (event.pointerId !== start?.pointer) return;
-      if (dragging) events?.cancel();
-      end(event);
+      const dragged = held !== undefined;
+      end(event.currentTarget, event.pointerId);
+      if (dragged) events?.cancel();
     },
     /** True once after a drop, for the click that follows it. */
     swallowClick: () => {

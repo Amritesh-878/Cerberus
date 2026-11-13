@@ -71,14 +71,22 @@ async function dragTo(
   title: string,
   x: number,
   y: number,
+  interrupt?: () => void,
 ): Promise<string | undefined> {
   const handle = row(root, title).querySelector<HTMLElement>(".tab-select");
   if (!handle) throw new Error("no handle");
   handle.setPointerCapture = () => undefined;
   handle.hasPointerCapture = () => false;
   const at = (type: string, clientX: number, clientY: number) => {
+    const buttons = type === "pointerup" ? 0 : 1;
     handle.dispatchEvent(
-      new PointerEvent(type, { bubbles: true, clientX, clientY, button: 0 }),
+      new PointerEvent(type, {
+        bubbles: true,
+        clientX,
+        clientY,
+        button: 0,
+        buttons,
+      }),
     );
   };
   at("pointerdown", 40, 100);
@@ -86,6 +94,11 @@ async function dragTo(
   at("pointermove", x, y);
   await settle();
   const hint = root.querySelector(".split-drop")?.className;
+  if (interrupt) {
+    interrupt();
+    await settle();
+    return root.querySelector(".split-drop")?.className;
+  }
   at("pointerup", x, y);
   handle.click();
   await settle();
@@ -107,6 +120,34 @@ test("a tab dragged onto the right half of the chat opens beside the shown tab",
   // The dragged tab's program started, so its half is not blank.
   expect(app.pty.spawned.map((s) => field(s, "tab"))).toEqual([3, 6]);
 });
+
+test.each([
+  [
+    "another window takes focus",
+    () => window.dispatchEvent(new FocusEvent("blur")),
+  ],
+  [
+    "Escape is pressed",
+    () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })),
+  ],
+  [
+    "the mouse comes back with no button held",
+    () => window.dispatchEvent(new MouseEvent("mousemove", { buttons: 0 })),
+  ],
+])(
+  "the split overlay clears and opens nothing when %s mid-drag",
+  async (_name, interrupt) => {
+    const app = core();
+    const root = await renderApp(() => SAVED, app.core);
+    await open(root, "planner");
+    layOut(root);
+
+    expect(await dragTo(root, "shell", 800, 300, interrupt)).toBeUndefined();
+
+    expect(root.querySelector(".split-bar")).toBeNull();
+    expect(views(root)).toEqual(["shown"]);
+  },
+);
 
 test("a tab dropped on the left half or outside the chat opens no split", async () => {
   const root = await renderApp(() => SAVED, core().core);

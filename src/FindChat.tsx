@@ -1,5 +1,6 @@
 import { createSignal, For, onCleanup, onMount, Show, untrack } from "solid-js";
 
+import { backdropDismiss } from "./backdrop";
 import { pickFolder, type Profiles, savedColor } from "./accounts";
 import {
   closeFind,
@@ -138,9 +139,9 @@ export function FindChat(props: {
   return (
     <div
       class="sheet-backdrop"
-      onClick={(event) => {
-        if (event.target === event.currentTarget) props.onClose();
-      }}
+      {...backdropDismiss(() => {
+        props.onClose();
+      })}
     >
       <div
         class="sheet find-chat"

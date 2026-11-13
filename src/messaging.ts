@@ -13,9 +13,18 @@ export interface PendingMessage {
 /** `prefillOnly`: approved messages are typed into the tab for the user to send; `off`: its helper never started or ended. */
 export type MessagesNote = "prefillOnly" | "off";
 
+/** Why a tab's messages are prefill only, as the core found it. */
+export type NoteWhy = "platform" | "noInbox" | "version";
+
+export interface TabNote {
+  tab: number;
+  note: MessagesNote;
+  why?: NoteWhy | null;
+}
+
 export interface BridgeSnapshot {
   pending: PendingMessage[];
-  notes: { tab: number; note: MessagesNote }[];
+  notes: TabNote[];
   /** Recent messages dropped because the chat that sent them is gone. */
   senderGone: number[];
 }
@@ -43,19 +52,28 @@ export function discard(id: number): Promise<void> {
   return invoke("bridge_discard", { id });
 }
 
-export const NOTE_TEXT: Record<MessagesNote, { label: string; title: string }> =
-  {
-    prefillOnly: {
-      label: "messages: prefill only",
-      title:
-        "Approved messages are typed into this tab's input for you to send, since its Claude Code can't take them directly.",
-    },
-    off: {
-      label: "messages off",
-      title:
-        "This tab's message helper didn't start or has ended, so it can't send or receive messages between accounts.",
-    },
-  };
+const LABELS: Record<MessagesNote, string> = {
+  prefillOnly: "messages: prefill only",
+  off: "messages off",
+};
+
+const TYPED_IN =
+  "Approved messages are typed into this tab's input for you to send";
+
+const TITLES: Record<NoteWhy | "off" | "unknown", string> = {
+  platform: `${TYPED_IN}. Delivering them straight to the chat is checked on Windows only so far.`,
+  noInbox: `${TYPED_IN}, since this tab's Claude Code reported no inbox of its own.`,
+  version: `${TYPED_IN}, since this tab's Claude Code is older than 2.1.317 or uses an inbox format Cerberus doesn't know. Updating Claude Code and reopening the tab usually fixes it.`,
+  unknown: `${TYPED_IN}, since its Claude Code can't take them directly.`,
+  off: "This tab's message helper didn't start or has ended, so it can't send or receive messages between accounts.",
+};
+
+/** The note's label and the tooltip that says why, in plain words. */
+export function noteText(note: TabNote): { label: string; title: string } {
+  const title =
+    note.note === "off" ? TITLES.off : TITLES[note.why ?? "unknown"];
+  return { label: LABELS[note.note], title };
+}
 
 /** The core's waiting messages and tab notes, kept current from its `bridge` event. */
 export function createMessaging() {
@@ -92,9 +110,9 @@ export function createMessaging() {
     snapshot,
     pending: () => snapshot().pending,
     senderGone: () => snapshot().senderGone,
-    note: (tab: number | undefined): MessagesNote | undefined =>
+    note: (tab: number | undefined): TabNote | undefined =>
       tab === undefined
         ? undefined
-        : snapshot().notes.find((n) => n.tab === tab)?.note,
+        : snapshot().notes.find((n) => n.tab === tab),
   };
 }

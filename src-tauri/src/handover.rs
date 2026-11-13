@@ -13,6 +13,9 @@ use crate::sessions::procs::Probes;
 // Long enough for a closed tab's `claude` to finish exiting, short enough to answer a click.
 const EXIT_WAIT: Duration = Duration::from_secs(5);
 const TREE_POLL: Duration = Duration::from_millis(100);
+// A chat's own background shells and servers get this long to end with it before they are ended.
+const LEFT_GRACE: Duration = Duration::from_millis(1500);
+const WATCHER_POLL: Duration = Duration::from_millis(20);
 
 #[derive(Debug, thiserror::Error)]
 pub enum ContinueError {
@@ -30,6 +33,8 @@ pub enum ContinueError {
     NoChat,
     #[error("{0} is signed out; sign it in from Accounts first")]
     SignedOut(String),
+    #[error("the move stopped before it finished")]
+    Stopped,
     #[error(transparent)]
     Accounts(#[from] AccountsError),
     #[error(transparent)]
@@ -47,8 +52,8 @@ struct TabProcs {
     live: usize,
     /// Counts every start, so a program that came and went while a move waited is still noticed.
     starts: u64,
-    /// The tab's last program, kept after it exits so anything it left running can be waited for.
-    root: Option<u32>,
+    /// The tab's last program and when it started (Unix milliseconds), kept after it exits so anything it left running can be waited for.
+    root: Option<(u32, u64)>,
     watchers: Vec<JoinHandle<()>>,
 }
 
@@ -97,8 +102,8 @@ impl RunningTabs {
         procs.starts += 1;
     }
 
-    pub fn spawned(&self, tab: TabId, pid: u32) {
-        lock(&self.tabs).entry(tab).or_default().root = Some(pid);
+    pub fn spawned(&self, tab: TabId, pid: u32, started_ms: u64) {
+        lock(&self.tabs).entry(tab).or_default().root = Some((pid, started_ms));
     }
 
     pub fn watching(&self, tab: TabId, watcher: JoinHandle<()>) {
@@ -142,21 +147,46 @@ impl RunningTabs {
         let starts = procs.starts;
         let watchers = std::mem::take(&mut procs.watchers);
         drop(tabs);
+        let keep = |watchers: Vec<JoinHandle<()>>| {
+            lock(&self.tabs)
+                .entry(tab)
+                .or_default()
+                .watchers
+                .extend(watchers);
+        };
         // A wrapper such as `claude.cmd` can exit while the `claude` it started is still writing.
-        if let Some(root) = root {
-            while !(self.probes.below)(root).is_empty() {
+        if let Some((root, since)) = root {
+            // The chat was stopped before it could end its own background shells, so after a grace they are ended for it.
+            let grace = Instant::now() + LEFT_GRACE.min(wait / 2);
+            let mut stopped = false;
+            loop {
+                let left = (self.probes.below)(root);
+                if left.is_empty() {
+                    break;
+                }
+                // The root exited, so a process holding its pid now is another program, whose children are not this chat's.
+                if !stopped && Instant::now() >= grace && !(self.probes.is_running)(root) {
+                    left.into_iter()
+                        .for_each(|pid| (self.probes.stop)(pid, since));
+                    stopped = true;
+                    // Looked at again at once, since a stopped process is usually gone already.
+                    continue;
+                }
                 if Instant::now() >= deadline {
-                    lock(&self.tabs)
-                        .entry(tab)
-                        .or_default()
-                        .watchers
-                        .extend(watchers);
+                    keep(watchers);
                     return false;
                 }
                 thread::sleep(TREE_POLL);
             }
         }
-        // A watcher's last poll could still save a newer chat id; joining it first settles which chat moves.
+        // A watcher's last poll could still save a newer chat id; it must end first, but never holds the move past the wait.
+        while watchers.iter().any(|w| !w.is_finished()) {
+            if Instant::now() >= deadline {
+                keep(watchers);
+                return false;
+            }
+            thread::sleep(WATCHER_POLL);
+        }
         for watcher in watchers {
             let _ = watcher.join();
         }
@@ -308,10 +338,13 @@ mod tests {
         false
     }
 
+    fn stop_nothing(_: u32, _: u64) {}
+
     fn quiet() -> RunningTabs {
         RunningTabs::with(Probes {
             below: nothing_below,
             is_running: nothing_running,
+            stop: stop_nothing,
         })
     }
 
@@ -514,9 +547,10 @@ mod tests {
         let world = world_with(RunningTabs::with(Probes {
             below: below_for_a_while,
             is_running: nothing_running,
+            stop: stop_nothing,
         }));
         world.running.started(2);
-        world.running.spawned(2, 7);
+        world.running.spawned(2, 7, 0);
         world.running.ended(2);
 
         assert!(world.continue_to(1, true).is_ok());
@@ -528,9 +562,10 @@ mod tests {
         let world = world_with(RunningTabs::with(Probes {
             below: below_for_ever,
             is_running: nothing_running,
+            stop: stop_nothing,
         }));
         world.running.started(2);
-        world.running.spawned(2, 7);
+        world.running.spawned(2, 7, 0);
         world.running.ended(2);
 
         assert!(matches!(
@@ -538,6 +573,78 @@ mod tests {
             Err(ContinueError::Running)
         ));
         assert!(!world.copied(ID).exists());
+    }
+
+    static STOPPED: AtomicBool = AtomicBool::new(false);
+    static STOPPED_SINCE: AtomicUsize = AtomicUsize::new(0);
+
+    fn below_until_stopped(_: u32) -> Vec<u32> {
+        if STOPPED.load(Ordering::SeqCst) {
+            Vec::new()
+        } else {
+            vec![99]
+        }
+    }
+
+    fn stop_and_record(pid: u32, since: u64) {
+        assert_eq!(pid, 99);
+        STOPPED_SINCE.store(usize::try_from(since).unwrap(), Ordering::SeqCst);
+        STOPPED.store(true, Ordering::SeqCst);
+    }
+
+    static NEVER_STOPPED: AtomicBool = AtomicBool::new(false);
+
+    fn stop_must_not_run(_: u32, _: u64) {
+        NEVER_STOPPED.store(true, Ordering::SeqCst);
+    }
+
+    fn root_pid_taken_again(pid: u32) -> bool {
+        pid == 7
+    }
+
+    #[test]
+    fn a_root_pid_taken_by_another_program_is_never_used_to_stop_anything() {
+        let world = world_with(RunningTabs::with(Probes {
+            below: below_for_ever,
+            is_running: root_pid_taken_again,
+            stop: stop_must_not_run,
+        }));
+        world.running.started(2);
+        world.running.spawned(2, 7, 1_234);
+        world.running.ended(2);
+
+        assert!(matches!(
+            world.continue_to(1, true),
+            Err(ContinueError::Running)
+        ));
+        assert!(!NEVER_STOPPED.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn what_a_stopped_chat_left_running_is_ended_after_a_grace_so_the_move_goes_on() {
+        let world = world_with(RunningTabs::with(Probes {
+            below: below_until_stopped,
+            is_running: nothing_running,
+            stop: stop_and_record,
+        }));
+        world.running.started(2);
+        world.running.spawned(2, 7, 1_234);
+        world.running.ended(2);
+
+        // A wait well past the grace, so a slow runner still sees the move finish.
+        let moved = continue_within(
+            &world.saved,
+            &world.accounts,
+            &world.running,
+            |_| Ok(true),
+            2,
+            1,
+            Duration::from_secs(10),
+        );
+
+        assert!(moved.is_ok(), "{moved:?}");
+        assert_eq!(STOPPED_SINCE.load(Ordering::SeqCst), 1_234);
+        assert!(world.copied(ID).is_file());
     }
 
     static TREE_HELD: AtomicBool = AtomicBool::new(false);
@@ -559,9 +666,10 @@ mod tests {
         let world = world_with(RunningTabs::with(Probes {
             below: below_while_held,
             is_running: nothing_running,
+            stop: stop_nothing,
         }));
         world.running.started(2);
-        world.running.spawned(2, 7);
+        world.running.spawned(2, 7, 0);
         world.running.ended(2);
         let during_the_wait = |events: &[Event]| {
             TREE_HELD.store(true, Ordering::SeqCst);
@@ -626,6 +734,30 @@ mod tests {
         assert!(done.load(Ordering::SeqCst));
         assert!(world.copied(NEWER_ID).is_file());
         assert!(!world.copied(ID).exists());
+    }
+
+    #[test]
+    fn a_watcher_that_never_ends_fails_the_move_after_the_wait() {
+        let world = world();
+        let (release, held) = std::sync::mpsc::channel::<()>();
+        world.running.watching(
+            2,
+            thread::spawn(move || {
+                let _ = held.recv();
+            }),
+        );
+        let started = Instant::now();
+
+        let result = world.continue_to(1, true);
+
+        assert!(matches!(result, Err(ContinueError::Running)), "{result:?}");
+        assert!(started.elapsed() < Duration::from_secs(3));
+        assert!(!world.copied(ID).exists());
+        release.send(()).unwrap();
+        assert!(
+            world.continue_to(1, true).is_ok(),
+            "the kept watcher was waited for"
+        );
     }
 
     #[test]

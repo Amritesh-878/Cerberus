@@ -2,13 +2,67 @@
 pub struct Probes {
     pub below: fn(u32) -> Vec<u32>,
     pub is_running: fn(u32) -> bool,
+    /// Ends a process, but only one started at or after the given Unix milliseconds.
+    pub stop: fn(u32, u64),
 }
 
 impl Probes {
     pub const SYSTEM: Self = Self {
         below: descendants,
         is_running,
+        stop: stop_since,
     };
+}
+
+/// Ends `pid` if it started at or after `since_ms`, so a reused id of an older, unrelated process is never touched.
+#[cfg(windows)]
+pub fn stop_since(pid: u32, since_ms: u64) {
+    use windows_sys::Win32::Foundation::{CloseHandle, FILETIME};
+    use windows_sys::Win32::System::Threading::{
+        GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE,
+        TerminateProcess,
+    };
+    // 100 ns ticks from 1601 to 1970.
+    const EPOCH_TICKS: u64 = 116_444_736_000_000_000;
+
+    // SAFETY: a handle this function opens, reads and closes; the out-pointers are locals.
+    unsafe {
+        let process = OpenProcess(
+            PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE,
+            0,
+            pid,
+        );
+        if process.is_null() {
+            return;
+        }
+        let zero = FILETIME {
+            dwLowDateTime: 0,
+            dwHighDateTime: 0,
+        };
+        let (mut created, mut exited, mut kernel, mut user) = (zero, zero, zero, zero);
+        let read = GetProcessTimes(
+            process,
+            &raw mut created,
+            &raw mut exited,
+            &raw mut kernel,
+            &raw mut user,
+        ) != 0;
+        let ticks = (u64::from(created.dwHighDateTime) << 32) | u64::from(created.dwLowDateTime);
+        let started_ms = ticks.saturating_sub(EPOCH_TICKS) / 10_000;
+        if read && started_ms >= since_ms {
+            TerminateProcess(process, 1);
+        }
+        CloseHandle(process);
+    }
+}
+
+/// Unix walks a tab's process group, which an unrelated process never joins, so no start time is needed.
+#[cfg(unix)]
+pub fn stop_since(pid: u32, _since_ms: u64) {
+    if let Ok(pid) = libc::pid_t::try_from(pid) {
+        // SAFETY: sends a signal and touches no memory; a gone process makes it fail harmlessly.
+        unsafe { libc::kill(pid, libc::SIGTERM) };
+    }
 }
 
 /// Every process below `root`, children first, from Windows' process list.
@@ -154,6 +208,40 @@ mod tests {
 
         assert!(is_running(std::process::id()));
         assert!(!is_running(child.id()));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn stop_ends_a_process_started_since_and_spares_an_older_one() {
+        let now_ms = || {
+            u64::try_from(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis(),
+            )
+            .unwrap()
+        };
+        let sleeper = || {
+            std::process::Command::new("powershell")
+                .args(["-NoProfile", "-Command", "Start-Sleep 30"])
+                .spawn()
+                .unwrap()
+        };
+        let mut old = sleeper();
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        let since = now_ms();
+        let mut new = sleeper();
+        std::thread::sleep(std::time::Duration::from_millis(300));
+
+        stop_since(old.id(), since);
+        stop_since(new.id(), since);
+        new.wait().unwrap();
+
+        assert!(!is_running(new.id()));
+        assert!(is_running(old.id()));
+        old.kill().unwrap();
+        old.wait().unwrap();
     }
 
     #[test]

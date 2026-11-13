@@ -201,7 +201,7 @@ pub fn pty_spawn(
     }
     let pid = manager.pid(id);
     if let (Some(tab), Some(pid)) = (tab, pid) {
-        running.spawned(tab, pid);
+        running.spawned(tab, pid, started_ms);
     }
     if let (Some(config_dir), Some(pid)) = (claude_home, pid) {
         let watched = Watched {
@@ -345,16 +345,33 @@ pub fn tab_set_env(
     saved.set_env(tab, edits)
 }
 
+/// Runs a move on a blocking thread: its waits for programs to end must never hold up the async workers that answer the webview.
+async fn off_the_runtime(
+    app: AppHandle,
+    work: impl FnOnce(&AppHandle) -> Result<(), ContinueError> + Send + 'static,
+) -> Result<(), ContinueError> {
+    tauri::async_runtime::spawn_blocking(move || work(&app))
+        .await
+        .map_err(|_| ContinueError::Stopped)?
+}
+
 /// Readies a stopped tab's chat to resume in `folder`; the webview then starts the tab there.
-#[tauri::command(async)]
-pub fn tab_move_folder(
-    accounts: State<'_, Accounts>,
-    saved: State<'_, Saved>,
-    running: State<'_, Arc<RunningTabs>>,
+#[tauri::command]
+pub async fn tab_move_folder(
+    app: AppHandle,
     tab: TabId,
     folder: String,
 ) -> Result<(), ContinueError> {
-    move_to_folder(&saved, &accounts, &running, tab, &folder)
+    off_the_runtime(app, move |app| {
+        move_to_folder(
+            &app.state::<Saved>(),
+            &app.state::<Accounts>(),
+            &app.state::<Arc<RunningTabs>>(),
+            tab,
+            &folder,
+        )
+    })
+    .await
 }
 
 /// Lets an ended chat's tab run `claude --resume` again the next time it starts.
@@ -364,13 +381,12 @@ pub fn resume_chat(saved: State<'_, Saved>, tab: TabId) {
 }
 
 /// Waits for a stopped tab's shell and the `claude` started in it to end, so the tab can resume that chat as a Claude tab.
-#[tauri::command(async)]
-pub fn reopen_as_claude(
-    saved: State<'_, Saved>,
-    running: State<'_, Arc<RunningTabs>>,
-    tab: TabId,
-) -> Result<(), ContinueError> {
-    reopen_chat(&saved, &running, tab)
+#[tauri::command]
+pub async fn reopen_as_claude(app: AppHandle, tab: TabId) -> Result<(), ContinueError> {
+    off_the_runtime(app, move |app| {
+        reopen_chat(&app.state::<Saved>(), &app.state::<Arc<RunningTabs>>(), tab)
+    })
+    .await
 }
 
 #[tauri::command(async)]
@@ -548,16 +564,25 @@ pub fn tree_save(saved: State<'_, Saved>, tree: SavedTree) -> Result<(), TreeErr
     saved.save(tree)
 }
 
-#[tauri::command(async)]
-pub fn continue_on_account(
-    accounts: State<'_, Accounts>,
-    saved: State<'_, Saved>,
-    running: State<'_, Arc<RunningTabs>>,
+#[tauri::command]
+pub async fn continue_on_account(
+    app: AppHandle,
     tab: TabId,
     account: AccountId,
 ) -> Result<(), ContinueError> {
-    let signed_in = |id| Ok(accounts.status(id)?.state == AuthState::LoggedIn);
-    continue_chat(&saved, &accounts, &running, signed_in, tab, account)
+    off_the_runtime(app, move |app| {
+        let accounts = app.state::<Accounts>();
+        let signed_in = |id| Ok(accounts.status(id)?.state == AuthState::LoggedIn);
+        continue_chat(
+            &app.state::<Saved>(),
+            &accounts,
+            &app.state::<Arc<RunningTabs>>(),
+            signed_in,
+            tab,
+            account,
+        )
+    })
+    .await
 }
 
 #[tauri::command(async)]

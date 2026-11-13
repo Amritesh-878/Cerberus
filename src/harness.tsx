@@ -160,6 +160,13 @@ export function click(root: ParentNode, text: string): void {
   button(root, text).click();
 }
 
+/** A press from `from` released on `to`, as a mouse makes it: the click lands on what both share. */
+export function pressAndRelease(from: Element, to: Element): void {
+  from.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+  to.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
+  to.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+}
+
 export async function settle(): Promise<void> {
   await settled();
   await settled();

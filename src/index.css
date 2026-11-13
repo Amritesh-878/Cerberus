@@ -720,6 +720,13 @@ button {
   margin: 6px 8px 10px;
 }
 
+.menu-confirm p.menu-confirm-note {
+  max-width: 280px;
+  margin-top: -4px;
+  font-size: 12px;
+  color: var(--dim);
+}
+
 .menu-confirm .confirm-actions {
   padding: 0 6px 4px;
 }
@@ -2390,6 +2397,36 @@ button.card-row:focus-visible,
   margin: 8px 0 0;
   font-size: 12px;
   color: var(--dim);
+}
+
+.notice-popup h2 {
+  margin: 0 0 10px;
+  font-size: 15px;
+}
+
+.notice-popup p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--dim);
+}
+
+.discard-ask {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  margin-top: 14px;
+  font-size: 12px;
+  background: #2a1f1b;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.discard-ask p {
+  margin: 0;
 }
 
 .env-actions {

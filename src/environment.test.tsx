@@ -10,6 +10,7 @@ import {
   field,
   open,
   press,
+  pressAndRelease,
   ptyCore,
   renderApp,
   SAVED,
@@ -342,4 +343,48 @@ test("app shortcuts do nothing while the dialog is open, so its tab cannot close
   expect(document.querySelector(".env-dialog")).not.toBeNull();
   expect(root.textContent).toContain("planner");
   expect(env.pty.killed).toEqual([]);
+});
+
+test("a text selection that ends on the backdrop keeps the dialog, and a click on it with edits asks first", async () => {
+  const env = envCore([BETA]);
+  const root = await renderApp(() => PROFILES, env.core);
+  await editEnvironment(root, "planner");
+  const backdrop = document.querySelector(".sheet-backdrop") ?? root;
+  type(input("Name"), "renamed");
+
+  pressAndRelease(input("Name"), backdrop);
+  await settle();
+  expect(document.querySelector(".env-dialog")).not.toBeNull();
+  expect(document.querySelector(".discard-ask")).toBeNull();
+
+  pressAndRelease(backdrop, backdrop);
+  await settle();
+  expect(document.querySelector(".discard-ask")?.textContent).toContain(
+    "Discard your changes?",
+  );
+  click(dialog(), "Keep editing");
+  await settle();
+  expect(input("Name").value).toBe("renamed");
+
+  window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+  await settle();
+  click(dialog(), "Discard");
+  await settle();
+  expect(document.querySelector(".env-dialog")).toBeNull();
+  expect(env.calls.filter((c) => c.cmd === "tab_set_env")).toEqual([]);
+});
+
+test("with nothing changed, Escape and the backdrop close the dialog at once", async () => {
+  const env = envCore([BETA]);
+  const root = await renderApp(() => PROFILES, env.core);
+  await editEnvironment(root, "planner");
+  window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+  await settle();
+  expect(document.querySelector(".env-dialog")).toBeNull();
+
+  await editEnvironment(root, "planner");
+  const backdrop = document.querySelector(".sheet-backdrop") ?? root;
+  pressAndRelease(backdrop, backdrop);
+  await settle();
+  expect(document.querySelector(".env-dialog")).toBeNull();
 });

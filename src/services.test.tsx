@@ -277,6 +277,52 @@ test("Edit reads the command from the core and saves the change to that service"
   ]);
 });
 
+test("an edit form loaded from the core closes at once, and asks first once edited", async () => {
+  const { core } = servicesCore();
+  const root = await renderApp(() => SAVED, core);
+  const escape = () =>
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+
+  click(menuOf(root, "docs"), "Edit…");
+  await settle();
+  escape();
+  await settle();
+  expect(root.querySelector(".service-form")).toBeNull();
+
+  click(menuOf(root, "docs"), "Edit…");
+  await settle();
+  type(input(root, "Name"), "docs site");
+  escape();
+  await settle();
+  expect(root.querySelector(".discard-ask")).not.toBeNull();
+  escape();
+  await settle();
+  expect(root.querySelector(".discard-ask")).toBeNull();
+  expect(input(root, "Name").value).toBe("docs site");
+});
+
+test("an edit made while the command loads still asks before it is dropped", async () => {
+  let loaded: (command: string) => void = () => undefined;
+  const { core } = servicesCore();
+  const root = await renderApp(() => SAVED, {
+    ...core,
+    service_command: () =>
+      new Promise<string>((resolve) => {
+        loaded = resolve;
+      }),
+  });
+
+  click(menuOf(root, "docs"), "Edit…");
+  await settle();
+  type(input(root, "Name"), "docs site");
+  loaded("npm run dev -- --port 9");
+  await settle();
+  window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+  await settle();
+
+  expect(root.querySelector(".discard-ask")).not.toBeNull();
+});
+
 test("the first service, whose id is 0, opens its output too", async () => {
   const { core, of } = servicesCore();
   const first = { ...VIEW, services: [{ ...TUNNEL, id: 0 }] };

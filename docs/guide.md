@@ -324,7 +324,10 @@ logged or kept: it lives in memory while the dialog is open and is dropped when 
 
 Right-click a Claude Code tab and pick **Continue on `<account>`…** to carry its chat to another
 of your accounts, for example to keep work and personal chats apart. If the chat is running,
-Cerberus asks before closing it, and the row says "Moving to `<account>`…" until it lands.
+Cerberus asks before closing it, and the row says "Moving to `<account>`…" until it lands. Closing
+it also ends what the chat left running, such as its background shells, as Claude Code does on a
+normal exit; only processes started by that chat are ended. The limit banner's **Continue on** runs
+the same steps.
 
 On a tab whose chat ended (now a shell), the item reads **Continue the ended chat on
 `<account>`…**: it moves that tab's ended chat, which is the last `claude` you ran in its shell if
@@ -336,7 +339,7 @@ folder under a temporary name, renaming it once complete, then reopens the tab t
 `claude --resume`. The original stays on the first account. When the other account already has an
 older copy, it is kept as `<id>.jsonl.cerberus-old`, never deleted. It refuses when the other
 account is signed out or has that chat open right now. On any failure the tab stays where it was
-and says why; in the rare case that putting the older copy back fails too, the message says part of
+and a popup says why; in the rare case that putting the older copy back fails too, the message says part of
 it stays under a `.cerberus-old` name. The copy moves files only; Cerberus never reads what is in
 them.
 
@@ -372,8 +375,10 @@ tab message a Claude Code tab on another of your accounts, and every message wai
   the sending chat closes or its helper ends (killed or crashed), its message leaves the popup, which
   says the sending chat is gone.
 - **Notes.** A tab whose messages can only be typed in shows "messages: prefill only" in the top
-  bar: a Claude Code version Cerberus hasn't tested, or macOS, where inbox delivery isn't checked
-  yet. "messages off" means the tab's helper didn't start within 10 seconds, or ended.
+  bar, and its tooltip says why: Claude Code older than 2.1.317, a Claude Code that reports no inbox,
+  or macOS, where inbox delivery isn't checked yet. A newer Claude Code is tried directly; a message
+  it doesn't show in time falls back to **Type it in instead**. "messages off" means the tab's helper
+  didn't start within 10 seconds, or ended.
 - **Turning it off.** **Accounts > Messages between accounts.** Off, Claude Code tabs start exactly
   as before. A change applies to Claude Code tabs started after it. Your own MCP servers load either
   way.
@@ -420,7 +425,10 @@ tab's variables are in `tree.db`; it never appears in the list, logs or error me
 
 The project matches by name, then the same name in any case, then its folder's name; the tab by
 title the same way. Words after `open` are joined, so `cerberus open my app/planner` needs no
-quotes. A running Cerberus answers from its open window; otherwise the saved file is read.
+quotes. A running Cerberus answers from its open window; otherwise the saved file is read. A
+match by folder name says so: `Opening alpha (its folder is cerberus)`. The command talks only to
+the installed Cerberus, never to a build with another identifier. `cerberus open` with no name
+prints the usage and each project with its tab count, and exits with 2.
 
 Exit codes: 0 opened, 1 no match or more than one (it lists them), 2 bad usage. Only project
 names, folders and tab titles are printed, never chat content. With no arguments it starts the

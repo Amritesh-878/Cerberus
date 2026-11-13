@@ -87,10 +87,23 @@ pub enum Note {
     Off,
 }
 
+/// Why a tab's messages are prefill only, so its note can say so.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Why {
+    /// Only Windows sessions have been checked for inbox delivery.
+    Platform,
+    /// The tab's Claude Code reported no inbox of its own.
+    NoInbox,
+    /// The tab's Claude Code is older than the first checked version, or speaks another inbox protocol.
+    Version,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct TabNote {
     pub tab: TabId,
     pub note: Note,
+    pub why: Option<Why>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
@@ -162,15 +175,24 @@ struct TabLink {
 }
 
 impl TabLink {
-    fn note(&self) -> Option<Note> {
+    fn note(&self) -> Option<(Note, Option<Why>)> {
         let Some(hello) = &self.hello else {
-            return (self.born.elapsed() >= HELLO_WAIT).then_some(Note::Off);
+            return (self.born.elapsed() >= HELLO_WAIT).then_some((Note::Off, None));
         };
         let gate_failed = self
             .facts
             .as_ref()
             .is_some_and(|(version, protocol)| !inbox::passes_gate(version.as_deref(), *protocol));
-        (!cfg!(windows) || !hello.messaging || gate_failed).then_some(Note::PrefillOnly)
+        let why = if !cfg!(windows) {
+            Why::Platform
+        } else if !hello.messaging {
+            Why::NoInbox
+        } else if gate_failed {
+            Why::Version
+        } else {
+            return None;
+        };
+        Some((Note::PrefillOnly, Some(why)))
     }
 
     fn end_run(&mut self, run: &str) {
@@ -222,7 +244,13 @@ impl State {
         let mut notes: Vec<TabNote> = self
             .links
             .values()
-            .filter_map(|l| l.note().map(|note| TabNote { tab: l.tab, note }))
+            .filter_map(|l| {
+                l.note().map(|(note, why)| TabNote {
+                    tab: l.tab,
+                    note,
+                    why,
+                })
+            })
             .collect();
         notes.sort_by_key(|n| n.tab);
         Snapshot {

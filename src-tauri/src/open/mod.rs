@@ -71,6 +71,8 @@ pub struct Target {
 pub struct Found<'a> {
     pub project: &'a SavedProject,
     pub tab: Option<&'a SavedTab>,
+    /// The name asked for matched the project's folder, not its name, so the answer says so.
+    pub by_folder: bool,
 }
 
 impl Found<'_> {
@@ -85,9 +87,13 @@ impl Found<'_> {
 impl fmt::Display for Found<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.tab {
-            Some(tab) => write!(f, "{} / {}", self.project.name, tab.title),
-            None => write!(f, "{}", self.project.name),
+            Some(tab) => write!(f, "{} / {}", self.project.name, tab.title)?,
+            None => write!(f, "{}", self.project.name)?,
         }
+        if self.by_folder {
+            write!(f, " (its folder is {})", folder_name(&self.project.folder))?;
+        }
+        Ok(())
     }
 }
 
@@ -288,7 +294,46 @@ pub fn resolve<'a>(tree: &'a SavedTree, spec: &Spec) -> Result<Found<'a>, Miss> 
         .as_deref()
         .map(|title| find_tab(tree, project, title))
         .transpose()?;
-    Ok(Found { project, tab })
+    Ok(Found {
+        project,
+        tab,
+        by_folder: !same_text(&project.name, &spec.project),
+    })
+}
+
+/// `open` with no name: the projects there are to name, by name and tab count only.
+fn asks_for_a_list(args: &[String]) -> bool {
+    matches!(args, [verb, rest @ ..] if verb == "open" && rest.iter().all(|w| w.trim().is_empty()))
+}
+
+/// The usage line, then each project and how many tabs it has, so the next try can name one.
+pub fn usage_listing(tree: &SavedTree) -> String {
+    let mut text = format!("{USAGE}\n");
+    if tree.projects.is_empty() {
+        text.push_str("No projects are saved yet.");
+        return text;
+    }
+    text.push_str("Projects:");
+    for project in &tree.projects {
+        let tabs = tree
+            .tabs
+            .iter()
+            .filter(|t| t.project_id == project.id)
+            .count();
+        let noun = if tabs == 1 { "tab" } else { "tabs" };
+        text.push_str(&format!("\n  {} ({tabs} {noun})", project.name));
+    }
+    text
+}
+
+/// What a bad command line gets: the usage, with the project list when `open` came without a name.
+pub fn usage_for(args: &[String], tree: impl FnOnce() -> Option<SavedTree>) -> String {
+    if asks_for_a_list(args)
+        && let Some(tree) = tree()
+    {
+        return usage_listing(&tree);
+    }
+    USAGE.to_owned()
 }
 
 /// What the command line does before any window: run the app, or print and exit with a code.
@@ -312,7 +357,14 @@ pub fn check(
     read: impl FnOnce() -> Result<SavedTree, TreeError>,
 ) -> Checked {
     let Some(command) = parse(args) else {
-        return Checked::Exit(BAD_USAGE, USAGE.to_owned());
+        if !asks_for_a_list(args) {
+            return Checked::Exit(BAD_USAGE, USAGE.to_owned());
+        }
+        // The running app lists its live tree; without one, the saved file.
+        if let Ok(Some((code, message))) = ask(args) {
+            return Checked::Exit(code, message);
+        }
+        return Checked::Exit(BAD_USAGE, usage_for(args, || read().ok()));
     };
     let Command::Open(spec) = &command else {
         return Checked::Run(command, None);
