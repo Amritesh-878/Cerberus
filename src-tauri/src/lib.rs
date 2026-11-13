@@ -16,6 +16,7 @@ mod open;
 mod panel;
 mod programs;
 mod pty;
+mod reach;
 mod run;
 mod saved;
 mod services;
