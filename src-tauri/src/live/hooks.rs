@@ -261,7 +261,11 @@ pub(crate) mod tests {
         fits(Event::Wrote(Wrote {
             at: u64::MAX,
             tool: "NotebookEdit".to_owned(),
-            path: format!(r"C:\{}", r"\".repeat(MOST_PATH - 3)),
+            // An absolute root on this platform; backslashes after it are ordinary characters on Unix.
+            path: {
+                let root = if cfg!(windows) { r"C:\" } else { "/" };
+                format!("{root}{}", r"\".repeat(MOST_PATH - root.len()))
+            },
         }));
     }
 
