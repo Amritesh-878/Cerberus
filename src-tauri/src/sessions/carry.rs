@@ -600,7 +600,7 @@ mod tests {
         let config = dir.path().join("personal");
         let before = fs::read_dir(&project).unwrap().count();
 
-        copy_to_folder(&config, CWD, r"C:\work-app", ID, &|_| false).unwrap();
+        copy_to_folder(&config, CWD, r"C:\work-app", ID, &|_, _| false).unwrap();
 
         assert_eq!(fs::read_dir(&project).unwrap().count(), before);
     }
