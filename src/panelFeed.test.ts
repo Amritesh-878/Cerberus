@@ -102,6 +102,24 @@ test("a feed reads every card once on start, then only git on each poll", async 
   ]);
 });
 
+test("a poll is skipped while the last read is still out, then resumes", async () => {
+  const { calls, held } = core({ hold: true });
+  feedFor(A);
+  await flush();
+  calls.length = 0;
+
+  await vi.advanceTimersByTimeAsync(POLL_MS * 3);
+
+  expect(calls).toEqual([]);
+
+  for (const release of held.splice(0)) release();
+  await flush();
+  calls.length = 0;
+  await vi.advanceTimersByTimeAsync(POLL_MS);
+
+  expect(calls).toEqual([String.raw`panel_changes C:\a`]);
+});
+
 test("each extra folder is read, and a repo's PRs once however many of its folders", async () => {
   const { calls } = core();
   const { feed } = feedFor({

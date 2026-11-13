@@ -5,6 +5,7 @@ use std::io;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::accounts::{Accounts, AccountsError, Profiles};
+use crate::blocking::blocking;
 use crate::bridge::{Bridge, BridgeError, Decided, Decision, Hooks, Label, Snapshot};
 use crate::pty::PtyManager;
 use crate::saved::{Saved, TabId};
@@ -40,28 +41,33 @@ pub fn bridge_snapshot(bridge: State<'_, Bridge>) -> Snapshot {
 }
 
 /// Approve, edit or reject a waiting message; an approval returns once it is delivered or typed in.
-#[tauri::command(async)]
-pub fn bridge_decide(
-    bridge: State<'_, Bridge>,
-    manager: State<'_, PtyManager>,
+#[tauri::command]
+pub async fn bridge_decide(
+    app: AppHandle,
     id: u64,
     decision: Decision,
 ) -> Result<Decided, BridgeError> {
-    bridge.decide(id, decision, |pty, bytes| {
-        manager.write(pty, bytes).map_err(io::Error::other)
+    blocking(move || {
+        let bridge = app.state::<Bridge>();
+        let manager = app.state::<PtyManager>();
+        bridge.decide(id, decision, |pty, bytes| {
+            manager.write(pty, bytes).map_err(io::Error::other)
+        })
     })
+    .await
 }
 
 /// Types an approved message that reached an inbox but never showed into the target's input.
-#[tauri::command(async)]
-pub fn bridge_type_in(
-    bridge: State<'_, Bridge>,
-    manager: State<'_, PtyManager>,
-    id: u64,
-) -> Result<(), BridgeError> {
-    bridge.type_in(id, |pty, bytes| {
-        manager.write(pty, bytes).map_err(io::Error::other)
+#[tauri::command]
+pub async fn bridge_type_in(app: AppHandle, id: u64) -> Result<(), BridgeError> {
+    blocking(move || {
+        let bridge = app.state::<Bridge>();
+        let manager = app.state::<PtyManager>();
+        bridge.type_in(id, |pty, bytes| {
+            manager.write(pty, bytes).map_err(io::Error::other)
+        })
     })
+    .await
 }
 
 /// The user closed an unconfirmed message's notice, so its kept text is dropped.
@@ -70,7 +76,11 @@ pub fn bridge_discard(bridge: State<'_, Bridge>, id: u64) {
     bridge.discard(id);
 }
 
-#[tauri::command(async)]
-pub fn set_messages(accounts: State<'_, Accounts>, on: bool) -> Result<Profiles, AccountsError> {
-    accounts.set_messages(on)
+#[tauri::command]
+pub async fn set_messages(app: AppHandle, on: bool) -> Result<Profiles, AccountsError> {
+    blocking(move || {
+        let accounts = app.state::<Accounts>();
+        accounts.set_messages(on)
+    })
+    .await
 }
