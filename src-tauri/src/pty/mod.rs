@@ -6,7 +6,7 @@ use std::ffi::OsString;
 use std::fmt::Display;
 use std::io::{self, ErrorKind, Read, Write};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc::{self, SyncSender};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::thread;
@@ -31,6 +31,9 @@ const QUEUED_READS: usize = 16;
 const READ_CHUNK: usize = 64 * 1024;
 const UNACKED_HIGH: usize = 1024 * 1024;
 const UNACKED_LOW: usize = 256 * 1024;
+/// How long a closed tab's program has after each signal before the next, stronger one.
+#[cfg(unix)]
+const SIGNAL_GRACE: Duration = Duration::from_secs(2);
 
 #[derive(Debug, thiserror::Error)]
 pub enum PtyError {
@@ -83,6 +86,9 @@ struct Session {
     killer: Mutex<Box<dyn ChildKiller + Send + Sync>>,
     flow: Arc<FlowGate>,
     pid: Option<u32>,
+    /// Set once the program has ended, so nothing is signalled after its pid could be reused.
+    #[cfg(unix)]
+    exited: Arc<AtomicBool>,
 }
 
 type Sessions = Arc<Mutex<HashMap<SessionId, Arc<Session>>>>;
@@ -156,16 +162,19 @@ impl PtyManager {
             gate.reserve(bytes.len());
             on_output(bytes);
         };
+        let exited = Arc::new(AtomicBool::new(false));
         let session = Session {
             master: Mutex::new(pair.master),
             writer: Mutex::new(writer),
             killer: Mutex::new(child.clone_killer()),
             flow,
             pid: child.process_id(),
+            #[cfg(unix)]
+            exited: Arc::clone(&exited),
         };
         // Registered before the waiter starts, or a fast exit would find nothing to close.
         lock(&self.sessions).insert(id, Arc::new(session));
-        if let Err(e) = self.start_threads(id, reader, child, on_output, on_exit) {
+        if let Err(e) = self.start_threads(id, reader, (child, exited), on_output, on_exit) {
             self.kill(id);
             return Err(PtyError::Thread(e));
         }
@@ -176,7 +185,7 @@ impl PtyManager {
         &self,
         id: SessionId,
         reader: Box<dyn Read + Send>,
-        mut child: Box<dyn Child + Send + Sync>,
+        (mut child, exited): (Box<dyn Child + Send + Sync>, Arc<AtomicBool>),
         on_output: impl FnMut(Vec<u8>) + Send + 'static,
         on_exit: impl FnOnce(Exit) + Send + 'static,
     ) -> io::Result<()> {
@@ -187,6 +196,7 @@ impl PtyManager {
         let sessions = Arc::clone(&self.sessions);
         thread::Builder::new().spawn(move || {
             let code = child.wait().ok().map(|status| status.exit_code());
+            exited.store(true, Ordering::SeqCst);
             // Closing the pseudo-console ends the reader, so all output is sent before the exit.
             // `kill` and `kill_all` take the session out first, so finding it here means it ended by itself.
             let closed = lock(&sessions).remove(&id);
@@ -332,6 +342,30 @@ fn end(session: &Session) {
     session.flow.close();
     // Fails only when the process already exited, which is the outcome wanted.
     let _ = lock(&session.killer).kill();
+    // On Unix that was a hangup, which a program may ignore and so outlive its tab.
+    #[cfg(unix)]
+    if let Some(group) = session.pid.and_then(|pid| libc::pid_t::try_from(pid).ok()) {
+        let exited = Arc::clone(&session.exited);
+        if thread::Builder::new()
+            .spawn(move || escalate(group, &exited, SIGNAL_GRACE))
+            .is_err()
+        {
+            eprintln!("pty: no thread to make sure a closed tab's program ends");
+        }
+    }
+}
+
+/// TERM, then KILL, to the program's process group (it leads its own) for as long as it keeps running.
+#[cfg(unix)]
+fn escalate(group: libc::pid_t, exited: &AtomicBool, grace: Duration) {
+    for signal in [libc::SIGTERM, libc::SIGKILL] {
+        thread::sleep(grace);
+        if exited.load(Ordering::SeqCst) {
+            return;
+        }
+        // SAFETY: sends a signal and touches no memory; a group that is gone makes it fail harmlessly.
+        unsafe { libc::killpg(group, signal) };
+    }
 }
 
 fn read_into(mut reader: Box<dyn Read + Send>, tx: &SyncSender<Vec<u8>>) {
@@ -546,6 +580,32 @@ mod tests {
             Err(PtyError::NoSession(_))
         ));
         manager.kill(id);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_program_that_ignores_the_hangup_still_ends_after_close() {
+        let manager = PtyManager::default();
+        let (id, rx) = start(
+            &manager,
+            "/bin/sh",
+            &[
+                "-c",
+                "trap '' HUP TERM; echo ready; while :; do sleep 1; done",
+            ],
+        );
+        collect(&manager, id, &rx, |t| t.contains("ready"));
+        let closed = Instant::now();
+
+        manager.kill(id);
+        let (_, exit) = collect(&manager, id, &rx, |_| false);
+
+        assert!(exit.is_some(), "the program outlived its tab");
+        assert!(
+            closed.elapsed() < SIGNAL_GRACE * 4,
+            "{:?}",
+            closed.elapsed()
+        );
     }
 
     #[test]
