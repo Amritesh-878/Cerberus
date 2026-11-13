@@ -709,8 +709,23 @@ fn a_cancel_that_beats_its_send_still_stops_it() {
     assert!(world.bridge.snapshot().pending.is_empty());
 }
 
-/// Takes over a tab's order line from its helper, so the test answers its orders by hand.
+/// What the bridge does when a tab's helper process exits, which an in-process helper never does.
+fn end_helper(world: &World, tab: TabId) {
+    let core = world.bridge.0.as_ref().unwrap();
+    let token = &world.tabs[&tab].ticket.token;
+    let run = core
+        .state()
+        .by_tab(tab)
+        .and_then(|l| l.hello.as_ref())
+        .map(|h| h.run.clone());
+    if let Some(run) = run {
+        super::serve::helper_gone(core, token, &run);
+    }
+}
+
+/// Takes over a tab's order line from its helper, as a restarted helper would, so the test answers its orders by hand.
 fn hold_orders(world: &World, tab: TabId) -> link::Stream {
+    end_helper(world, tab);
     let core = world.bridge.0.as_ref().unwrap();
     let listen_of = |state: &super::State| {
         state
@@ -902,6 +917,7 @@ fn a_restarted_helper_takes_its_old_calls_out_of_the_popup() {
     world.waiting();
     let tab = &world.tabs[&1];
 
+    end_helper(&world, 1);
     let _again = Helper::start(&tab.ticket, Some(&tab.socket), Some(&tab.dir));
 
     world.until(|state| state.queue.views().is_empty());
@@ -933,6 +949,8 @@ fn a_restart_keeps_the_new_runs_send_that_beat_its_hello() {
         });
     }
     world.until(|state| state.queue.views().len() == 2);
+    // The old run's process exits before the new run says hello.
+    super::serve::helper_gone(world.bridge.0.as_ref().unwrap(), &token, "old");
 
     let _orders = hold_orders(&world, 1);
 
@@ -944,6 +962,42 @@ fn a_restart_keeps_the_new_runs_send_that_beat_its_hello() {
         .map(|p| p.text)
         .collect();
     assert_eq!(left, ["from the new run"]);
+}
+
+#[test]
+fn another_program_with_the_tabs_token_cannot_take_a_live_helpers_place() {
+    let world = World::new("2.1.317");
+    let core = world.bridge.0.as_ref().unwrap();
+    let listen_of = || {
+        core.state()
+            .by_tab(1)
+            .and_then(|l| l.hello.as_ref())
+            .map(|h| Arc::as_ptr(&h.listen))
+    };
+    let before = listen_of();
+    let stream = link::connect(&core.name).unwrap().unwrap();
+    let ask = Ask {
+        token: world.tabs[&1].ticket.token.clone(),
+        kind: AskKind::Listen {
+            messaging: true,
+            pipe: Some("x".to_owned()),
+            run: "intruder".to_owned(),
+        },
+    };
+
+    writeln!(&stream, "{}", serde_json::to_string(&ask).unwrap()).unwrap();
+    let (tx, rx) = mpsc::channel();
+    // A thread, since an accepted helper's line stays open and the read would never end.
+    thread::spawn(move || {
+        let mut line = String::new();
+        let _ = BufReader::new(&stream).read_line(&mut line);
+        let _ = tx.send(line);
+    });
+    let answer = rx.recv_timeout(Duration::from_secs(10)).unwrap();
+
+    assert_eq!(answer, "", "the second helper was answered");
+    assert!(before.is_some());
+    assert_eq!(listen_of(), before);
 }
 
 const AS_HELPER: &str = "CERBERUS_BRIDGE_TEST_HELPER";
