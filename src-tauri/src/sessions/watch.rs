@@ -176,7 +176,7 @@ impl Finder {
         self.next_pid_search = now + search_gap(now - self.born);
         let root = self.watched.pid;
         let (pid, file) = std::iter::once(root)
-            .chain(descendants(root))
+            .chain(descendants(root, self.watched.started_ms))
             .find_map(|pid| Some((pid, self.read(pid)?)))?;
         self.pid = Some(pid);
         Some(file)
@@ -636,7 +636,7 @@ mod tests {
         let deadline = Instant::now() + Duration::from_secs(10);
         let mut below = Vec::new();
         while below.is_empty() && Instant::now() < deadline {
-            below = descendants(shim.id());
+            below = descendants(shim.id(), 0);
         }
         write_session(&dir, below[0], "busy");
 
@@ -662,7 +662,7 @@ mod tests {
         let deadline = Instant::now() + Duration::from_secs(10);
         let mut below = Vec::new();
         while below.is_empty() && Instant::now() < deadline {
-            below = descendants(wrapper.id());
+            below = descendants(wrapper.id(), 0);
         }
         write_session(&dir, below[0], "busy");
 

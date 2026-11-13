@@ -160,7 +160,7 @@ impl RunningTabs {
             let grace = Instant::now() + LEFT_GRACE.min(wait / 2);
             let mut stopped = false;
             loop {
-                let left = (self.probes.below)(root);
+                let left = (self.probes.below)(root, since);
                 if left.is_empty() {
                     break;
                 }
@@ -330,7 +330,7 @@ mod tests {
     const NEWER_ID: &str = "a1b2c3d4-0000-4000-8000-000000000001";
     const CWD: &str = r"C:\work\app";
 
-    fn nothing_below(_: u32) -> Vec<u32> {
+    fn nothing_below(_: u32, _: u64) -> Vec<u32> {
         Vec::new()
     }
 
@@ -529,7 +529,7 @@ mod tests {
 
     static LEFT_RUNNING: AtomicUsize = AtomicUsize::new(0);
 
-    fn below_for_a_while(_: u32) -> Vec<u32> {
+    fn below_for_a_while(_: u32, _: u64) -> Vec<u32> {
         if LEFT_RUNNING.load(Ordering::SeqCst) == 0 {
             return Vec::new();
         }
@@ -537,7 +537,7 @@ mod tests {
         vec![99]
     }
 
-    fn below_for_ever(_: u32) -> Vec<u32> {
+    fn below_for_ever(_: u32, _: u64) -> Vec<u32> {
         vec![99]
     }
 
@@ -578,7 +578,7 @@ mod tests {
     static STOPPED: AtomicBool = AtomicBool::new(false);
     static STOPPED_SINCE: AtomicUsize = AtomicUsize::new(0);
 
-    fn below_until_stopped(_: u32) -> Vec<u32> {
+    fn below_until_stopped(_: u32, _: u64) -> Vec<u32> {
         if STOPPED.load(Ordering::SeqCst) {
             Vec::new()
         } else {
@@ -652,7 +652,7 @@ mod tests {
 
     type Event = fn(&RunningTabs, TabId);
 
-    fn below_while_held(_: u32) -> Vec<u32> {
+    fn below_while_held(_: u32, _: u64) -> Vec<u32> {
         TREE_POLLED.store(true, Ordering::SeqCst);
         if TREE_HELD.load(Ordering::SeqCst) {
             vec![99]

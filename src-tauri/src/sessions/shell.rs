@@ -80,7 +80,7 @@ impl Spotter {
         }
     }
 
-    fn spot(&mut self, below: fn(u32) -> Vec<u32>) -> Option<(u32, SessionFile)> {
+    fn spot(&mut self, below: fn(u32, u64) -> Vec<u32>) -> Option<(u32, SessionFile)> {
         let Ok(entries) = fs::read_dir(&self.sessions) else {
             return None;
         };
@@ -114,7 +114,7 @@ impl Spotter {
         if fresh.is_empty() {
             return None;
         }
-        let tree = below(self.shell);
+        let tree = below(self.shell, self.started_ms);
         let mut found = None;
         for (pid, file) in fresh {
             if found.is_none() && tree.contains(&pid) {
