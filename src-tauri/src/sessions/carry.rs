@@ -40,13 +40,13 @@ pub fn copy_chat(
     to: &Path,
     cwd: &str,
     id: &str,
-    is_running: &dyn Fn(u32) -> bool,
+    running_by: &dyn Fn(u32, Option<u64>) -> bool,
 ) -> Result<(), CarryError> {
     let ops = Ops {
         copy: &mut |source, target| fs::copy(source, target).map(|_| ()),
         rename: &mut |source, target| fs::rename(source, target),
     };
-    copy_chat_with(from, to, cwd, None, id, is_running, ops)
+    copy_chat_with(from, to, cwd, None, id, running_by, ops)
 }
 
 /// Copies a chat to another folder's project on the same account, so `--resume` finds it there.
@@ -55,13 +55,13 @@ pub fn copy_to_folder(
     from_cwd: &str,
     to_cwd: &str,
     id: &str,
-    is_running: &dyn Fn(u32) -> bool,
+    running_by: &dyn Fn(u32, Option<u64>) -> bool,
 ) -> Result<(), CarryError> {
     let ops = Ops {
         copy: &mut |source, target| fs::copy(source, target).map(|_| ()),
         rename: &mut |source, target| fs::rename(source, target),
     };
-    copy_chat_with(config, config, from_cwd, Some(to_cwd), id, is_running, ops)
+    copy_chat_with(config, config, from_cwd, Some(to_cwd), id, running_by, ops)
 }
 
 /// `to_cwd` names another folder's project; `None` keeps the chat's own project.
@@ -71,7 +71,7 @@ fn copy_chat_with(
     cwd: &str,
     to_cwd: Option<&str>,
     id: &str,
-    is_running: &dyn Fn(u32) -> bool,
+    running_by: &dyn Fn(u32, Option<u64>) -> bool,
     ops: Ops<'_>,
 ) -> Result<(), CarryError> {
     if !is_session_id(id) {
@@ -89,7 +89,7 @@ fn copy_chat_with(
         Some(to_cwd) if slug(to_cwd).len() > SLUG_MAX => return Err(CarryError::LongFolder),
         Some(to_cwd) => slug(to_cwd).into(),
     };
-    if open_in(to, id, is_running)? {
+    if open_in(to, id, running_by)? {
         return Err(if to_cwd.is_some() {
             CarryError::OpenElsewhere
         } else {
@@ -173,7 +173,11 @@ fn undo(done: &[(PathBuf, PathBuf)], rename: FileOp<'_>) -> io::Result<()> {
 }
 
 /// Whether a running `claude` on that config dir has this chat open; only a missing file means "no".
-fn open_in(config_dir: &Path, id: &str, is_running: &dyn Fn(u32) -> bool) -> io::Result<bool> {
+fn open_in(
+    config_dir: &Path,
+    id: &str,
+    running_by: &dyn Fn(u32, Option<u64>) -> bool,
+) -> io::Result<bool> {
     let entries = match fs::read_dir(config_dir.join("sessions")) {
         Ok(entries) => entries,
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(false),
@@ -192,9 +196,11 @@ fn open_in(config_dir: &Path, id: &str, is_running: &dyn Fn(u32) -> bool) -> io:
             Err(e) if e.kind() == io::ErrorKind::NotFound => continue,
             Err(e) => return Err(e),
         };
-        let has_chat =
-            parse_session_file(&bytes).is_some_and(|file| file.session_id.as_deref() == Some(id));
-        if has_chat && is_running(pid) {
+        // A file left by a `claude` that was ended may name a pid now held by another program, which started later.
+        let open = parse_session_file(&bytes).is_some_and(|file| {
+            file.session_id.as_deref() == Some(id) && running_by(pid, file.started_at)
+        });
+        if open {
             return Ok(true);
         }
     }
@@ -284,7 +290,7 @@ mod tests {
             &dir.path().join("work"),
             cwd,
             ID,
-            &|_| false,
+            &|_, _| false,
         )
     }
 
@@ -379,12 +385,14 @@ mod tests {
         assert_eq!(listing(&target), listing(&source));
     }
 
+    const STAMP: u64 = 1_700_000_000_000;
+
     fn open_on_work(dir: &TestDir, pid: u32) {
         let sessions = dir.path().join("work").join("sessions");
         fs::create_dir_all(&sessions).unwrap();
         fs::write(
             sessions.join(format!("{pid}.json")),
-            format!(r#"{{"pid":{pid},"sessionId":"{ID}","status":"idle"}}"#),
+            format!(r#"{{"pid":{pid},"sessionId":"{ID}","status":"idle","startedAt":{STAMP}}}"#),
         )
         .unwrap();
     }
@@ -400,7 +408,7 @@ mod tests {
             &dir.path().join("work"),
             CWD,
             ID,
-            &|pid| pid == 4242,
+            &|pid, started| pid == 4242 && started == Some(STAMP),
         );
 
         assert!(matches!(result, Err(CarryError::OpenOnTarget)));
@@ -445,7 +453,7 @@ mod tests {
             CWD,
             None,
             ID,
-            &|_| false,
+            &|_, _| false,
             Ops {
                 copy: &mut failing_second,
                 rename: &mut |a, b| fs::rename(a, b),
@@ -482,7 +490,7 @@ mod tests {
             CWD,
             None,
             ID,
-            &|_| false,
+            &|_, _| false,
             Ops {
                 copy: &mut |a, b| fs::copy(a, b).map(|_| ()),
                 rename: &mut rename,
@@ -587,7 +595,7 @@ mod tests {
         let config = dir.path().join("personal");
         let new_cwd = r"C:\work\plans";
 
-        copy_to_folder(&config, CWD, new_cwd, ID, &|_| false).unwrap();
+        copy_to_folder(&config, CWD, new_cwd, ID, &|_, _| false).unwrap();
 
         assert!(transcript(&config, new_cwd, ID).is_some());
         assert!(
@@ -606,7 +614,7 @@ mod tests {
         let long = format!(r"C:\{}", "a".repeat(SLUG_MAX));
 
         assert!(matches!(
-            copy_to_folder(&config, CWD, &long, ID, &|_| false),
+            copy_to_folder(&config, CWD, &long, ID, &|_, _| false),
             Err(CarryError::LongFolder)
         ));
         fs::create_dir_all(config.join("sessions")).unwrap();
@@ -616,7 +624,7 @@ mod tests {
         )
         .unwrap();
         assert!(matches!(
-            copy_to_folder(&config, CWD, r"C:\work\plans", ID, &|pid| pid == 4242),
+            copy_to_folder(&config, CWD, r"C:\work\plans", ID, &|pid, _| pid == 4242),
             Err(CarryError::OpenElsewhere)
         ));
     }

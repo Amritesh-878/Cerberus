@@ -239,7 +239,7 @@ fn continue_within(
     let cwd = saved_tab
         .cwd
         .unwrap_or_else(|| accounts.home().to_string_lossy().into_owned());
-    copy_chat(&from, &to, &cwd, &id, &running.probes.is_running)?;
+    copy_chat(&from, &to, &cwd, &id, &running.probes.running_by)?;
     // The chat goes on under the new account, so the tab resumes it there instead of opening the shell.
     saved.set_ended(tab, false);
     Ok(())
@@ -305,7 +305,7 @@ fn move_within(
     if from == folder {
         return Ok(());
     }
-    match copy_to_folder(&home, &from, folder, &id, &running.probes.is_running) {
+    match copy_to_folder(&home, &from, folder, &id, &running.probes.running_by) {
         // A chat whose file is gone starts anew in the new folder, as it would have in the old one.
         Err(CarryError::Missing) => Ok(()),
         other => Ok(other?),
@@ -342,6 +342,7 @@ mod tests {
         RunningTabs::with(Probes {
             below: nothing_below,
             is_running: nothing_running,
+            running_by: |_, _| false,
             stop: stop_nothing,
         })
     }
@@ -545,6 +546,7 @@ mod tests {
         let world = world_with(RunningTabs::with(Probes {
             below: below_for_a_while,
             is_running: nothing_running,
+            running_by: |_, _| false,
             stop: stop_nothing,
         }));
         world.running.started(2);
@@ -560,6 +562,7 @@ mod tests {
         let world = world_with(RunningTabs::with(Probes {
             below: below_for_ever,
             is_running: nothing_running,
+            running_by: |_, _| false,
             stop: stop_nothing,
         }));
         world.running.started(2);
@@ -605,6 +608,7 @@ mod tests {
         let world = world_with(RunningTabs::with(Probes {
             below: below_for_ever,
             is_running: root_pid_taken_again,
+            running_by: |_, _| false,
             stop: stop_must_not_run,
         }));
         world.running.started(2);
@@ -623,6 +627,7 @@ mod tests {
         let world = world_with(RunningTabs::with(Probes {
             below: below_until_stopped,
             is_running: nothing_running,
+            running_by: |_, _| false,
             stop: stop_and_record,
         }));
         world.running.started(2);
@@ -664,6 +669,7 @@ mod tests {
         let world = world_with(RunningTabs::with(Probes {
             below: below_while_held,
             is_running: nothing_running,
+            running_by: |_, _| false,
             stop: stop_nothing,
         }));
         world.running.started(2);

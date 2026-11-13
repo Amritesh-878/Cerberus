@@ -63,6 +63,7 @@ fn shell_on(dir: &Path, started_ms: u64, below: fn(u32, u64) -> Vec<u32>) -> She
         probes: Probes {
             below,
             is_running: running,
+            running_by: |_, _| false,
             stop: |_, _| {},
         },
     }

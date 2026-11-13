@@ -2,6 +2,8 @@
 pub struct Probes {
     pub below: fn(u32, u64) -> Vec<u32>,
     pub is_running: fn(u32) -> bool,
+    /// Whether a process runs under that id and had started by the given Unix milliseconds, if known.
+    pub running_by: fn(u32, Option<u64>) -> bool,
     /// Ends a process, but only one started at or after the given Unix milliseconds.
     pub stop: fn(u32, u64),
 }
@@ -10,6 +12,7 @@ impl Probes {
     pub const SYSTEM: Self = Self {
         below: descendants,
         is_running,
+        running_by,
         stop: stop_since,
     };
 }
@@ -173,6 +176,39 @@ fn in_tree(rows: &[(u32, u32, u32)], root: u32) -> Vec<u32> {
     found
 }
 
+/// Allowed gap between a process's creation and the start time it stamps in its own session file.
+const STAMP_SLACK_MS: u64 = 1_000;
+
+/// Whether `pid` runs and had started by `at_ms`, so it may be the process that stamped a file then; a reused id starts later.
+pub fn running_by(pid: u32, at_ms: Option<u64>) -> bool {
+    is_running(pid)
+        && match (at_ms, born_ms(pid)) {
+            (Some(at), Some(born)) => born <= at.saturating_add(STAMP_SLACK_MS),
+            // Without both times the running process counts, so a live chat is never copied over.
+            _ => true,
+        }
+}
+
+#[cfg(target_os = "macos")]
+fn born_ms(pid: u32) -> Option<u64> {
+    use std::mem::{size_of, zeroed};
+
+    let pid = libc::c_int::try_from(pid).ok()?;
+    let size = libc::c_int::try_from(size_of::<libc::proc_bsdinfo>()).ok()?;
+    // SAFETY: a zeroed plain-data struct the call fills, with its exact size passed.
+    let (read, info) = unsafe {
+        let mut info: libc::proc_bsdinfo = zeroed();
+        let read = libc::proc_pidinfo(pid, libc::PROC_PIDTBSDINFO, 0, (&raw mut info).cast(), size);
+        (read, info)
+    };
+    (read == size).then(|| info.pbi_start_tvsec * 1_000 + info.pbi_start_tvusec / 1_000)
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn born_ms(_pid: u32) -> Option<u64> {
+    None
+}
+
 /// Whether a process with this id is still running.
 #[cfg(windows)]
 pub fn is_running(pid: u32) -> bool {
@@ -286,6 +322,24 @@ mod tests {
 
         assert!(is_running(std::process::id()));
         assert!(!is_running(child.id()));
+    }
+
+    #[cfg(any(windows, target_os = "macos"))]
+    #[test]
+    fn a_process_started_after_a_files_stamp_is_not_the_one_that_wrote_it() {
+        let now_ms = u64::try_from(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis(),
+        )
+        .unwrap();
+        let me = std::process::id();
+
+        assert!(running_by(me, Some(now_ms)));
+        assert!(running_by(me, None));
+        // This process started well after a stamp from an hour ago, as a reused id's process does.
+        assert!(!running_by(me, Some(now_ms - 3_600_000)));
     }
 
     #[cfg(windows)]
