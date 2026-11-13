@@ -118,7 +118,10 @@ export function createPanelFeed(
   const skills = slot<Skill[]>(current);
 
   // `live` turns false once the tab changes or the panel closes, so a late reply starts no more reads.
-  const readPrs = (key: string, found: readonly FolderChanges[]) => {
+  const readPrs = (
+    key: string,
+    found: readonly FolderChanges[],
+  ): Promise<unknown> => {
     const repos = new Map<string, { folder: string; name: string }>();
     for (const f of found) {
       if (
@@ -129,7 +132,7 @@ export function createPanelFeed(
         repos.set(f.changes.root, { folder: f.folder, name: f.changes.name });
       }
     }
-    void prs.load(key, () =>
+    return prs.load(key, () =>
       Promise.all(
         [...repos].map(([root, repo]) =>
           panelPrs(repo.folder).then(
@@ -144,8 +147,8 @@ export function createPanelFeed(
     key: string,
     paths: readonly string[],
     live: () => boolean,
-  ) => {
-    void folders
+  ): Promise<unknown> =>
+    folders
       .load(key, () =>
         Promise.all(
           paths.map((folder) =>
@@ -164,10 +167,9 @@ export function createPanelFeed(
           ),
         ),
       )
-      .then((found) => {
-        if (live() && found !== undefined) readPrs(key, found);
-      });
-  };
+      .then((found) =>
+        live() && found !== undefined ? readPrs(key, found) : undefined,
+      );
 
   createEffect(
     on(current, (key) => {
@@ -176,6 +178,13 @@ export function createPanelFeed(
       const folder = t.folder;
       const paths = folder === null ? [] : [folder, ...t.dirs];
       let live = true;
+      let reading = false;
+      const read = () => {
+        reading = true;
+        void readRepos(key, paths, () => live).finally(() => {
+          reading = false;
+        });
+      };
       onCleanup(() => {
         live = false;
       });
@@ -183,7 +192,7 @@ export function createPanelFeed(
         folders.clear();
         prs.clear();
       } else {
-        readRepos(key, paths, () => live);
+        read();
       }
       void connectors.load(key, () =>
         panelConnectors(t.account, folder, t.tab),
@@ -191,8 +200,9 @@ export function createPanelFeed(
       void skills.load(key, () => panelSkills(t.account, folder));
       if (folder === null) return;
       // Only git can change under a running chat often enough to poll; config and skills reload on a tab change.
+      // A read slower than the poll is not stacked on, since each one holds a core thread until git or gh answers.
       const timer = setInterval(() => {
-        if (!document.hidden) readRepos(key, paths, () => live);
+        if (!document.hidden && !reading) read();
       }, every);
       onCleanup(() => {
         clearInterval(timer);
@@ -223,7 +233,7 @@ export function createPanelFeed(
       const key = untrack(current);
       const found = untrack(folders.get);
       if (key !== undefined && found !== undefined && "value" in found) {
-        readPrs(key, found.value);
+        void readPrs(key, found.value);
       }
     },
     connectors: connectors.get,

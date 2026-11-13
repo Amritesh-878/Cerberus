@@ -63,9 +63,11 @@ pub struct Finder {
 
 impl Finder {
     pub fn from_env() -> Self {
-        let dirs = env::var_os("PATH")
-            .map(|path| env::split_paths(&path).collect())
-            .unwrap_or_default();
+        let dirs = crate::reach::answering(
+            env::var_os("PATH")
+                .map(|path| env::split_paths(&path).collect())
+                .unwrap_or_default(),
+        );
         #[cfg(windows)]
         let exts = env::var("PATHEXT")
             .unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".to_owned())

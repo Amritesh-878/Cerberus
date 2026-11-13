@@ -1,9 +1,10 @@
 //! The app's side of Find a chat: the accounts to search, the stream of results, and resuming one.
 
-use tauri::State;
 use tauri::ipc::Channel;
+use tauri::{AppHandle, Manager, State};
 
 use crate::accounts::{Accounts, AccountsError};
+use crate::blocking::blocking;
 use crate::findchat::{Batch, ChatFinder, Source};
 use crate::saved::{Saved, TabId};
 use crate::sessions::transcript;
@@ -47,21 +48,25 @@ fn sources(accounts: &Accounts) -> Result<Vec<Source>, AccountsError> {
 }
 
 /// Searches every account's chats for `query`. Results stream on `results`, and the number returned names this search.
-#[tauri::command(async)]
-pub fn chat_find(
-    finder: State<'_, ChatFinder>,
-    accounts: State<'_, Accounts>,
-    saved: State<'_, Saved>,
+#[tauri::command]
+pub async fn chat_find(
+    app: AppHandle,
     query: String,
     results: Channel<Batch>,
 ) -> Result<u64, FindError> {
-    let sources = sources(&accounts)?;
-    Ok(
-        finder.search(sources, &query, saved.open_sessions(), move |batch| {
-            // Fails only once the dialog is gone, and its close stops the search.
-            let _ = results.send(batch);
-        }),
-    )
+    blocking(move || {
+        let finder = app.state::<ChatFinder>();
+        let accounts = app.state::<Accounts>();
+        let saved = app.state::<Saved>();
+        let sources = sources(&accounts)?;
+        Ok(
+            finder.search(sources, &query, saved.open_sessions(), move |batch| {
+                // Fails only once the dialog is gone, and its close stops the search.
+                let _ = results.send(batch);
+            }),
+        )
+    })
+    .await
 }
 
 /// The dialog closed: the search stops and what it read leaves memory.
@@ -71,19 +76,19 @@ pub fn chat_find_close(finder: State<'_, ChatFinder>) {
 }
 
 /// Gives a new, not yet started tab a found chat to resume, once its transcript is where the tab will look.
-#[tauri::command(async)]
-pub fn chat_resume(
-    accounts: State<'_, Accounts>,
-    saved: State<'_, Saved>,
-    tab: TabId,
-    session: String,
-) -> Result<(), FindError> {
-    let saved_tab = saved.tab(tab).ok_or(FindError::NoTab)?;
-    let home = accounts.chat_home(saved_tab.account)?;
-    let cwd = saved_tab
-        .cwd
-        .unwrap_or_else(|| accounts.home().to_string_lossy().into_owned());
-    transcript(&home, &cwd, &session).ok_or(FindError::NotThere)?;
-    saved.set_session(tab, &session);
-    Ok(())
+#[tauri::command]
+pub async fn chat_resume(app: AppHandle, tab: TabId, session: String) -> Result<(), FindError> {
+    blocking(move || {
+        let accounts = app.state::<Accounts>();
+        let saved = app.state::<Saved>();
+        let saved_tab = saved.tab(tab).ok_or(FindError::NoTab)?;
+        let home = accounts.chat_home(saved_tab.account)?;
+        let cwd = saved_tab
+            .cwd
+            .unwrap_or_else(|| accounts.home().to_string_lossy().into_owned());
+        transcript(&home, &cwd, &session).ok_or(FindError::NotThere)?;
+        saved.set_session(tab, &session);
+        Ok(())
+    })
+    .await
 }

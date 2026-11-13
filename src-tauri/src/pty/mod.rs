@@ -1,3 +1,5 @@
+#[cfg(windows)]
+mod batch;
 mod coalesce;
 mod flow;
 
@@ -38,6 +40,9 @@ pub enum PtyError {
     NotFound(String),
     #[error("folder not found: {0}")]
     NoSuchDir(String),
+    #[cfg(windows)]
+    #[error("{0} runs through cmd, which cannot pass an argument holding a quote or a line break")]
+    BatchArgument(String),
     #[error("could not start {program}: {reason}")]
     Spawn { program: String, reason: String },
     #[error("pseudo-terminal failed: {0}")]
@@ -256,7 +261,18 @@ fn command_for(request: &SpawnRequest) -> Result<CommandBuilder, PtyError> {
     let program = Finder::from_env()
         .find(&request.program)
         .ok_or_else(|| PtyError::NotFound(request.program.clone()))?;
+    #[cfg(windows)]
+    let mut command = if batch::is_batch(&program) {
+        batch::command(&program, &request.args)
+            .ok_or_else(|| PtyError::BatchArgument(request.program.clone()))?
+    } else {
+        let mut command = CommandBuilder::new(&program);
+        command.args(&request.args);
+        command
+    };
+    #[cfg(unix)]
     let mut command = CommandBuilder::new(&program);
+    #[cfg(unix)]
     command.args(&request.args);
     if let Some(cwd) = &request.cwd {
         if !Path::new(cwd).is_dir() {
@@ -502,6 +518,73 @@ mod tests {
             })
         );
         assert!(lock(&manager.sessions).is_empty());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_cmd_files_arguments_arrive_whole_and_none_runs_as_a_command() {
+        let dir = std::env::temp_dir().join(format!("cerberus-batch-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let shim = dir.join("args.cmd");
+        // Like npm's shim, `%*` goes on to another command, which reads it again.
+        std::fs::write(
+            &shim,
+            "@echo off
+for %%a in (%*) do echo ARG=[%%~a]
+",
+        )
+        .unwrap();
+        let manager = PtyManager::default();
+        let args = [
+            r"--add-dir=C:\code\R&D",
+            "x&set /a 40+2",
+            "100%OS%",
+            "a^b|c",
+            "with space",
+        ];
+        let (id, rx) = start(&manager, shim.to_str().unwrap(), &args);
+
+        let (text, exit) = collect(&manager, id, &rx, |_| false);
+        std::fs::remove_dir_all(&dir).unwrap();
+
+        for arg in args {
+            assert!(text.contains(&format!("ARG=[{arg}]")), "{arg} in {text:?}");
+        }
+        assert!(
+            !text.contains("42"),
+            "an argument ran as a command: {text:?}"
+        );
+        assert!(exit.is_some(), "no exit: {text:?}");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_quote_in_a_cmd_files_argument_is_refused() {
+        let dir = std::env::temp_dir().join(format!("cerberus-quote-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let shim = dir.join("args.cmd");
+        std::fs::write(
+            &shim,
+            "@echo off
+",
+        )
+        .unwrap();
+        let request = SpawnRequest {
+            program: shim.to_string_lossy().into_owned(),
+            args: vec![r#"--add-dir=C:\dir"&calc"#.to_owned()],
+            cwd: None,
+            cols: 80,
+            rows: 24,
+            claude_config_dir: None,
+            env: Vec::new(),
+            dirs: Vec::new(),
+            tab_env: Vec::new(),
+        };
+
+        let result = command_for(&request);
+        std::fs::remove_dir_all(&dir).unwrap();
+
+        assert!(matches!(result, Err(PtyError::BatchArgument(_))));
     }
 
     #[test]

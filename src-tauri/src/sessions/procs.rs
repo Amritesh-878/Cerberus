@@ -1,7 +1,9 @@
 /// What the system says about processes, as plain functions so tests can stand in for it.
 pub struct Probes {
-    pub below: fn(u32) -> Vec<u32>,
+    pub below: fn(u32, u64) -> Vec<u32>,
     pub is_running: fn(u32) -> bool,
+    /// Whether a process runs under that id and had started by the given Unix milliseconds, if known.
+    pub running_by: fn(u32, Option<u64>) -> bool,
     /// Ends a process, but only one started at or after the given Unix milliseconds.
     pub stop: fn(u32, u64),
 }
@@ -10,6 +12,7 @@ impl Probes {
     pub const SYSTEM: Self = Self {
         below: descendants,
         is_running,
+        running_by,
         stop: stop_since,
     };
 }
@@ -17,15 +20,12 @@ impl Probes {
 /// Ends `pid` if it started at or after `since_ms`, so a reused id of an older, unrelated process is never touched.
 #[cfg(windows)]
 pub fn stop_since(pid: u32, since_ms: u64) {
-    use windows_sys::Win32::Foundation::{CloseHandle, FILETIME};
+    use windows_sys::Win32::Foundation::CloseHandle;
     use windows_sys::Win32::System::Threading::{
-        GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE,
-        TerminateProcess,
+        OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE, TerminateProcess,
     };
-    // 100 ns ticks from 1601 to 1970.
-    const EPOCH_TICKS: u64 = 116_444_736_000_000_000;
 
-    // SAFETY: a handle this function opens, reads and closes; the out-pointers are locals.
+    // SAFETY: a handle this function opens, passes on and closes.
     unsafe {
         let process = OpenProcess(
             PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE,
@@ -35,24 +35,55 @@ pub fn stop_since(pid: u32, since_ms: u64) {
         if process.is_null() {
             return;
         }
-        let zero = FILETIME {
-            dwLowDateTime: 0,
-            dwHighDateTime: 0,
-        };
-        let (mut created, mut exited, mut kernel, mut user) = (zero, zero, zero, zero);
-        let read = GetProcessTimes(
+        if created_ms(process).is_some_and(|started| started >= since_ms) {
+            TerminateProcess(process, 1);
+        }
+        CloseHandle(process);
+    }
+}
+
+/// When the process behind `process` was created, in Unix milliseconds.
+#[cfg(windows)]
+fn created_ms(process: windows_sys::Win32::Foundation::HANDLE) -> Option<u64> {
+    use windows_sys::Win32::Foundation::FILETIME;
+    use windows_sys::Win32::System::Threading::GetProcessTimes;
+    // 100 ns ticks from 1601 to 1970.
+    const EPOCH_TICKS: u64 = 116_444_736_000_000_000;
+
+    let zero = FILETIME {
+        dwLowDateTime: 0,
+        dwHighDateTime: 0,
+    };
+    let (mut created, mut exited, mut kernel, mut user) = (zero, zero, zero, zero);
+    // SAFETY: the caller holds the handle open; the out-pointers are locals.
+    let read = unsafe {
+        GetProcessTimes(
             process,
             &raw mut created,
             &raw mut exited,
             &raw mut kernel,
             &raw mut user,
-        ) != 0;
-        let ticks = (u64::from(created.dwHighDateTime) << 32) | u64::from(created.dwLowDateTime);
-        let started_ms = ticks.saturating_sub(EPOCH_TICKS) / 10_000;
-        if read && started_ms >= since_ms {
-            TerminateProcess(process, 1);
+        )
+    } != 0;
+    let ticks = (u64::from(created.dwHighDateTime) << 32) | u64::from(created.dwLowDateTime);
+    read.then(|| ticks.saturating_sub(EPOCH_TICKS) / 10_000)
+}
+
+/// When process `pid` was created, in Unix milliseconds, if it is running and readable.
+#[cfg(windows)]
+fn born_ms(pid: u32) -> Option<u64> {
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
+
+    // SAFETY: a handle this function opens, passes on and closes.
+    unsafe {
+        let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+        if process.is_null() {
+            return None;
         }
+        let born = created_ms(process);
         CloseHandle(process);
+        born
     }
 }
 
@@ -65,9 +96,9 @@ pub fn stop_since(pid: u32, _since_ms: u64) {
     }
 }
 
-/// Every process below `root`, children first, from Windows' process list.
+/// Every process below `root`, which started at `since_ms`, children first, from Windows' process list.
 #[cfg(windows)]
-pub fn descendants(root: u32) -> Vec<u32> {
+pub fn descendants(root: u32, since_ms: u64) -> Vec<u32> {
     use std::mem::{size_of, zeroed};
 
     use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
@@ -92,11 +123,18 @@ pub fn descendants(root: u32) -> Vec<u32> {
         }
         CloseHandle(snapshot);
     }
-    below(&pairs, root)
+    // The tab's start is read just before its program is created, and creation times can lag that clock by a tick.
+    below(
+        &pairs,
+        root,
+        since_ms.saturating_sub(BORN_SLACK_MS),
+        born_ms,
+    )
 }
 
+/// Unix moves an orphan to launchd, so a parent id is never stale and no start time is needed.
 #[cfg(unix)]
-pub fn descendants(root: u32) -> Vec<u32> {
+pub fn descendants(root: u32, _since_ms: u64) -> Vec<u32> {
     let listed = std::process::Command::new("/bin/ps")
         .args(["-axo", "pid=,ppid=,pgid="])
         .stdin(std::process::Stdio::null())
@@ -129,13 +167,46 @@ fn ps_rows(listing: &str) -> Vec<(u32, u32, u32)> {
 #[cfg(any(unix, test))]
 fn in_tree(rows: &[(u32, u32, u32)], root: u32) -> Vec<u32> {
     let pairs: Vec<(u32, u32)> = rows.iter().map(|&(pid, ppid, _)| (pid, ppid)).collect();
-    let mut found = below(&pairs, root);
+    let mut found = below(&pairs, root, 0, |_| Some(0));
     for &(pid, _, pgid) in rows {
         if pgid == root && pid != root && !found.contains(&pid) {
             found.push(pid);
         }
     }
     found
+}
+
+/// Allowed gap between a process's creation and the start time it stamps in its own session file.
+const STAMP_SLACK_MS: u64 = 1_000;
+
+/// Whether `pid` runs and had started by `at_ms`, so it may be the process that stamped a file then; a reused id starts later.
+pub fn running_by(pid: u32, at_ms: Option<u64>) -> bool {
+    is_running(pid)
+        && match (at_ms, born_ms(pid)) {
+            (Some(at), Some(born)) => born <= at.saturating_add(STAMP_SLACK_MS),
+            // Without both times the running process counts, so a live chat is never copied over.
+            _ => true,
+        }
+}
+
+#[cfg(target_os = "macos")]
+fn born_ms(pid: u32) -> Option<u64> {
+    use std::mem::{size_of, zeroed};
+
+    let pid = libc::c_int::try_from(pid).ok()?;
+    let size = libc::c_int::try_from(size_of::<libc::proc_bsdinfo>()).ok()?;
+    // SAFETY: a zeroed plain-data struct the call fills, with its exact size passed.
+    let (read, info) = unsafe {
+        let mut info: libc::proc_bsdinfo = zeroed();
+        let read = libc::proc_pidinfo(pid, libc::PROC_PIDTBSDINFO, 0, (&raw mut info).cast(), size);
+        (read, info)
+    };
+    (read == size).then(|| info.pbi_start_tvsec * 1_000 + info.pbi_start_tvusec / 1_000)
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn born_ms(_pid: u32) -> Option<u64> {
+    None
 }
 
 /// Whether a process with this id is still running.
@@ -170,15 +241,29 @@ pub fn is_running(pid: u32) -> bool {
     sent == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
 }
 
+/// Allowed lag between the clock read before a spawn and the coarser clock that stamps process creation.
+#[cfg(windows)]
+const BORN_SLACK_MS: u64 = 100;
+
 /// `pairs` are (process, parent); the walk is breadth first, so nearer processes come first.
-fn below(pairs: &[(u32, u32)], root: u32) -> Vec<u32> {
+/// A link counts only when `born` says the child started at or after its parent (the root at `root_born`),
+/// since Windows keeps a dead parent's id and an older process may name a pid that was later reused.
+fn below(
+    pairs: &[(u32, u32)],
+    root: u32,
+    root_born: u64,
+    born: impl Fn(u32) -> Option<u64>,
+) -> Vec<u32> {
     let mut found = Vec::new();
-    let mut next = std::collections::VecDeque::from([root]);
-    while let Some(parent) = next.pop_front() {
+    let mut next = std::collections::VecDeque::from([(root, root_born)]);
+    while let Some((parent, parent_born)) = next.pop_front() {
         for &(pid, of) in pairs {
-            if of == parent && pid != root && !found.contains(&pid) {
+            if of != parent || pid == root || found.contains(&pid) {
+                continue;
+            }
+            if let Some(at) = born(pid).filter(|&at| at >= parent_born) {
                 found.push(pid);
-                next.push_back(pid);
+                next.push_back((pid, at));
             }
         }
     }
@@ -193,8 +278,37 @@ mod tests {
     fn the_walk_finds_children_then_grandchildren_and_nothing_else() {
         let pairs = [(10, 1), (20, 10), (21, 10), (30, 20), (40, 2), (10, 1)];
 
-        assert_eq!(below(&pairs, 10), [20, 21, 30]);
-        assert_eq!(below(&pairs, 30), Vec::<u32>::new());
+        assert_eq!(below(&pairs, 10, 0, |_| Some(0)), [20, 21, 30]);
+        assert_eq!(below(&pairs, 30, 0, |_| Some(0)), Vec::<u32>::new());
+    }
+
+    #[test]
+    fn an_older_process_naming_the_roots_reused_pid_is_not_followed() {
+        // 7 started at 1_000 under a parent that died; the tab's root got pid 7's old parent id, 50, at 5_000.
+        let pairs = [(7, 50), (8, 7), (60, 50), (61, 60)];
+        let born = |pid| match pid {
+            7 => Some(1_000),
+            8 => Some(6_000),
+            60 => Some(5_100),
+            61 => Some(5_200),
+            _ => None,
+        };
+
+        assert_eq!(below(&pairs, 50, 5_000, born), [60, 61]);
+    }
+
+    #[test]
+    fn a_child_older_than_its_parent_or_unreadable_is_not_followed() {
+        // 21 claims parent 20 but predates it, so 20's id was reused; 22's start can't be read.
+        let pairs = [(20, 10), (21, 20), (30, 21), (22, 10)];
+        let born = |pid| match pid {
+            20 => Some(2_000),
+            21 => Some(1_500),
+            30 => Some(3_000),
+            _ => None,
+        };
+
+        assert_eq!(below(&pairs, 10, 1_000, born), [20]);
     }
 
     #[cfg(windows)]
@@ -208,6 +322,24 @@ mod tests {
 
         assert!(is_running(std::process::id()));
         assert!(!is_running(child.id()));
+    }
+
+    #[cfg(any(windows, target_os = "macos"))]
+    #[test]
+    fn a_process_started_after_a_files_stamp_is_not_the_one_that_wrote_it() {
+        let now_ms = u64::try_from(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis(),
+        )
+        .unwrap();
+        let me = std::process::id();
+
+        assert!(running_by(me, Some(now_ms)));
+        assert!(running_by(me, None));
+        // This process started well after a stamp from an hour ago, as a reused id's process does.
+        assert!(!running_by(me, Some(now_ms - 3_600_000)));
     }
 
     #[cfg(windows)]
@@ -298,7 +430,7 @@ mod tests {
         let left: u32 = line.trim().parse().unwrap();
         wrapper.wait().unwrap();
 
-        let found = descendants(wrapper.id());
+        let found = descendants(wrapper.id(), 0);
         // SAFETY: plain signal to a test-owned process.
         unsafe { libc::kill(libc::pid_t::try_from(left).unwrap(), libc::SIGKILL) };
 
@@ -326,7 +458,7 @@ mod tests {
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
         let mut found = Vec::new();
         while found.is_empty() && std::time::Instant::now() < deadline {
-            found = descendants(wrapper.id());
+            found = descendants(wrapper.id(), 0);
         }
         for pid in found.iter().chain([&wrapper.id()]) {
             // SAFETY: plain signal to a test-owned process.
@@ -339,12 +471,19 @@ mod tests {
 
     #[test]
     fn a_loop_in_the_parent_links_ends() {
-        assert_eq!(below(&[(1, 2), (2, 1)], 1), [2]);
+        assert_eq!(below(&[(1, 2), (2, 1)], 1, 0, |_| Some(0)), [2]);
     }
 
     #[cfg(windows)]
     #[test]
     fn a_shims_real_program_is_found_below_it() {
+        let since = u64::try_from(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis(),
+        )
+        .unwrap();
         let mut shim = std::process::Command::new("cmd")
             .args(["/c", "ping -n 30 127.0.0.1 >nul"])
             .spawn()
@@ -352,7 +491,7 @@ mod tests {
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
         let mut found = Vec::new();
         while found.is_empty() && std::time::Instant::now() < deadline {
-            found = descendants(shim.id());
+            found = descendants(shim.id(), since);
         }
         let _ = std::process::Command::new("taskkill")
             .args(["/F", "/T", "/PID", &shim.id().to_string()])

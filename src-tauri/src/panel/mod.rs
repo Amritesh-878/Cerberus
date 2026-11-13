@@ -10,9 +10,10 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use serde::{Serialize, Serializer};
-use tauri::State;
+use tauri::{AppHandle, Manager};
 
 use crate::accounts::{AccountId, Accounts, AccountsError};
+use crate::blocking::blocking;
 use crate::bridge::Bridge;
 use crate::programs::Finder;
 use crate::saved::TabId;
@@ -83,31 +84,34 @@ fn git() -> Option<Git> {
     Finder::from_env().find("git").map(Git::new)
 }
 
-#[tauri::command(async)]
-pub fn panel_changes(folder: PathBuf) -> Result<Changes, PanelError> {
-    let folder = self::folder(&folder)?;
-    let Some(git) = git() else {
-        return Ok(Changes::NoGit);
-    };
-    let Some(repo) = git.repo(folder) else {
-        return Ok(Changes::NotRepo);
-    };
-    let name = repo
-        .root
-        .file_name()
-        .map_or_else(|| repo.root.to_string_lossy(), |n| n.to_string_lossy())
-        .into_owned();
-    Ok(Changes::Repo {
-        name,
-        root: repo.root.to_string_lossy().into_owned(),
-        branch: repo.branch,
-        commit: repo.commit,
-        base: repo.base,
-        added: repo.added,
-        removed: repo.removed,
-        gh: Finder::from_env().find("gh").is_some(),
-        vscode: vscode::find().is_some(),
+#[tauri::command]
+pub async fn panel_changes(folder: PathBuf) -> Result<Changes, PanelError> {
+    blocking(move || {
+        let folder = self::folder(&folder)?;
+        let Some(git) = git() else {
+            return Ok(Changes::NoGit);
+        };
+        let Some(repo) = git.repo(folder) else {
+            return Ok(Changes::NotRepo);
+        };
+        let name = repo
+            .root
+            .file_name()
+            .map_or_else(|| repo.root.to_string_lossy(), |n| n.to_string_lossy())
+            .into_owned();
+        Ok(Changes::Repo {
+            name,
+            root: repo.root.to_string_lossy().into_owned(),
+            branch: repo.branch,
+            commit: repo.commit,
+            base: repo.base,
+            added: repo.added,
+            removed: repo.removed,
+            gh: Finder::from_env().find("gh").is_some(),
+            vscode: vscode::find().is_some(),
+        })
     })
+    .await
 }
 
 fn repo_root(folder: &Path) -> Result<PathBuf, PanelError> {
@@ -118,76 +122,91 @@ fn repo_root(folder: &Path) -> Result<PathBuf, PanelError> {
 }
 
 /// Every PR of the folder's repo, asked of `gh` at most once a minute per repo.
-#[tauri::command(async)]
-pub fn panel_prs(prs: State<'_, PrCache>, folder: PathBuf) -> Result<Vec<PrRow>, PanelError> {
-    let folder = self::folder(&folder)?;
-    let (Some(git), Some(gh)) = (git(), Finder::from_env().find("gh")) else {
-        return Ok(Vec::new());
-    };
-    let Some(root) = git.head(folder).map(|h| h.root) else {
-        return Ok(Vec::new());
-    };
-    let found = prs.get(&root, Instant::now(), || gh::list(&gh, folder));
-    Ok(gh::rows(&found))
+#[tauri::command]
+pub async fn panel_prs(app: AppHandle, folder: PathBuf) -> Result<Vec<PrRow>, PanelError> {
+    blocking(move || {
+        let prs = app.state::<PrCache>();
+        let folder = self::folder(&folder)?;
+        let (Some(git), Some(gh)) = (git(), Finder::from_env().find("gh")) else {
+            return Ok(Vec::new());
+        };
+        let Some(root) = git.head(folder).map(|h| h.root) else {
+            return Ok(Vec::new());
+        };
+        let found = prs.get(&root, Instant::now(), || gh::list(&gh, folder));
+        Ok(gh::rows(&found))
+    })
+    .await
 }
 
 fn pr_url(prs: &PrCache, folder: &Path, number: u64) -> Result<String, PanelError> {
     prs.url(&repo_root(folder)?, number).ok_or(PanelError::NoPr)
 }
 
-#[tauri::command(async)]
-pub fn panel_open_pr(
-    prs: State<'_, PrCache>,
-    folder: PathBuf,
-    number: u64,
-) -> Result<(), PanelError> {
-    let url = pr_url(&prs, &folder, number)?;
-    Ok(reveal::open(url.as_ref())?)
+#[tauri::command]
+pub async fn panel_open_pr(app: AppHandle, folder: PathBuf, number: u64) -> Result<(), PanelError> {
+    blocking(move || {
+        let prs = app.state::<PrCache>();
+        let url = pr_url(&prs, &folder, number)?;
+        Ok(reveal::open(url.as_ref())?)
+    })
+    .await
 }
 
 /// The PR's link for the clipboard; only a link `gh` gave for this repo is handed out.
-#[tauri::command(async)]
-pub fn panel_pr_link(
-    prs: State<'_, PrCache>,
+#[tauri::command]
+pub async fn panel_pr_link(
+    app: AppHandle,
     folder: PathBuf,
     number: u64,
 ) -> Result<String, PanelError> {
-    pr_url(&prs, &folder, number)
+    blocking(move || {
+        let prs = app.state::<PrCache>();
+        pr_url(&prs, &folder, number)
+    })
+    .await
 }
 
 /// Runs `gh pr ready` for a draft the list showed, after the user confirmed it in the panel.
-#[tauri::command(async)]
-pub fn panel_pr_ready(
-    prs: State<'_, PrCache>,
+#[tauri::command]
+pub async fn panel_pr_ready(
+    app: AppHandle,
     folder: PathBuf,
     number: u64,
 ) -> Result<(), PanelError> {
-    let folder = self::folder(&folder)?;
-    let root = repo_root(folder)?;
-    if !prs.is_draft(&root, number) {
-        return Err(PanelError::NotDraft);
-    }
-    let gh = Finder::from_env()
-        .find("gh")
-        .ok_or(PanelError::NotReady(number))?;
-    if !gh::ready(&gh, folder, number) {
-        return Err(PanelError::NotReady(number));
-    }
-    prs.made_ready(&root, number, Instant::now());
-    Ok(())
+    blocking(move || {
+        let prs = app.state::<PrCache>();
+        let folder = self::folder(&folder)?;
+        let root = repo_root(folder)?;
+        if !prs.is_draft(&root, number) {
+            return Err(PanelError::NotDraft);
+        }
+        let gh = Finder::from_env()
+            .find("gh")
+            .ok_or(PanelError::NotReady(number))?;
+        if !gh::ready(&gh, folder, number) {
+            return Err(PanelError::NotReady(number));
+        }
+        prs.made_ready(&root, number, Instant::now());
+        Ok(())
+    })
+    .await
 }
 
 /// Opens the folder in VS Code, whose Source Control view shows the diff.
-#[tauri::command(async)]
-pub fn panel_open_vscode(folder: PathBuf) -> Result<(), PanelError> {
-    let folder = self::folder(&folder)?;
-    let code = vscode::find().ok_or(PanelError::NoVsCode)?;
-    Ok(vscode::open(&code, folder)?)
+#[tauri::command]
+pub async fn panel_open_vscode(folder: PathBuf) -> Result<(), PanelError> {
+    blocking(move || {
+        let folder = self::folder(&folder)?;
+        let code = vscode::find().ok_or(PanelError::NoVsCode)?;
+        Ok(vscode::open(&code, folder)?)
+    })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn panel_open_folder(folder: PathBuf) -> Result<(), PanelError> {
-    Ok(reveal::open(self::folder(&folder)?.as_os_str())?)
+#[tauri::command]
+pub async fn panel_open_folder(folder: PathBuf) -> Result<(), PanelError> {
+    blocking(move || Ok(reveal::open(self::folder(&folder)?.as_os_str())?)).await
 }
 
 // Claude Code keeps its settings file in the config dir when one is set, else in the home folder.
@@ -201,39 +220,49 @@ fn account_config(
         .join(".claude.json"))
 }
 
-#[tauri::command(async)]
-pub fn panel_connectors(
-    accounts: State<'_, Accounts>,
-    bridge: State<'_, Bridge>,
+#[tauri::command]
+pub async fn panel_connectors(
+    app: AppHandle,
     account: Option<AccountId>,
     folder: Option<PathBuf>,
     tab: Option<TabId>,
 ) -> Result<Connectors, PanelError> {
-    let config = account_config(&accounts, account)?;
-    let folder = folder.as_deref().map(self::folder).transpose()?;
-    let plugins = plugins::enabled(&accounts.claude_home(account)?, folder);
-    // Whether this tab's running chat was given the server when it started, without reading the file it names.
-    let app_server = tab.is_some_and(|tab| bridge.linked(tab));
-    let mut found = mcp::read(&config, folder, &plugins.plugins, app_server);
-    found.unreadable.extend(plugins.unreadable);
-    Ok(found)
+    blocking(move || {
+        let accounts = app.state::<Accounts>();
+        let bridge = app.state::<Bridge>();
+        let config = account_config(&accounts, account)?;
+        let folder = folder.as_deref().map(self::folder).transpose()?;
+        let plugins = plugins::enabled(&accounts.claude_home(account)?, folder);
+        // Whether this tab's running chat was given the server when it started, without reading the file it names.
+        let app_server = tab.is_some_and(|tab| bridge.linked(tab));
+        let mut found = mcp::read(&config, folder, &plugins.plugins, app_server);
+        found.unreadable.extend(plugins.unreadable);
+        Ok(found)
+    })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn panel_skills(
-    accounts: State<'_, Accounts>,
+#[tauri::command]
+pub async fn panel_skills(
+    app: AppHandle,
     account: Option<AccountId>,
     folder: Option<PathBuf>,
 ) -> Result<Vec<Skill>, PanelError> {
-    let home = accounts.claude_home(account)?;
-    let signed_in = skills::account(&account_config(&accounts, account)?);
-    let folder = folder.as_deref().map(self::folder).transpose()?;
-    let plugins = plugins::enabled(&home, folder).plugins;
-    Ok(skills::read(folder, &home, &plugins, &signed_in))
+    blocking(move || {
+        let accounts = app.state::<Accounts>();
+        let home = accounts.claude_home(account)?;
+        let signed_in = skills::account(&account_config(&accounts, account)?);
+        let folder = folder.as_deref().map(self::folder).transpose()?;
+        let plugins = plugins::enabled(&home, folder).plugins;
+        Ok(skills::read(folder, &home, &plugins, &signed_in))
+    })
+    .await
 }
 
 #[cfg(test)]
 mod tests {
+    use tauri::async_runtime::block_on;
+
     use super::*;
     use crate::accounts::testdir::TestDir;
 
@@ -241,7 +270,7 @@ mod tests {
     fn a_folder_outside_any_repo_says_so_without_an_error() {
         let dir = TestDir::new();
 
-        let changes = panel_changes(dir.path().to_path_buf()).unwrap();
+        let changes = block_on(panel_changes(dir.path().to_path_buf())).unwrap();
 
         assert_eq!(
             serde_json::to_string(&changes).unwrap(),
@@ -254,11 +283,11 @@ mod tests {
         let dir = TestDir::new();
 
         assert!(matches!(
-            panel_changes(dir.path().join("gone")),
+            block_on(panel_changes(dir.path().join("gone"))),
             Err(PanelError::NoFolder)
         ));
         assert!(matches!(
-            panel_open_folder(PathBuf::from("relative")),
+            block_on(panel_open_folder(PathBuf::from("relative"))),
             Err(PanelError::NoFolder)
         ));
     }

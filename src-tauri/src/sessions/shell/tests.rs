@@ -21,7 +21,7 @@ fn walks() -> usize {
     WALKS.with(Cell::get)
 }
 
-fn child(root: u32) -> Vec<u32> {
+fn child(root: u32, _: u64) -> Vec<u32> {
     WALKS.with(|w| w.set(w.get() + 1));
     if root == SHELL {
         vec![CLAUDE]
@@ -30,7 +30,7 @@ fn child(root: u32) -> Vec<u32> {
     }
 }
 
-fn through_a_wrapper(root: u32) -> Vec<u32> {
+fn through_a_wrapper(root: u32, _: u64) -> Vec<u32> {
     WALKS.with(|w| w.set(w.get() + 1));
     if root == SHELL {
         vec![WRAPPER, CLAUDE]
@@ -39,7 +39,7 @@ fn through_a_wrapper(root: u32) -> Vec<u32> {
     }
 }
 
-fn nothing(_: u32) -> Vec<u32> {
+fn nothing(_: u32, _: u64) -> Vec<u32> {
     WALKS.with(|w| w.set(w.get() + 1));
     Vec::new()
 }
@@ -54,7 +54,7 @@ fn now_ms() -> u64 {
         .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(0))
 }
 
-fn shell_on(dir: &Path, started_ms: u64, below: fn(u32) -> Vec<u32>) -> Shell {
+fn shell_on(dir: &Path, started_ms: u64, below: fn(u32, u64) -> Vec<u32>) -> Shell {
     Shell {
         config_dir: dir.to_path_buf(),
         pid: SHELL,
@@ -63,6 +63,7 @@ fn shell_on(dir: &Path, started_ms: u64, below: fn(u32) -> Vec<u32>) -> Shell {
         probes: Probes {
             below,
             is_running: running,
+            running_by: |_, _| false,
             stop: |_, _| {},
         },
     }

@@ -1,4 +1,5 @@
 mod accounts;
+mod blocking;
 mod bridge;
 mod cards;
 mod cli_link;
@@ -15,6 +16,7 @@ mod open;
 mod panel;
 mod programs;
 mod pty;
+mod reach;
 mod run;
 mod saved;
 mod services;

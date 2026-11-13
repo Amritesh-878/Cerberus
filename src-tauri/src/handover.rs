@@ -33,8 +33,6 @@ pub enum ContinueError {
     NoChat,
     #[error("{0} is signed out; sign it in from Accounts first")]
     SignedOut(String),
-    #[error("the move stopped before it finished")]
-    Stopped,
     #[error(transparent)]
     Accounts(#[from] AccountsError),
     #[error(transparent)]
@@ -160,7 +158,7 @@ impl RunningTabs {
             let grace = Instant::now() + LEFT_GRACE.min(wait / 2);
             let mut stopped = false;
             loop {
-                let left = (self.probes.below)(root);
+                let left = (self.probes.below)(root, since);
                 if left.is_empty() {
                     break;
                 }
@@ -241,7 +239,7 @@ fn continue_within(
     let cwd = saved_tab
         .cwd
         .unwrap_or_else(|| accounts.home().to_string_lossy().into_owned());
-    copy_chat(&from, &to, &cwd, &id, &running.probes.is_running)?;
+    copy_chat(&from, &to, &cwd, &id, &running.probes.running_by)?;
     // The chat goes on under the new account, so the tab resumes it there instead of opening the shell.
     saved.set_ended(tab, false);
     Ok(())
@@ -307,7 +305,7 @@ fn move_within(
     if from == folder {
         return Ok(());
     }
-    match copy_to_folder(&home, &from, folder, &id, &running.probes.is_running) {
+    match copy_to_folder(&home, &from, folder, &id, &running.probes.running_by) {
         // A chat whose file is gone starts anew in the new folder, as it would have in the old one.
         Err(CarryError::Missing) => Ok(()),
         other => Ok(other?),
@@ -330,7 +328,7 @@ mod tests {
     const NEWER_ID: &str = "a1b2c3d4-0000-4000-8000-000000000001";
     const CWD: &str = r"C:\work\app";
 
-    fn nothing_below(_: u32) -> Vec<u32> {
+    fn nothing_below(_: u32, _: u64) -> Vec<u32> {
         Vec::new()
     }
 
@@ -344,6 +342,7 @@ mod tests {
         RunningTabs::with(Probes {
             below: nothing_below,
             is_running: nothing_running,
+            running_by: |_, _| false,
             stop: stop_nothing,
         })
     }
@@ -529,7 +528,7 @@ mod tests {
 
     static LEFT_RUNNING: AtomicUsize = AtomicUsize::new(0);
 
-    fn below_for_a_while(_: u32) -> Vec<u32> {
+    fn below_for_a_while(_: u32, _: u64) -> Vec<u32> {
         if LEFT_RUNNING.load(Ordering::SeqCst) == 0 {
             return Vec::new();
         }
@@ -537,7 +536,7 @@ mod tests {
         vec![99]
     }
 
-    fn below_for_ever(_: u32) -> Vec<u32> {
+    fn below_for_ever(_: u32, _: u64) -> Vec<u32> {
         vec![99]
     }
 
@@ -547,6 +546,7 @@ mod tests {
         let world = world_with(RunningTabs::with(Probes {
             below: below_for_a_while,
             is_running: nothing_running,
+            running_by: |_, _| false,
             stop: stop_nothing,
         }));
         world.running.started(2);
@@ -562,6 +562,7 @@ mod tests {
         let world = world_with(RunningTabs::with(Probes {
             below: below_for_ever,
             is_running: nothing_running,
+            running_by: |_, _| false,
             stop: stop_nothing,
         }));
         world.running.started(2);
@@ -578,7 +579,7 @@ mod tests {
     static STOPPED: AtomicBool = AtomicBool::new(false);
     static STOPPED_SINCE: AtomicUsize = AtomicUsize::new(0);
 
-    fn below_until_stopped(_: u32) -> Vec<u32> {
+    fn below_until_stopped(_: u32, _: u64) -> Vec<u32> {
         if STOPPED.load(Ordering::SeqCst) {
             Vec::new()
         } else {
@@ -607,6 +608,7 @@ mod tests {
         let world = world_with(RunningTabs::with(Probes {
             below: below_for_ever,
             is_running: root_pid_taken_again,
+            running_by: |_, _| false,
             stop: stop_must_not_run,
         }));
         world.running.started(2);
@@ -625,6 +627,7 @@ mod tests {
         let world = world_with(RunningTabs::with(Probes {
             below: below_until_stopped,
             is_running: nothing_running,
+            running_by: |_, _| false,
             stop: stop_and_record,
         }));
         world.running.started(2);
@@ -652,7 +655,7 @@ mod tests {
 
     type Event = fn(&RunningTabs, TabId);
 
-    fn below_while_held(_: u32) -> Vec<u32> {
+    fn below_while_held(_: u32, _: u64) -> Vec<u32> {
         TREE_POLLED.store(true, Ordering::SeqCst);
         if TREE_HELD.load(Ordering::SeqCst) {
             vec![99]
@@ -666,6 +669,7 @@ mod tests {
         let world = world_with(RunningTabs::with(Probes {
             below: below_while_held,
             is_running: nothing_running,
+            running_by: |_, _| false,
             stop: stop_nothing,
         }));
         world.running.started(2);
