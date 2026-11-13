@@ -33,8 +33,6 @@ pub enum ContinueError {
     NoChat,
     #[error("{0} is signed out; sign it in from Accounts first")]
     SignedOut(String),
-    #[error("the move stopped before it finished")]
-    Stopped,
     #[error(transparent)]
     Accounts(#[from] AccountsError),
     #[error(transparent)]

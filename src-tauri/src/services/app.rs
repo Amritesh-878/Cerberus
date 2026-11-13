@@ -6,6 +6,7 @@ use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::accounts::Accounts;
+use crate::blocking::blocking;
 use crate::programs::{Finder, ProgramChoice, pick_shell};
 use crate::services::store::{Draft, ServiceId, StoreError};
 use crate::services::{Services, Sink, View, WatchId};
@@ -52,69 +53,109 @@ pub fn services_view(services: State<'_, Services>) -> View {
     services.view()
 }
 
-#[tauri::command(async)]
-pub fn service_add(services: State<'_, Services>, draft: Draft) -> Result<View, StoreError> {
-    services.add(&draft)
+#[tauri::command]
+pub async fn service_add(app: AppHandle, draft: Draft) -> Result<View, StoreError> {
+    blocking(move || {
+        let services = app.state::<Services>();
+        services.add(&draft)
+    })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn service_update(
-    services: State<'_, Services>,
+#[tauri::command]
+pub async fn service_update(
+    app: AppHandle,
     id: ServiceId,
     draft: Draft,
 ) -> Result<View, StoreError> {
-    services.update(id, &draft)
+    blocking(move || {
+        let services = app.state::<Services>();
+        services.update(id, &draft)
+    })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn service_remove(services: State<'_, Services>, id: ServiceId) -> Result<View, StoreError> {
-    services.remove(id)
+#[tauri::command]
+pub async fn service_remove(app: AppHandle, id: ServiceId) -> Result<View, StoreError> {
+    blocking(move || {
+        let services = app.state::<Services>();
+        services.remove(id)
+    })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn service_start(services: State<'_, Services>, id: ServiceId) -> Result<View, StoreError> {
-    services.start(id)
+#[tauri::command]
+pub async fn service_start(app: AppHandle, id: ServiceId) -> Result<View, StoreError> {
+    blocking(move || {
+        let services = app.state::<Services>();
+        services.start(id)
+    })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn service_stop(services: State<'_, Services>, id: ServiceId) -> Result<View, StoreError> {
-    services.stop(id)
+#[tauri::command]
+pub async fn service_stop(app: AppHandle, id: ServiceId) -> Result<View, StoreError> {
+    blocking(move || {
+        let services = app.state::<Services>();
+        services.stop(id)
+    })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn service_restart(services: State<'_, Services>, id: ServiceId) -> Result<View, StoreError> {
-    services.restart(id)
+#[tauri::command]
+pub async fn service_restart(app: AppHandle, id: ServiceId) -> Result<View, StoreError> {
+    blocking(move || {
+        let services = app.state::<Services>();
+        services.restart(id)
+    })
+    .await
 }
 
 /// The command, for the edit form; nothing else asks for it.
-#[tauri::command(async)]
-pub fn service_command(services: State<'_, Services>, id: ServiceId) -> Result<String, StoreError> {
-    services.command(id)
+#[tauri::command]
+pub async fn service_command(app: AppHandle, id: ServiceId) -> Result<String, StoreError> {
+    blocking(move || {
+        let services = app.state::<Services>();
+        services.command(id)
+    })
+    .await
 }
 
 /// Opens only an address the service printed, never one the webview names.
-#[tauri::command(async)]
-pub fn service_open_url(services: State<'_, Services>, id: ServiceId) -> Result<(), ServiceError> {
-    let url = services.url(id).ok_or(ServiceError::NoUrl)?;
-    crate::panel::reveal::open(OsStr::new(&url)).map_err(ServiceError::Open)
+#[tauri::command]
+pub async fn service_open_url(app: AppHandle, id: ServiceId) -> Result<(), ServiceError> {
+    blocking(move || {
+        let services = app.state::<Services>();
+        let url = services.url(id).ok_or(ServiceError::NoUrl)?;
+        crate::panel::reveal::open(OsStr::new(&url)).map_err(ServiceError::Open)
+    })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn services_fold(services: State<'_, Services>, folded: bool) -> Result<View, StoreError> {
-    services.fold(folded)
+#[tauri::command]
+pub async fn services_fold(app: AppHandle, folded: bool) -> Result<View, StoreError> {
+    blocking(move || {
+        let services = app.state::<Services>();
+        services.fold(folded)
+    })
+    .await
 }
 
 /// The output so far, then each new chunk, on `output` as raw bytes; `None` when the service is gone.
-#[tauri::command(async)]
-pub fn service_watch(
-    services: State<'_, Services>,
+#[tauri::command]
+pub async fn service_watch(
+    app: AppHandle,
     id: ServiceId,
     output: Channel<InvokeResponseBody>,
 ) -> Option<WatchId> {
-    services.watch(id, move |bytes| {
-        // A send fails only once the viewer is gone, and its unwatch follows.
-        let _ = output.send(InvokeResponseBody::Raw(bytes.to_vec()));
+    blocking(move || {
+        let services = app.state::<Services>();
+        services.watch(id, move |bytes| {
+            // A send fails only once the viewer is gone, and its unwatch follows.
+            let _ = output.send(InvokeResponseBody::Raw(bytes.to_vec()));
+        })
     })
+    .await
 }
 
 #[tauri::command(async)]

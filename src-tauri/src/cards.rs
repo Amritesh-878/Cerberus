@@ -3,6 +3,7 @@
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::accounts::{AccountId, Accounts, AccountsError, KeptUsage, Profiles};
+use crate::blocking::blocking;
 use crate::live::files::FileView;
 use crate::live::{DEFAULT_WARN_AT, Live, Sink, View, Warning};
 use crate::saved::TabId;
@@ -59,47 +60,64 @@ pub fn live_dismiss(live: State<'_, Live>, account: AccountId) {
 }
 
 /// Opens a file the tab's chat wrote; any other path is refused.
-#[tauri::command(async)]
-pub fn live_open_output(live: State<'_, Live>, tab: TabId, path: String) -> Result<(), String> {
-    live.open_output(tab, &path).map_err(|e| e.to_string())
+#[tauri::command]
+pub async fn live_open_output(app: AppHandle, tab: TabId, path: String) -> Result<(), String> {
+    blocking(move || {
+        let live = app.state::<Live>();
+        live.open_output(tab, &path).map_err(|e| e.to_string())
+    })
+    .await
 }
 
 /// A written file and its `HEAD` version for the file pane; any path the chat didn't write is refused.
-#[tauri::command(async)]
-pub fn live_read_output(
-    live: State<'_, Live>,
+#[tauri::command]
+pub async fn live_read_output(
+    app: AppHandle,
     tab: TabId,
     path: String,
 ) -> Result<FileView, String> {
-    let git = crate::programs::Finder::from_env()
-        .find("git")
-        .map(crate::panel::git::Git::new);
-    let head = |file: &std::path::Path| {
-        git.as_ref()
-            .and_then(|g| g.show_head(file, crate::live::files::MOST_FILE))
-    };
-    live.read_output(tab, &path, head)
-        .map_err(|e| e.to_string())
+    blocking(move || {
+        let live = app.state::<Live>();
+        let git = crate::programs::Finder::from_env()
+            .find("git")
+            .map(crate::panel::git::Git::new);
+        let head = |file: &std::path::Path| {
+            git.as_ref()
+                .and_then(|g| g.show_head(file, crate::live::files::MOST_FILE))
+        };
+        live.read_output(tab, &path, head)
+            .map_err(|e| e.to_string())
+    })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn live_output_stamp(live: State<'_, Live>, tab: TabId, path: String) -> Option<String> {
-    live.output_stamp(tab, &path)
+#[tauri::command]
+pub async fn live_output_stamp(app: AppHandle, tab: TabId, path: String) -> Option<String> {
+    blocking(move || {
+        let live = app.state::<Live>();
+        live.output_stamp(tab, &path)
+    })
+    .await
 }
 
 /// Applies to Claude tabs started after the change.
-#[tauri::command(async)]
-pub fn set_live(accounts: State<'_, Accounts>, on: bool) -> Result<Profiles, AccountsError> {
-    accounts.set_live(on)
+#[tauri::command]
+pub async fn set_live(app: AppHandle, on: bool) -> Result<Profiles, AccountsError> {
+    blocking(move || {
+        let accounts = app.state::<Accounts>();
+        accounts.set_live(on)
+    })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn set_warn_at(
-    accounts: State<'_, Accounts>,
-    live: State<'_, Live>,
-    percent: u8,
-) -> Result<Profiles, AccountsError> {
-    let profiles = accounts.set_warn_at(percent)?;
-    live.refresh();
-    Ok(profiles)
+#[tauri::command]
+pub async fn set_warn_at(app: AppHandle, percent: u8) -> Result<Profiles, AccountsError> {
+    blocking(move || {
+        let accounts = app.state::<Accounts>();
+        let live = app.state::<Live>();
+        let profiles = accounts.set_warn_at(percent)?;
+        live.refresh();
+        Ok(profiles)
+    })
+    .await
 }

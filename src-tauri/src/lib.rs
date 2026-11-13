@@ -1,4 +1,5 @@
 mod accounts;
+mod blocking;
 mod bridge;
 mod cards;
 mod cli_link;
