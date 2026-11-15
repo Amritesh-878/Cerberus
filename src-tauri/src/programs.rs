@@ -263,37 +263,39 @@ const NOT_SHELLS: [&str; 7] = [
     "git-shell",
 ];
 
-/// Every installed shell in `/etc/shells` and Homebrew, login shell first; `real` follows links so `/bin/bash` and `/usr/bin/bash` count once.
+/// Every installed shell in `/etc/shells` and Homebrew, login shell first, each real file once per name (bash run as `sh` acts differently).
 #[cfg(any(unix, test))]
 fn unix_shells(
     etc_shells: &str,
     login: Option<&str>,
     real: impl Fn(&str) -> Option<String>,
 ) -> Vec<ProgramChoice> {
+    let base = |path: &str| path.rsplit('/').next().unwrap_or_default().to_owned();
     let login = login
         .filter(|l| l.starts_with('/'))
-        .and_then(|l| Some((l, real(l)?)));
+        .and_then(|l| Some((l, (real(l)?, base(l)))));
     let listed = etc_shells
         .lines()
         .map(|line| line.split('#').next().unwrap_or_default().trim())
         .filter(|line| line.starts_with('/'));
     let mut paths: Vec<&str> = Vec::new();
-    let mut reals: Vec<String> = Vec::new();
+    let mut seen: Vec<(String, String)> = Vec::new();
     for path in KNOWN_SHELLS
         .into_iter()
         .chain(listed)
         .chain(login.as_ref().map(|(l, _)| *l))
     {
-        let name = path.rsplit('/').next().unwrap_or_default();
-        let Some(target) = real(path).filter(|_| !NOT_SHELLS.contains(&name)) else {
+        let name = base(path);
+        let Some(target) = real(path).filter(|_| !NOT_SHELLS.contains(&name.as_str())) else {
             continue;
         };
-        if !paths.contains(&path) && !reals.contains(&target) {
+        let key = (target, name);
+        if !paths.contains(&path) && !seen.contains(&key) {
             paths.push(path);
-            reals.push(target);
+            seen.push(key);
         }
     }
-    let name_of = |path: &str| path.rsplit('/').next().unwrap_or_default().to_owned();
+    let name_of = base;
     // Ids are saved with each tab, so the bare name goes to the system copy wherever others are listed.
     let owner = |name: &str| {
         let named = || paths.iter().copied().filter(|p| name_of(p) == name);
@@ -313,7 +315,7 @@ fn unix_shells(
     }
     if let Some(at) = login
         .as_ref()
-        .and_then(|(_, target)| reals.iter().position(|r| r == target))
+        .and_then(|(_, key)| seen.iter().position(|s| s == key))
     {
         shells[..=at].rotate_right(1);
     }
@@ -678,12 +680,36 @@ mod tests {
     fn ubuntu_lists_each_real_shell_once_and_no_multiplexers() {
         let ids_for = |login| ids(&unix_shells(UBUNTU_ETC_SHELLS, login, ubuntu_real)).join(" ");
 
-        assert_eq!(ids_for(Some("/bin/bash")), "bash zsh fish sh");
-        assert_eq!(ids_for(Some("/usr/bin/bash")), "bash zsh fish sh");
-        assert_eq!(ids_for(Some("/usr/bin/fish")), "fish zsh bash sh");
-        assert_eq!(ids_for(None), "zsh bash fish sh");
+        assert_eq!(ids_for(Some("/bin/bash")), "bash zsh fish sh dash");
+        assert_eq!(ids_for(Some("/usr/bin/bash")), "bash zsh fish sh dash");
+        assert_eq!(ids_for(Some("/usr/bin/fish")), "fish zsh bash sh dash");
+        assert_eq!(ids_for(None), "zsh bash fish sh dash");
         let shells = unix_shells(UBUNTU_ETC_SHELLS, Some("/usr/bin/bash"), ubuntu_real);
         assert_eq!(shells[0].program.as_deref(), Some("/bin/bash"));
+    }
+
+    #[test]
+    fn sh_linked_to_bash_stays_its_own_choice_and_can_be_the_login_shell() {
+        // Fedora and Arch link sh to bash, which then runs in POSIX mode with other startup files.
+        let etc = "/bin/sh
+/bin/bash
+/usr/bin/sh
+/usr/bin/bash
+";
+        let real = |path: &str| {
+            etc.lines()
+                .any(|line| line == path)
+                .then(|| "/usr/bin/bash".to_owned())
+        };
+
+        let shells = unix_shells(etc, Some("/bin/sh"), real);
+
+        assert_eq!(ids(&shells), ["sh", "bash"]);
+        assert_eq!(shells[0].program.as_deref(), Some("/bin/sh"));
+        assert_eq!(
+            ids(&unix_shells(etc, Some("/usr/bin/bash"), real)),
+            ["bash", "sh"]
+        );
     }
 
     #[test]
