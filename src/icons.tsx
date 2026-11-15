@@ -38,7 +38,7 @@ export function ShellIcon(props: { size?: number }) {
   );
 }
 
-// A generic twins mark, not Google's logo.
+// A generic four-point sparkle in one flat colour, not Google's logo.
 export function GeminiIcon(props: { size?: number }) {
   return (
     <svg
@@ -46,18 +46,15 @@ export function GeminiIcon(props: { size?: number }) {
       width={props.size ?? 14}
       height={props.size ?? 14}
       viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="1.6"
-      stroke-linecap="round"
+      fill="currentColor"
       aria-hidden="true"
     >
-      <path d="M3 3.2c3 1.3 7 1.3 10 0M3 12.8c3-1.3 7-1.3 10 0M6 4.3v7.4M10 4.3v7.4" />
+      <path d="M8 1.2C8.5 5.1 10.9 7.5 14.8 8 10.9 8.5 8.5 10.9 8 14.8 7.5 10.9 5.1 8.5 1.2 8 5.1 7.5 7.5 5.1 8 1.2Z" />
     </svg>
   );
 }
 
-// A generic open book (a codex), not OpenAI's logo.
+// Generic curly braces, not OpenAI's logo.
 export function CodexIcon(props: { size?: number }) {
   return (
     <svg
@@ -67,12 +64,12 @@ export function CodexIcon(props: { size?: number }) {
       viewBox="0 0 16 16"
       fill="none"
       stroke="currentColor"
-      stroke-width="1.5"
+      stroke-width="1.6"
       stroke-linecap="round"
       stroke-linejoin="round"
       aria-hidden="true"
     >
-      <path d="M8 4.6C6.6 3.5 4.6 3.1 2.5 3.3v8.8c2.1-.2 4.1.2 5.5 1.3 1.4-1.1 3.4-1.5 5.5-1.3V3.3c-2.1-.2-4.1.2-5.5 1.3Zm0 0v8.8" />
+      <path d="M5.5 2.5c-1.4 0-2 .6-2 1.9v1.8c0 .9-.5 1.5-1.5 1.8 1 .3 1.5.9 1.5 1.8v1.8c0 1.3.6 1.9 2 1.9M10.5 2.5c1.4 0 2 .6 2 1.9v1.8c0 .9.5 1.5 1.5 1.8-1 .3-1.5.9-1.5 1.8v1.8c0 1.3-.6 1.9-2 1.9" />
     </svg>
   );
 }
