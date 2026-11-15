@@ -5,6 +5,7 @@ mod plugins;
 pub(crate) mod reveal;
 mod skills;
 pub(crate) mod vscode;
+mod worktrees;
 
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -15,15 +16,18 @@ use tauri::{AppHandle, Manager};
 use crate::accounts::{AccountId, Accounts, AccountsError};
 use crate::blocking::blocking;
 use crate::bridge::Bridge;
+use crate::live::Live;
 use crate::programs::Finder;
-use crate::saved::TabId;
+use crate::saved::{Saved, SavedTab, TabId};
 
 pub use crate::panel::gh::PrCache;
-use crate::panel::gh::PrRow;
+use crate::panel::gh::{Pr, PrRow};
 use crate::panel::git::Git;
 use crate::panel::git::Head;
 use crate::panel::mcp::Connectors;
 use crate::panel::skills::Skill;
+pub use crate::panel::worktrees::Roots;
+use crate::panel::worktrees::{Removed, TabFolders, Worktree};
 
 #[derive(Debug, thiserror::Error)]
 pub enum PanelError {
@@ -41,6 +45,12 @@ pub enum PanelError {
     NoVsCode,
     #[error("could not open it: {0}")]
     Open(#[from] std::io::Error),
+    #[error("that folder is not one of this tab's")]
+    NotTabs,
+    #[error("the saved tabs could not be read, so nothing was removed")]
+    NoTabs,
+    #[error("git could not list the worktrees")]
+    NoWorktrees,
 }
 
 impl Serialize for PanelError {
@@ -84,6 +94,28 @@ fn git() -> Option<Git> {
     Finder::from_env().find("git").map(Git::new)
 }
 
+fn changes_of(git: &Git, folder: &Path) -> Changes {
+    let Some(repo) = git.repo(folder) else {
+        return Changes::NotRepo;
+    };
+    let name = repo
+        .root
+        .file_name()
+        .map_or_else(|| repo.root.to_string_lossy(), |n| n.to_string_lossy())
+        .into_owned();
+    Changes::Repo {
+        name,
+        root: repo.root.to_string_lossy().into_owned(),
+        branch: repo.branch,
+        commit: repo.commit,
+        base: repo.base,
+        added: repo.added,
+        removed: repo.removed,
+        gh: Finder::from_env().find("gh").is_some(),
+        vscode: vscode::find().is_some(),
+    }
+}
+
 #[tauri::command]
 pub async fn panel_changes(folder: PathBuf) -> Result<Changes, PanelError> {
     blocking(move || {
@@ -91,25 +123,135 @@ pub async fn panel_changes(folder: PathBuf) -> Result<Changes, PanelError> {
         let Some(git) = git() else {
             return Ok(Changes::NoGit);
         };
-        let Some(repo) = git.repo(folder) else {
-            return Ok(Changes::NotRepo);
+        Ok(changes_of(&git, folder))
+    })
+    .await
+}
+
+/// A repo the tab's chat wrote into, with its folder in the platform's own form for adding to the tab.
+#[derive(Debug, Serialize)]
+pub struct Written {
+    pub folder: String,
+    pub changes: Changes,
+}
+
+// Only from files the tab's own hooks reported, never from a path the webview names.
+fn written_roots(app: &AppHandle, git: &Git, tab: TabId) -> Vec<PathBuf> {
+    let files = app.state::<Live>().written(tab);
+    let roots = app.state::<Roots>();
+    let now = Instant::now();
+    worktrees::written_roots(&files, |folder| {
+        if !folder.is_dir() {
+            return None;
+        }
+        roots.get(folder, now, || git.toplevel(folder))
+    })
+}
+
+/// The repos the tab's chat wrote into this session, each read like a folder of the tab.
+#[tauri::command]
+pub async fn panel_written(app: AppHandle, tab: TabId) -> Result<Vec<Written>, PanelError> {
+    blocking(move || {
+        let Some(git) = git() else {
+            return Ok(Vec::new());
         };
-        let name = repo
-            .root
-            .file_name()
-            .map_or_else(|| repo.root.to_string_lossy(), |n| n.to_string_lossy())
-            .into_owned();
-        Ok(Changes::Repo {
-            name,
-            root: repo.root.to_string_lossy().into_owned(),
-            branch: repo.branch,
-            commit: repo.commit,
-            base: repo.base,
-            added: repo.added,
-            removed: repo.removed,
-            gh: Finder::from_env().find("gh").is_some(),
-            vscode: vscode::find().is_some(),
+        Ok(written_roots(&app, &git, tab)
+            .into_iter()
+            .map(|root| Written {
+                changes: changes_of(&git, &root),
+                folder: root.to_string_lossy().into_owned(),
+            })
+            .collect())
+    })
+    .await
+}
+
+/// The folder, if it is the tab's own, one added to it, or a repo its chat wrote into.
+fn tabs_folder(
+    app: &AppHandle,
+    git: &Git,
+    tab: TabId,
+    folder: &Path,
+) -> Result<PathBuf, PanelError> {
+    let folder = self::folder(folder)?;
+    let saved = app.state::<Saved>().tab(tab);
+    if is_tabs(saved.as_ref(), || written_roots(app, git, tab), folder) {
+        Ok(folder.to_path_buf())
+    } else {
+        Err(PanelError::NotTabs)
+    }
+}
+
+fn is_tabs(
+    saved: Option<&SavedTab>,
+    written: impl FnOnce() -> Vec<PathBuf>,
+    folder: &Path,
+) -> bool {
+    let own = saved.is_some_and(|saved| {
+        saved.cwd.as_deref().map(Path::new) == Some(folder)
+            || saved.dirs.iter().any(|d| Path::new(d) == folder)
+    });
+    own || written().iter().any(|r| r == folder)
+}
+
+/// Every saved tab's folders, for which worktrees are in use.
+fn tab_folders(app: &AppHandle) -> Result<Vec<TabFolders>, PanelError> {
+    let loaded = app
+        .state::<Saved>()
+        .load()
+        .map_err(|_| PanelError::NoTabs)?;
+    Ok(loaded
+        .tree
+        .tabs
+        .iter()
+        .map(|t| TabFolders {
+            tab: t.id,
+            folders: t.cwd.iter().chain(&t.dirs).map(PathBuf::from).collect(),
         })
+        .collect())
+}
+
+// The panel's own PR list for the repo, so `gh` still runs at most once a minute per repo.
+fn prs_of(app: &AppHandle, git: &Git, folder: &Path) -> Vec<Pr> {
+    let (Some(gh), Some(root)) = (Finder::from_env().find("gh"), git.toplevel(folder)) else {
+        return Vec::new();
+    };
+    app.state::<PrCache>()
+        .get(&root, Instant::now(), || gh::list(&gh, folder))
+}
+
+/// The worktrees of a repo the tab shows, with which are stale and why any cannot be removed.
+#[tauri::command]
+pub async fn panel_worktrees(
+    app: AppHandle,
+    tab: TabId,
+    folder: PathBuf,
+) -> Result<Vec<Worktree>, PanelError> {
+    blocking(move || {
+        let git = git().ok_or(PanelError::NoWorktrees)?;
+        let folder = tabs_folder(&app, &git, tab, &folder)?;
+        let tabs = tab_folders(&app).unwrap_or_default();
+        let prs = prs_of(&app, &git, &folder);
+        worktrees::list(&git, &folder, &prs, &tabs).ok_or(PanelError::NoWorktrees)
+    })
+    .await
+}
+
+/// Runs `git worktree remove` (never forced) for each listed worktree the user confirmed, checked again first.
+#[tauri::command]
+pub async fn panel_remove_worktrees(
+    app: AppHandle,
+    tab: TabId,
+    folder: PathBuf,
+    paths: Vec<PathBuf>,
+) -> Result<Vec<Removed>, PanelError> {
+    blocking(move || {
+        let git = git().ok_or(PanelError::NoWorktrees)?;
+        let folder = tabs_folder(&app, &git, tab, &folder)?;
+        // Without the saved tabs nothing can be shown to be out of use, so nothing goes.
+        let tabs = tab_folders(&app)?;
+        let prs = prs_of(&app, &git, &folder);
+        worktrees::remove(&git, &folder, &paths, &prs, &tabs).ok_or(PanelError::NoWorktrees)
     })
     .await
 }
@@ -290,6 +432,27 @@ mod tests {
             block_on(panel_open_folder(PathBuf::from("relative"))),
             Err(PanelError::NoFolder)
         ));
+    }
+
+    #[test]
+    fn worktrees_are_read_only_for_the_tabs_folders_and_the_repos_its_chat_wrote_into() {
+        let tab = SavedTab {
+            id: 3,
+            project_id: 1,
+            parent_id: None,
+            title: "coder".into(),
+            program: "claude".into(),
+            cwd: Some(r"C:\code\app".into()),
+            account: None,
+            dirs: vec![r"C:\code\plans".into()],
+        };
+        let written = || vec![PathBuf::from("C:/code/app-worktree")];
+
+        assert!(is_tabs(Some(&tab), written, Path::new(r"C:\code\app")));
+        assert!(is_tabs(Some(&tab), written, Path::new(r"C:\code\plans")));
+        assert!(is_tabs(None, written, Path::new("C:/code/app-worktree")));
+        assert!(!is_tabs(Some(&tab), written, Path::new(r"C:\code\other")));
+        assert!(!is_tabs(None, Vec::new, Path::new(r"C:\code\app")));
     }
 
     #[test]

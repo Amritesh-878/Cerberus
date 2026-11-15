@@ -165,6 +165,11 @@ impl Work {
         self.finished
     }
 
+    /// Every file written, newest first, as the hooks reported them.
+    pub fn paths(&self) -> Vec<String> {
+        self.outputs.iter().map(|(path, _)| path.clone()).collect()
+    }
+
     pub fn has_output(&self, path: &str) -> bool {
         self.outputs.iter().any(|(p, _)| p == path)
     }
