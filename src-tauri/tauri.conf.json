@@ -29,7 +29,7 @@
     "publisher": "Amritesh-878",
     "homepage": "https://github.com/Amritesh-878/Cerberus",
     "category": "DeveloperTool",
-    "shortDescription": "A fast Windows terminal built around Claude Code",
+    "shortDescription": "A fast terminal built around Claude Code",
     "license": "MIT",
     "icon": [
       "icons/32x32.png",
