@@ -95,27 +95,29 @@ export function TaskDialog(props: {
     const found = branches();
     if (found && base() === "") setBase(found.default ?? found.names[0] ?? "");
   });
-  // A new task file names a new worktree, unless the names were already typed over.
-  const [typed, setTyped] = createSignal(false);
+  // A new task file names a new worktree; a field typed over by hand keeps what was typed.
+  const [typedFolder, setTypedFolder] = createSignal(false);
+  const [typedBranch, setTypedBranch] = createSignal(false);
+  const bothTyped = () => typedFolder() && typedBranch();
   // The task file the shown names were made for, so a late answer for another file is dropped.
   const [namedFor, setNamedFor] = createSignal<string>();
   createEffect(
     on([taskFile, inWorktree], ([file, wanted]) => {
-      if (!file || !wanted || untrack(typed)) return;
+      if (!file || !wanted || untrack(bothTyped)) return;
       worktreeDefaults(props.project.folder, file).then(
         (d) => {
-          if (untrack(typed) || untrack(taskFile) !== file) return;
-          setWtFolder(d.folder);
-          setWtBranch(d.branch);
+          if (untrack(taskFile) !== file) return;
+          if (!untrack(typedFolder)) setWtFolder(d.folder);
+          if (!untrack(typedBranch)) setWtBranch(d.branch);
           setNamedFor(file);
         },
         () => undefined,
       );
     }),
   );
-  // Open waits until the names belong to the task picked, unless they were typed by hand.
+  // Open waits until any name not typed by hand belongs to the task picked.
   const namesPending = () =>
-    inWorktree() && !typed() && namedFor() !== taskFile();
+    inWorktree() && !bothTyped() && namedFor() !== taskFile();
 
   const [standard] = createResource(defaultPrompt);
   const [prompt, setPrompt] = createSignal<string | null>(
@@ -345,7 +347,7 @@ export function TaskDialog(props: {
               <input
                 value={wtFolder()}
                 onInput={(e) => {
-                  setTyped(true);
+                  setTypedFolder(true);
                   setWtFolder(e.currentTarget.value);
                 }}
               />
@@ -355,7 +357,7 @@ export function TaskDialog(props: {
               <input
                 value={wtBranch()}
                 onInput={(e) => {
-                  setTyped(true);
+                  setTypedBranch(true);
                   setWtBranch(e.currentTarget.value);
                 }}
               />

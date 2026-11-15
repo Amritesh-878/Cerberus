@@ -401,3 +401,44 @@ test("worktree names answered late for an earlier task never replace the current
   ]);
   expect(open?.hasAttribute("disabled")).toBe(false);
 });
+
+test("a worktree field typed by hand keeps its text, and the other still waits for the picked task's name", async () => {
+  const held = new Map<string, () => void>();
+  const env = taskCore({
+    defaults: (file) =>
+      new Promise((resolve) => {
+        const id = file.endsWith("task-025.md") ? "task-025" : "task-024";
+        held.set(id, () => {
+          resolve({ folder: `C:/p/code-${id}`, branch: `feat/${id}` });
+        });
+      }),
+  });
+  const root = await renderApp(() => SAVED, env.core);
+  await startTask(root);
+  click(dialog(), "New worktree");
+  await settle();
+  held.get("task-025")?.();
+  await settle();
+
+  dialog().querySelectorAll<HTMLInputElement>(".task-file input")[1]?.click();
+  await settle();
+  const [folder] = [
+    ...dialog().querySelectorAll<HTMLInputElement>(".env-field input"),
+  ];
+  if (!folder) throw new Error("no folder field");
+  type(folder, "D:/mine/wt");
+  await settle();
+  const open = [...dialog().querySelectorAll("button")].find(
+    (b) => b.textContent === "Open",
+  );
+  expect(open?.hasAttribute("disabled")).toBe(true);
+
+  held.get("task-024")?.();
+  await settle();
+
+  const values = [
+    ...dialog().querySelectorAll<HTMLInputElement>(".env-field input"),
+  ].map((i) => i.value);
+  expect(values).toEqual(["D:/mine/wt", "feat/task-024"]);
+  expect(open?.hasAttribute("disabled")).toBe(false);
+});
