@@ -36,6 +36,34 @@ const CLAUDE_INSTALL: (&str, Option<&str>) = (
 const CLAUDE_INSTALL: (&str, Option<&str>) =
     ("curl -fsSL https://claude.ai/install.sh | bash", None);
 
+/// Other AI CLIs a tab can run as a plain program, by id and label.
+const OTHER_CLIS: [(&str, &str); 2] = [("gemini", "Gemini CLI"), ("codex", "Codex CLI")];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Kind {
+    Claude,
+    /// Gemini CLI or Codex CLI: no account, bridge, live cards or chat tracking.
+    OtherCli,
+    Shell,
+}
+
+/// What a tab's program is, read from its file name the way `is_claude` reads it.
+pub fn kind_of(program: &str) -> Kind {
+    if crate::sessions::is_claude(program) {
+        return Kind::Claude;
+    }
+    let stem = Path::new(program).file_stem().and_then(|s| s.to_str());
+    if stem.is_some_and(|stem| {
+        OTHER_CLIS
+            .iter()
+            .any(|(id, _)| stem.eq_ignore_ascii_case(id))
+    }) {
+        Kind::OtherCli
+    } else {
+        Kind::Shell
+    }
+}
+
 /// The shell the Shell button opens: the saved choice when installed, else the first shell installed.
 pub fn pick_shell(choices: Vec<ProgramChoice>, saved: Option<&str>) -> Option<ProgramChoice> {
     let mut shells: Vec<_> = choices
@@ -140,7 +168,20 @@ impl Finder {
             install_command: Some(CLAUDE_INSTALL.0),
             install_shell: CLAUDE_INSTALL.1,
         };
-        std::iter::once(claude).chain(self.shells()).collect()
+        let others = OTHER_CLIS.iter().map(|&(id, label)| ProgramChoice {
+            id: id.to_owned(),
+            label: label.to_owned(),
+            program: shown(self.find(id)),
+            args: Vec::new(),
+            image_paste_key: None,
+            is_shell: false,
+            install_command: None,
+            install_shell: None,
+        });
+        std::iter::once(claude)
+            .chain(self.shells())
+            .chain(others)
+            .collect()
     }
 
     #[cfg(windows)]
@@ -376,19 +417,60 @@ mod tests {
         let f = finder(&[r"C:\w"], &[r"C:\w\powershell.exe"]);
         let choices = f.choices();
 
-        assert_eq!(ids(&choices), ["claude", "powershell", "git-bash"]);
+        assert_eq!(
+            ids(&choices),
+            ["claude", "powershell", "git-bash", "gemini", "codex"]
+        );
         assert_eq!(choices[0].program, None);
         assert_eq!(choices[1].program.as_deref(), Some(r"C:\w\powershell.exe"));
         assert_eq!(choices[2].program, None);
+        assert_eq!(choices[3].program, None);
+        assert_eq!(choices[4].program, None);
         let paste_keys: Vec<_> = choices.iter().map(|c| c.image_paste_key).collect();
-        assert_eq!(paste_keys, [Some("\x1bv"), None, None]);
+        assert_eq!(paste_keys, [Some("\x1bv"), None, None, None, None]);
         assert_eq!(
             choices[0].install_command,
             Some("irm https://claude.ai/install.ps1 | iex")
         );
         assert_eq!(choices[0].install_shell, Some("powershell"));
         let shells: Vec<_> = choices.iter().map(|c| c.is_shell).collect();
-        assert_eq!(shells, [false, true, true]);
+        assert_eq!(shells, [false, true, true, false, false]);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn gemini_and_codex_are_offered_from_path_with_their_labels() {
+        let f = finder(
+            &[r"C:\npm", r"C:\tools"],
+            &[r"C:\npm\gemini.cmd", r"C:\tools\codex.exe"],
+        );
+        let choices = f.choices();
+        let other = |id: &str| choices.iter().find(|c| c.id == id).unwrap();
+
+        assert_eq!(other("gemini").label, "Gemini CLI");
+        assert_eq!(
+            other("gemini").program.as_deref(),
+            Some(r"C:\npm\gemini.cmd")
+        );
+        assert_eq!(other("codex").label, "Codex CLI");
+        assert_eq!(
+            other("codex").program.as_deref(),
+            Some(r"C:\tools\codex.exe")
+        );
+        assert!(!other("codex").is_shell);
+        assert_eq!(id(pick_shell(choices, Some("gemini"))), None);
+    }
+
+    #[test]
+    fn kind_of_tells_claude_the_other_clis_and_shells_apart() {
+        assert_eq!(kind_of(r"C:\Users\u\.local\bin\claude.exe"), Kind::Claude);
+        assert_eq!(kind_of(r"C:\npm\gemini.cmd"), Kind::OtherCli);
+        assert_eq!(kind_of(r"C:\npm\Codex.CMD"), Kind::OtherCli);
+        assert_eq!(kind_of("/opt/homebrew/bin/gemini"), Kind::OtherCli);
+        assert_eq!(kind_of("/usr/local/bin/codex"), Kind::OtherCli);
+        assert_eq!(kind_of(r"C:\tools\codex-helper.exe"), Kind::Shell);
+        assert_eq!(kind_of(r"C:\w\powershell.exe"), Kind::Shell);
+        assert_eq!(kind_of("/bin/zsh"), Kind::Shell);
     }
 
     const MAC_ETC_SHELLS: &str = "# List of acceptable shells for chpass(1).
@@ -598,7 +680,10 @@ mod tests {
         );
         let choices = f.choices();
 
-        assert_eq!(ids(&choices), ["claude", "fish", "zsh", "bash"]);
+        assert_eq!(
+            ids(&choices),
+            ["claude", "fish", "zsh", "bash", "gemini", "codex"]
+        );
         assert_eq!(choices[0].image_paste_key, Some("\x16"));
         assert_eq!(choices[1].image_paste_key, None);
         assert!(

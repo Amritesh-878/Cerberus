@@ -16,7 +16,7 @@ use crate::bridge::spawn::Messages;
 use crate::cli_link::{self, LinkError, Linked};
 use crate::handover::{ContinueError, RunningTabs, continue_chat, move_to_folder, reopen_chat};
 use crate::live::Live;
-use crate::programs::{Finder, ProgramChoice, pick_shell};
+use crate::programs::{Finder, Kind, ProgramChoice, kind_of, pick_shell};
 use crate::pty::{Exit, PtyError, PtyManager, SessionId, SpawnRequest};
 use crate::saved::{EnvEdit, EnvError, Loaded, Saved, SavedTree, TabId, TreeError};
 use crate::sessions::procs::Probes;
@@ -74,7 +74,11 @@ pub async fn pty_spawn(
     blocking(move || {
         let manager = app.state::<PtyManager>();
         let accounts = app.state::<Accounts>();
-        request.claude_config_dir = accounts.claude_config_dir(account)?;
+        // Gemini CLI and Codex CLI have no Claude account, so they get no `CLAUDE_CONFIG_DIR`.
+        request.claude_config_dir = match kind_of(&request.program) {
+            Kind::OtherCli => None,
+            Kind::Claude | Kind::Shell => accounts.claude_config_dir(account)?,
+        };
         let mut claude_home = is_claude(&request.program)
             .then(|| accounts.claude_home(account))
             .transpose()?;
@@ -103,7 +107,7 @@ pub async fn pty_spawn(
         }
         let runs_claude = claude_home.is_some();
         // A shell is watched on the tab's own account only, for a `claude` the user starts in it.
-        let shell_home = (!runs_claude)
+        let shell_home = (kind_of(&request.program) == Kind::Shell)
             .then(|| accounts.claude_home(account).ok())
             .flatten();
         if runs_claude {
