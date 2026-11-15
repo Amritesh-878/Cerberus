@@ -120,6 +120,42 @@ right panel shows only **Environment** (folder and branch) and **Changes**.
 Claude, Antigravity and Codex names and marks belong to Anthropic, Google and OpenAI; Cerberus uses
 them only to show which CLI a tab runs, and is not affiliated with or endorsed by them.
 
+### Start a task
+
+The planner writes a task file, a coder chat does the task: **Start a task…** opens that coder for
+you. It is in a Claude tab's menu (right-click the tab, or click its account pill) and in the
+planner's right panel, under **Environment**, for a planner tab or a coder under one.
+
+- **Task file**: the `*.md` files in the project's task folder, newest first, each with its first
+  heading. The folder is `tasks/` in the tab's folder or one of its added folders, until you pick
+  another with **Change folder…**, which the project then keeps. **Choose file…** takes any one
+  file. Cerberus reads only each file's name and first heading; the coder reads the task itself.
+- **Account**: the one the project's last task used, else the tab's own.
+- **Folder**: the project folder, or **New worktree**: `git worktree add` from a base branch (the
+  repo's default branch unless you pick another) into `../<repo>-<task id>` on a new branch
+  `feat/<task id>`, both editable. If git refuses, its message shows and no tab opens.
+
+**Open** adds a Claude tab under the planner, named `TASK-025 · <first heading>`, in that folder on
+that account. In a worktree the project folder is added to the chat (`--add-dir`). Once the chat is
+ready, after any trust prompt for a new folder, the project's task prompt is typed into its input
+with the placeholders filled. Cerberus never presses Enter: read it, then send it yourself.
+
+The task prompt is under **Task prompt** in the same dialog, kept per project in the saved tabs.
+**Reset to default** goes back to:
+
+```text
+Read AGENTS.md, then {task_file}, and do that task. Work in {folder} on branch {branch}. When you finish, write the handoff to {handoff_file} and tell {planner_tab}.
+```
+
+| Placeholder | Becomes |
+|---|---|
+| `{task_file}` | The task file's full path |
+| `{task_id}` | `TASK-025` for `task-025.md`, else the file name without `.md` |
+| `{folder}` | The coder's folder: the worktree, or the project folder |
+| `{branch}` | The worktree's new branch, or the project folder's current branch |
+| `{handoff_file}` | `completed/<task id>.md` beside the task folder (`plans/completed/task-025.md`) |
+| `{planner_tab}` | The planner tab's name |
+
 ## Restarts and resuming
 
 Projects and tabs are saved as you change them, in `tree.db` in the app's data folder. After a
