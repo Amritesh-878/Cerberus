@@ -1632,6 +1632,12 @@ export function App() {
                   const id = shown();
                   if (id !== undefined && !applying().has(id)) setEditing(id);
                 }}
+                onStartTask={(() => {
+                  const id = shown();
+                  return id !== undefined && canStartTask(id)
+                    ? () => setStartingTask(id)
+                    : undefined;
+                })()}
               />
             </Show>
             <Show

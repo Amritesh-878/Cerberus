@@ -267,3 +267,18 @@ test("an edited task prompt is used and remembered for the project, and Reset go
   await settle();
   expect(dialog().querySelector("textarea")?.value).toBe(DEFAULT);
 });
+
+test("the planner's panel opens the same dialog", async () => {
+  const env = taskCore();
+  const root = await renderApp(
+    () => ({ ...SAVED, panel: { ...SAVED.panel, open: true } }),
+    env.core,
+  );
+  await open(root, "planner");
+
+  click(root.querySelector(".panel") ?? root, "Start a task…");
+  await settle();
+  await settle();
+
+  expect(dialog().querySelector("h2")?.textContent).toBe("Start a task");
+});

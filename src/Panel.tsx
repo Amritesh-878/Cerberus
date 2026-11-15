@@ -11,6 +11,7 @@ import {
   FolderIcon,
   GearIcon,
   PlugIcon,
+  PlusIcon,
   SkillIcon,
   StarIcon,
 } from "./icons";
@@ -78,6 +79,8 @@ export function Panel(props: {
   openedFile?: string;
   onOpenFile: (tab: TabId, path: string) => void;
   onEditEnvironment: () => void;
+  /** Set for a planner tab, or a tab under one, which can open a task's coder tab. */
+  onStartTask?: () => void;
   /** Over the chat, since beside it the chat would be too narrow; it then has its own close button. */
   overlay?: boolean;
   onClose?: () => void;
@@ -277,6 +280,23 @@ export function Panel(props: {
             </For>
             <Show when={branchText(changes())}>
               {(branch) => <Row icon={<BranchIcon />} text={branch()} />}
+            </Show>
+            <Show when={props.onStartTask !== undefined}>
+              <button
+                type="button"
+                class="card-row action"
+                title="Open a coder tab for a task file, its prompt typed in"
+                onClick={() => {
+                  props.onStartTask?.();
+                }}
+              >
+                <span class="row-icon">
+                  <PlusIcon />
+                </span>
+                <span class="row-text">
+                  <span class="row-main">Start a task…</span>
+                </span>
+              </button>
             </Show>
           </Card>
           <Show when={props.tab?.launch.program === "claude"}>
