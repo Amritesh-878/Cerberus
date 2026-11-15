@@ -176,6 +176,30 @@ fn handoff_file(task_file: &Path, id: &str) -> PathBuf {
         .join(format!("{}.md", id.to_lowercase()))
 }
 
+#[derive(Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorktreeDefaults {
+    pub folder: String,
+    pub branch: String,
+}
+
+/// `<repo>-<task id>` beside the project's folder, on branch `feat/<task id>`; both stay editable.
+pub fn worktree_defaults(project_folder: &Path, task_file: &Path) -> WorktreeDefaults {
+    let id = task_id(task_file).to_lowercase();
+    let name = project_folder
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let beside = project_folder.parent().unwrap_or(project_folder);
+    WorktreeDefaults {
+        folder: beside
+            .join(format!("{name}-{id}"))
+            .to_string_lossy()
+            .into_owned(),
+        branch: format!("feat/{id}"),
+    }
+}
+
 /// The first of `folders` with a `tasks` folder in it.
 pub fn guess_folder(folders: &[PathBuf]) -> Option<PathBuf> {
     folders.iter().map(|f| f.join("tasks")).find(|t| t.is_dir())
@@ -192,6 +216,16 @@ pub async fn task_folder(folders: Vec<PathBuf>) -> Option<String> {
         guess_folder(&folders).map(|f| f.to_string_lossy().into_owned())
     })
     .await
+}
+
+#[tauri::command]
+pub fn task_default_prompt() -> &'static str {
+    DEFAULT_PROMPT
+}
+
+#[tauri::command]
+pub fn task_worktree_defaults(project_folder: PathBuf, task_file: PathBuf) -> WorktreeDefaults {
+    worktree_defaults(&project_folder, &task_file)
 }
 
 #[tauri::command]
@@ -347,6 +381,20 @@ mod tests {
         assert_eq!(plan.cwd, "/p/code");
         assert!(plan.dirs.is_empty());
         assert_eq!(plan.prompt, "TASK-025 on main in /p/code");
+    }
+
+    #[test]
+    fn a_worktree_goes_beside_the_project_named_for_the_task() {
+        let found = worktree_defaults(
+            Path::new("/p/code"),
+            Path::new("/p/plans/tasks/task-025.md"),
+        );
+
+        assert_eq!(
+            PathBuf::from(&found.folder),
+            Path::new("/p").join("code-task-025")
+        );
+        assert_eq!(found.branch, "feat/task-025");
     }
 
     #[test]
