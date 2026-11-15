@@ -17,6 +17,7 @@ fn project(id: ProjectId, name: &str, folder: &str) -> SavedProject {
         id,
         name: name.to_owned(),
         folder: folder.to_owned(),
+        tasks: Default::default(),
     }
 }
 

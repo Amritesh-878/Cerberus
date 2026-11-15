@@ -72,6 +72,21 @@ pub struct SavedProject {
     pub id: ProjectId,
     pub name: String,
     pub folder: String,
+    /// How Start a task opens a coder tab for this project; a webview from before it sends none.
+    #[serde(default)]
+    pub tasks: ProjectTasks,
+}
+
+/// Start a task's settings for one project, each unset until first chosen.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectTasks {
+    /// The folder of task files, chosen once per project.
+    pub folder: Option<String>,
+    /// The project's own task prompt; unset uses the default.
+    pub prompt: Option<String>,
+    /// The account the last task in this project opened on.
+    pub account: Option<AccountId>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -557,6 +572,7 @@ pub(crate) mod tests {
             id,
             name: name.to_owned(),
             folder: format!(r"C:\work\{name}"),
+            tasks: Default::default(),
         }
     }
 

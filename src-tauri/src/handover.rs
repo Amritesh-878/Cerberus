@@ -371,6 +371,7 @@ mod tests {
                     id: 1,
                     name: "app".to_owned(),
                     folder: CWD.to_owned(),
+                    tasks: Default::default(),
                 }],
                 tabs: vec![SavedTab {
                     id: 2,
