@@ -205,6 +205,23 @@ pub fn guess_folder(folders: &[PathBuf]) -> Option<PathBuf> {
     folders.iter().map(|f| f.join("tasks")).find(|t| t.is_dir())
 }
 
+#[derive(Debug, PartialEq, Eq, Serialize)]
+pub struct Branches {
+    /// The repo's default branch, which a new worktree starts from unless another is picked.
+    pub default: Option<String>,
+    /// Local branches, with the default first when it is only a remote one.
+    pub names: Vec<String>,
+}
+
+pub fn branches(git: &crate::panel::git::Git, repo: &Path) -> Branches {
+    let default = git.base(repo);
+    let mut names: Vec<String> = git.branches(repo).into_iter().map(|b| b.name).collect();
+    if let Some(base) = default.as_ref().filter(|b| !names.contains(b)) {
+        names.insert(0, base.clone());
+    }
+    Branches { default, names }
+}
+
 /// `git worktree add -b <branch> -- <folder> <base>` in `repo`; a refusal comes back as git's own message.
 pub fn add_worktree(
     git: &Path,
@@ -250,6 +267,20 @@ pub fn add_worktree(
     } else {
         said
     })
+}
+
+#[tauri::command]
+pub async fn task_branches(folder: PathBuf) -> Branches {
+    crate::blocking::blocking(
+        move || match crate::programs::Finder::from_env().find("git") {
+            Some(git) => branches(&crate::panel::git::Git::new(git), &folder),
+            None => Branches {
+                default: None,
+                names: Vec::new(),
+            },
+        },
+    )
+    .await
 }
 
 #[tauri::command]
@@ -491,6 +522,35 @@ mod tests {
         crate::programs::Finder::from_env()
             .find("git")
             .expect("git is installed")
+    }
+
+    #[test]
+    fn branches_list_the_local_ones_with_the_default_named() {
+        let repo = repo();
+        git(repo.path(), &["branch", "dev"]);
+        git(repo.path(), &["branch", "feat/x"]);
+
+        let found = branches(&crate::panel::git::Git::new(git_program()), repo.path());
+
+        assert_eq!(found.default.as_deref(), Some("main"));
+        assert_eq!(found.names, ["dev", "feat/x", "main"]);
+    }
+
+    #[test]
+    fn a_remote_only_default_comes_first() {
+        let origin = repo();
+        let clone = TestDir::new();
+        git(
+            clone.path(),
+            &["clone", "-q", &origin.path().to_string_lossy(), "."],
+        );
+        git(clone.path(), &["checkout", "-qb", "work"]);
+        git(clone.path(), &["branch", "-D", "main"]);
+
+        let found = branches(&crate::panel::git::Git::new(git_program()), clone.path());
+
+        assert_eq!(found.default.as_deref(), Some("origin/main"));
+        assert_eq!(found.names, ["origin/main", "work"]);
     }
 
     #[test]

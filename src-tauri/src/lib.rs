@@ -160,6 +160,7 @@ pub fn run() {
             commands::continue_on_account,
             commands::install_cli,
             panel::panel_changes,
+            tasks::task_branches,
             tasks::task_default_prompt,
             tasks::task_files,
             tasks::task_folder,
