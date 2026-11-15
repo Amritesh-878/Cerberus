@@ -148,6 +148,18 @@ fn key(path: &Path) -> Vec<String> {
         .collect()
 }
 
+/// The folder as the file system names it, so a link or a short name matches the path git prints; as given when it is gone.
+fn real(path: &Path) -> PathBuf {
+    let Ok(resolved) = std::fs::canonicalize(path) else {
+        return path.to_path_buf();
+    };
+    // Windows answers `\\?\C:\…`, which would never match a plain `C:\…` of a folder that is gone.
+    match resolved.to_str().and_then(|s| s.strip_prefix(r"\\?\")) {
+        Some(plain) if plain.as_bytes().get(1) == Some(&b':') => PathBuf::from(plain),
+        _ => resolved,
+    }
+}
+
 fn inside(path: &Path, folder: &Path) -> bool {
     key(path).starts_with(&key(folder))
 }
@@ -218,7 +230,7 @@ fn row(
         .is_some_and(|b| branches.iter().any(|known| known.name == b && known.gone));
     let in_tabs: Vec<TabId> = tabs
         .iter()
-        .filter(|t| t.folders.iter().any(|f| inside(f, &listed.path)))
+        .filter(|t| t.folders.iter().any(|f| inside(f, &real(&listed.path))))
         .map(|t| t.tab)
         .collect();
     let refused = refusal(main, listed.locked, dirty, &in_tabs);
@@ -248,6 +260,15 @@ fn row(
 /// Every worktree of the folder's repo, the main one first, with what decides whether it can go.
 pub fn list(git: &Git, folder: &Path, prs: &[Pr], tabs: &[TabFolders]) -> Option<Vec<Worktree>> {
     let listed = parse(&git.worktrees(folder)?);
+    // Resolved once here, so each worktree compares against them without asking the disk again.
+    let tabs: Vec<TabFolders> = tabs
+        .iter()
+        .map(|t| TabFolders {
+            tab: t.tab,
+            folders: t.folders.iter().map(|f| real(f)).collect(),
+        })
+        .collect();
+    let tabs = tabs.as_slice();
     let branches = git.branches(folder);
     let mut dirty = Vec::with_capacity(listed.len());
     for chunk in listed.chunks(AT_ONCE) {
@@ -308,7 +329,11 @@ pub fn remove(
     let base = git.base(&from);
     let mut done = Vec::new();
     for want in wanted {
-        let Some(row) = rows.iter().find(|r| same(Path::new(&r.path), want)) else {
+        let want_real = real(want);
+        let Some(row) = rows
+            .iter()
+            .find(|r| same(&real(Path::new(&r.path)), &want_real))
+        else {
             done.push(Removed {
                 path: want.to_string_lossy().into_owned(),
                 name: name_of(want),
@@ -733,6 +758,45 @@ mod tests {
         let repo = repo_with(&dir, &["one"]);
         assert!(checked_out(&git(), &repo, "one"));
         assert!(!checked_out(&git(), &repo, "other"));
+    }
+
+    // A junction needs no special rights on Windows, unlike a symlink.
+    fn link(target: &Path, link: &Path) {
+        #[cfg(windows)]
+        {
+            let made = std::process::Command::new("cmd")
+                .args(["/C", "mklink", "/J"])
+                .arg(link)
+                .arg(target)
+                .output()
+                .unwrap();
+            assert!(made.status.success(), "{made:?}");
+        }
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(target, link).unwrap();
+    }
+
+    #[test]
+    fn a_tab_or_a_removal_naming_a_worktree_through_a_link_still_finds_it() {
+        let dir = TestDir::new();
+        let repo = repo_with(&dir, &["linked", "spare"]);
+        let alias = dir.path().join("alias");
+        let spare = dir.path().join("spare-alias");
+        link(&dir.path().join("linked"), &alias);
+        link(&dir.path().join("spare"), &spare);
+        let tabs = [TabFolders {
+            tab: 7,
+            folders: vec![alias.clone()],
+        }];
+
+        let rows = list(&git(), &repo, &[], &tabs).unwrap();
+        let removed = remove(&git(), &repo, &[alias, spare], &[], &tabs).unwrap();
+
+        assert_eq!(find(&rows, "linked").tabs, [7]);
+        let refusals: Vec<Option<Refusal>> = removed.iter().map(|r| r.refusal).collect();
+        assert_eq!(refusals, [Some(Refusal::InUse), None]);
+        assert!(dir.path().join("linked").is_dir());
+        assert!(!dir.path().join("spare").exists());
     }
 
     #[test]
