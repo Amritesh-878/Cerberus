@@ -2711,9 +2711,17 @@ button.card-row:focus-visible,
   position: relative;
 }
 
-/* The written mark and branch may take two lines rather than be cut off beside the counts. */
-.repo-row .row-detail {
-  white-space: normal;
+/* A written repo's name, branch and mark keep the full width; its counts and buttons go under them when short of room. */
+.repo-row.written {
+  flex-wrap: wrap;
+}
+
+.repo-row.written .row-text {
+  min-width: 150px;
+}
+
+.repo-row.written .row-meta {
+  margin-left: auto;
 }
 
 .worktrees {
@@ -2753,6 +2761,11 @@ button.card-row:focus-visible,
 .worktree-tag.stale {
   color: var(--accent);
   border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+/* What keeps a worktree, or makes it stale, is never cut off. */
+.worktree-row .row-detail {
+  white-space: normal;
 }
 
 .worktree-row.stale .row-icon {

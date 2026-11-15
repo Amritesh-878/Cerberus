@@ -425,3 +425,18 @@ test("a written worktree of the same GitHub repo does not list that repo's PRs a
   expect(titles).toHaveLength(1);
   expect(titles[0]).toContain("alpha #14");
 });
+
+test("an open worktree list stays open when the tab is saved, as after Add to the tab", async () => {
+  const core = worktreeCore();
+  const root = await renderApp(() => PROFILES, core.core);
+  await open(root, "planner");
+  await showWorktrees(root);
+
+  click(repoRow(root, "alpha-wt"), "More for alpha-wt");
+  await settle();
+  click(repoRow(root, "alpha-wt"), "Add to the tab");
+  await settle();
+
+  expect(core.saves.at(-1)?.tabs.find((t) => t.id === 3)?.dirs).toEqual([WT]);
+  expect(changesCard(root).querySelector(".worktrees")).not.toBeNull();
+});

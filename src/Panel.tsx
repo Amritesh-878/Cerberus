@@ -1,5 +1,6 @@
 import {
   createEffect,
+  createMemo,
   createSignal,
   For,
   Match,
@@ -561,6 +562,7 @@ function RepoRow(props: {
   return (
     <div
       class="card-row repo-row"
+      classList={{ written: props.written }}
       title={
         props.repo.base === null
           ? "Uncommitted work"
@@ -573,10 +575,8 @@ function RepoRow(props: {
       <span class="row-text">
         <span class="row-main">{props.repo.name}</span>
         <Show when={props.written}>
-          <span class="row-detail">
-            <span class="row-tag">written by this chat</span>
-            {branchText(props.repo)}
-          </span>
+          <span class="row-detail">{branchText(props.repo)}</span>
+          <span class="row-detail row-tag">written by this chat</span>
         </Show>
       </span>
       <span class="row-meta">
@@ -663,13 +663,9 @@ function ChangesBody(props: {
   };
   // Repos whose worktrees are shown, by root; a tab change closes them, so a list is always the shown tab's.
   const [shown, setShown] = createSignal<ReadonlySet<string>>(new Set());
-  createEffect(
-    on(
-      () => props.tab,
-      () => setShown(new Set<string>()),
-      { defer: true },
-    ),
-  );
+  // A memo, so a save that changes the tab but not which tab it is keeps them open.
+  const tabId = createMemo(() => props.tab);
+  createEffect(on(tabId, () => setShown(new Set<string>()), { defer: true }));
   const toggle = (root: string) => {
     setShown((all) => {
       const next = new Set(all);
