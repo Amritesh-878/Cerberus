@@ -205,6 +205,69 @@ pub fn guess_folder(folders: &[PathBuf]) -> Option<PathBuf> {
     folders.iter().map(|f| f.join("tasks")).find(|t| t.is_dir())
 }
 
+/// `git worktree add -b <branch> -- <folder> <base>` in `repo`; a refusal comes back as git's own message.
+pub fn add_worktree(
+    git: &Path,
+    repo: &Path,
+    folder: &Path,
+    branch: &str,
+    base: &str,
+) -> Result<(), String> {
+    // Typed in the dialog, so neither may read as an option to git.
+    for (what, value) in [("branch", branch), ("base branch", base)] {
+        if value.trim().is_empty() || value.starts_with('-') {
+            return Err(format!("the {what} name is not valid"));
+        }
+    }
+    if !folder.is_absolute() {
+        return Err("the worktree folder must be a full path".to_owned());
+    }
+    if folder.exists() {
+        return Err(format!("{} already exists", folder.display()));
+    }
+    let mut command = std::process::Command::new(git);
+    command
+        .args(["worktree", "add", "-b", branch, "--"])
+        .arg(folder)
+        .arg(base)
+        .current_dir(repo)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .stdin(std::process::Stdio::null());
+    #[cfg(windows)]
+    std::os::windows::process::CommandExt::creation_flags(
+        &mut command,
+        crate::run::CREATE_NO_WINDOW,
+    );
+    let out = command
+        .output()
+        .map_err(|e| format!("could not run git: {e}"))?;
+    if out.status.success() {
+        return Ok(());
+    }
+    let said = String::from_utf8_lossy(&out.stderr).trim().to_owned();
+    Err(if said.is_empty() {
+        "git worktree add failed".to_owned()
+    } else {
+        said
+    })
+}
+
+#[tauri::command]
+pub async fn task_worktree(
+    repo: PathBuf,
+    folder: PathBuf,
+    branch: String,
+    base: String,
+) -> Result<(), String> {
+    crate::blocking::blocking(move || {
+        let git = crate::programs::Finder::from_env()
+            .find("git")
+            .ok_or("git is not installed")?;
+        add_worktree(&git, &repo, &folder, &branch, &base)
+    })
+    .await
+}
+
 #[tauri::command]
 pub async fn task_files(folder: PathBuf) -> Vec<TaskFile> {
     crate::blocking::blocking(move || list(&folder)).await
@@ -395,6 +458,113 @@ mod tests {
             Path::new("/p").join("code-task-025")
         );
         assert_eq!(found.branch, "feat/task-025");
+    }
+
+    // Identity and signing come from the command line, so the machine's own git config cannot fail a commit.
+    fn git(folder: &Path, args: &[&str]) -> String {
+        let out = std::process::Command::new("git")
+            .args(["-c", "user.name=Test", "-c", "user.email=test@example.com"])
+            .args([
+                "-c",
+                "commit.gpgsign=false",
+                "-c",
+                "init.defaultBranch=main",
+            ])
+            .args(args)
+            .current_dir(folder)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "git {args:?}: {out:?}");
+        String::from_utf8_lossy(&out.stdout).trim().to_owned()
+    }
+
+    fn repo() -> TestDir {
+        let dir = TestDir::new();
+        git(dir.path(), &["init", "-q"]);
+        fs::write(dir.path().join("a.txt"), "a\n").unwrap();
+        git(dir.path(), &["add", "."]);
+        git(dir.path(), &["commit", "-qm", "first"]);
+        dir
+    }
+
+    fn git_program() -> PathBuf {
+        crate::programs::Finder::from_env()
+            .find("git")
+            .expect("git is installed")
+    }
+
+    #[test]
+    fn a_worktree_is_added_on_a_new_branch_from_the_base() {
+        let repo = repo();
+        let beside = TestDir::new();
+        let folder = beside.path().join("code-task-025");
+
+        add_worktree(
+            &git_program(),
+            repo.path(),
+            &folder,
+            "feat/task-025",
+            "main",
+        )
+        .unwrap();
+
+        assert!(folder.join("a.txt").is_file());
+        assert_eq!(git(&folder, &["branch", "--show-current"]), "feat/task-025");
+        assert_eq!(
+            git(repo.path(), &["rev-parse", "main"]),
+            git(&folder, &["rev-parse", "HEAD"])
+        );
+    }
+
+    #[test]
+    fn a_refused_worktree_comes_back_with_gits_message() {
+        let repo = repo();
+        let beside = TestDir::new();
+        git(repo.path(), &["branch", "feat/task-025"]);
+
+        let taken = add_worktree(
+            &git_program(),
+            repo.path(),
+            &beside.path().join("wt"),
+            "feat/task-025",
+            "main",
+        );
+        let no_base = add_worktree(
+            &git_program(),
+            repo.path(),
+            &beside.path().join("wt2"),
+            "feat/x",
+            "no-such-branch",
+        );
+
+        assert!(
+            taken.as_ref().is_err_and(|e| e.contains("already exists")),
+            "{taken:?}"
+        );
+        assert!(
+            no_base
+                .as_ref()
+                .is_err_and(|e| e.contains("no-such-branch")),
+            "{no_base:?}"
+        );
+        assert!(!beside.path().join("wt").exists());
+    }
+
+    #[test]
+    fn names_git_would_read_as_options_and_bad_folders_are_refused_before_git_runs() {
+        let repo = repo();
+        let beside = TestDir::new();
+        let wt = beside.path().join("wt");
+        let add = |folder: &Path, branch: &str, base: &str| {
+            add_worktree(&git_program(), repo.path(), folder, branch, base)
+        };
+
+        assert!(add(&wt, "--force", "main").is_err());
+        assert!(add(&wt, "feat/x", "-q").is_err());
+        assert!(add(&wt, " ", "main").is_err());
+        assert!(add(Path::new("relative/wt"), "feat/x", "main").is_err());
+        assert!(add(beside.path(), "feat/x", "main").is_err());
+        assert!(!wt.exists());
     }
 
     #[test]

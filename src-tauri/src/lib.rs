@@ -163,6 +163,7 @@ pub fn run() {
             tasks::task_files,
             tasks::task_folder,
             tasks::task_plan,
+            tasks::task_worktree,
             tasks::task_worktree_defaults,
             panel::panel_prs,
             panel::panel_open_pr,
