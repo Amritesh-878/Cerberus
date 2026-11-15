@@ -767,6 +767,7 @@ export function App() {
     hands.forget(id);
     prefills.forget(id);
     limits.forget(id);
+    limitAsks.delete(id);
     setLimitShown(limits.first());
     if (active() === id) {
       setActive(after);
@@ -947,21 +948,36 @@ export function App() {
   const queueLimit = (hit: LimitHit) => {
     if (tabById(hit.tab) && limits.hit(hit)) setLimitShown(limits.first());
   };
+  // Each chat's latest state report, so an offers answer that arrives after a newer one is dropped.
+  const limitAsks = new Map<TabId, number>();
   const limitDone = () => {
     limits.done();
     setLimitShown(limits.first());
   };
   // The limit clock's record, for a chat that hit its limit before any meter said so.
   const limitReported = (id: TabId, state: LiveState) => {
+    const ask = (limitAsks.get(id) ?? 0) + 1;
+    limitAsks.set(id, ask);
     if (state.state !== "limited") {
       limits.cleared(id);
+      setLimitShown(limits.first());
       return;
     }
     const account = tabById(id)?.launch.account?.id;
     if (account === undefined) return;
     limitOffers(account).then(
       (offers) => {
-        queueLimit({ tab: id, account, resetsAt: state.resetsAt, offers });
+        const current =
+          limitAsks.get(id) === ask &&
+          tabById(id)?.launch.account?.id === account;
+        if (!current) return;
+        queueLimit({
+          tab: id,
+          account,
+          resetsAt: state.resetsAt,
+          offers,
+          source: "clock",
+        });
       },
       (error: unknown) => {
         console.error("could not read where the chat can go:", error);
@@ -979,6 +995,7 @@ export function App() {
             account: w.account,
             resetsAt: w.resetsAt,
             offers: w.offers,
+            source: "meter",
           });
         }
       },
@@ -986,6 +1003,19 @@ export function App() {
   );
   // The tab whose Start a task dialog is open.
   const [startingTask, setStartingTask] = createSignal<TabId>();
+  // A modal dialog other than the limit popup is open.
+  const otherDialog = () => {
+    const hand = byHandShown();
+    return (
+      editing() !== undefined ||
+      startingTask() !== undefined ||
+      moveFailed() !== undefined ||
+      finding() ||
+      serviceForm() !== undefined ||
+      sheet() ||
+      (hand !== undefined && hands.unasked(hand))
+    );
+  };
   // A Claude tab in a project with a planner above it, or that is one, can start a task.
   const canStartTask = (id: TabId) => {
     const tab = tabById(id);
@@ -1803,6 +1833,8 @@ export function App() {
             </Show>
             <Show
               when={(() => {
+                // Another dialog's keys would also take Escape and Tab, so the popup waits for it to close.
+                if (otherDialog()) return undefined;
                 const hit = limitShown();
                 const title = hit && tabById(hit.tab)?.title;
                 return hit && title !== undefined ? { hit, title } : undefined;

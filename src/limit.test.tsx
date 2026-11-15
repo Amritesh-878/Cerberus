@@ -224,3 +224,83 @@ test("a meter's 5-hour window at 100% opens the popup for the tab that reported 
   expect(popup()).toBeNull();
   expect(env.moves()).toEqual([]);
 });
+
+test("an offers answer that arrives after the chat left limited opens nothing", async () => {
+  const env = limitCore([0]);
+  let answer: (offers: number[]) => void = () => undefined;
+  const root = await renderApp(() => SAVED, {
+    ...env.core,
+    live_offers: () =>
+      new Promise<number[]>((resolve) => {
+        answer = resolve;
+      }),
+  });
+  await open(root, "planner");
+
+  emit(env.pty.spawned, 0, { state: "limited", resetsAt: RESET });
+  await settle();
+  emit(env.pty.spawned, 0, { state: "idle" });
+  await settle();
+  answer([0]);
+  await settle();
+
+  expect(popup()).toBeNull();
+});
+
+test("the chat going idle after its limit record takes the popup away", async () => {
+  const env = limitCore([0]);
+  const root = await renderApp(() => SAVED, env.core);
+  await open(root, "planner");
+  await hitLimit(env);
+  expect(popup()).not.toBeNull();
+
+  emit(env.pty.spawned, 0, { state: "idle" });
+  await settle();
+
+  expect(popup()).toBeNull();
+});
+
+test("a later live view refreshes the shown popup's offers without opening another", async () => {
+  const env = limitCore([0]);
+  const root = await renderApp(() => SAVED, env.core);
+  await open(root, "planner");
+  const warning = {
+    account: 1,
+    tab: 2,
+    used: 100,
+    resetsAt: RESET,
+    offers: [0],
+  };
+  await emitEvent("live", { tabs: [], meters: [], warnings: [warning] });
+  await settle();
+  expect(popup()?.textContent).toContain("Continue on personal");
+
+  await emitEvent("live", {
+    tabs: [],
+    meters: [],
+    warnings: [{ ...warning, offers: [] }],
+  });
+  await settle();
+
+  expect(document.querySelectorAll(".limit-popup")).toHaveLength(1);
+  expect(popup()?.textContent).not.toContain("Continue on personal");
+  expect(popup()?.textContent).toContain("No other signed-in account");
+});
+
+test("the popup waits while another dialog is open, so Escape closes only that one", async () => {
+  const env = limitCore([0]);
+  const root = await renderApp(() => SAVED, env.core);
+  await open(root, "planner");
+  await emitEvent("show-shortcuts");
+  await settle();
+  expect(document.querySelector(".sheet")).not.toBeNull();
+
+  await hitLimit(env);
+  expect(popup()).toBeNull();
+
+  window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+  await settle();
+
+  expect(document.querySelectorAll(".sheet")).toHaveLength(1);
+  expect(popup()).not.toBeNull();
+});
