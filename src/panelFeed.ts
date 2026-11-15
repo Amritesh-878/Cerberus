@@ -152,6 +152,7 @@ export function createPanelFeed(
     key: string,
     tab: number,
     paths: readonly string[],
+    written: boolean,
     live: () => boolean,
   ): Promise<unknown> =>
     folders
@@ -167,8 +168,8 @@ export function createPanelFeed(
               ],
             ),
           ),
-          // After the tab's own folders, so a repo the tab already has keeps its own row.
-          panelWritten(tab).then(
+          // After the tab's own folders, so a repo the tab already has keeps its own row; Antigravity and Codex tabs report no writes.
+          (written ? panelWritten(tab) : Promise.resolve([])).then(
             (written): FolderChanges[] =>
               written.map((w) => ({
                 folder: w.folder,
@@ -194,7 +195,13 @@ export function createPanelFeed(
       let reading = false;
       const read = () => {
         reading = true;
-        void readRepos(key, t.tab, paths, () => live).finally(() => {
+        void readRepos(
+          key,
+          t.tab,
+          paths,
+          t.otherCli !== true,
+          () => live,
+        ).finally(() => {
           reading = false;
         });
       };
