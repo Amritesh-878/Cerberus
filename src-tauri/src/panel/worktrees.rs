@@ -556,8 +556,8 @@ mod tests {
         let prs = [
             pr(1, "MERGED", "merged", ""),
             pr(2, "CLOSED", "closed", ""),
-            pr(3, "MERGED", "open", ""),
-            pr(4, "OPEN", "open", ""),
+            pr(3, "OPEN", "open", ""),
+            pr(4, "MERGED", "open", ""),
             pr(5, "MERGED", "dirty", ""),
             pr(6, "MERGED", "used", ""),
         ];
