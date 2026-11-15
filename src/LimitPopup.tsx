@@ -76,10 +76,11 @@ export function LimitPopup(props: {
         </p>
         <div class="limit-actions env-actions">
           <For each={offered()}>
-            {(account, index) => (
+            {(account) => (
+              // Neutral, not accent-filled: the account's dot is its colour, and terracotta behind it clashes.
               <button
                 type="button"
-                classList={{ secondary: index() > 0 }}
+                class="secondary"
                 onClick={() => {
                   props.onContinue(account);
                 }}

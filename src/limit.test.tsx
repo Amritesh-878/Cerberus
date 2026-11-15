@@ -98,6 +98,11 @@ test("a chat hitting its limit gets one popup per window, offering only accounts
     b.textContent.trim(),
   );
   expect(buttons).toEqual(["Continue on personal", "Not now"]);
+  expect(
+    [...(popup()?.querySelectorAll("button") ?? [])].every((b) =>
+      b.classList.contains("secondary"),
+    ),
+  ).toBe(true);
   expect(env.moves()).toEqual([]);
 
   click(popup() ?? root, "Not now");
