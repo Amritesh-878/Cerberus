@@ -22,10 +22,12 @@ pub struct TaskFile {
     pub modified_ms: u64,
 }
 
-/// The `*.md` files in `folder`, newest first, each with its first heading; one not UTF-8 or too large is left out.
-pub fn list(folder: &Path) -> Vec<TaskFile> {
-    let Ok(entries) = fs::read_dir(folder) else {
-        return Vec::new();
+/// The `*.md` files in `folder`, newest first, with first headings; a gone folder lists nothing, an unreadable one errs.
+pub fn list(folder: &Path) -> std::io::Result<Vec<TaskFile>> {
+    let entries = match fs::read_dir(folder) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(e),
     };
     let mut files: Vec<TaskFile> = entries
         .flatten()
@@ -55,7 +57,7 @@ pub fn list(folder: &Path) -> Vec<TaskFile> {
         })
         .collect();
     files.sort_by(|a, b| b.modified_ms.cmp(&a.modified_ms).then(a.path.cmp(&b.path)));
-    files
+    Ok(files)
 }
 
 /// `None` for a file that is not UTF-8, `Some(None)` for one with no heading in its first bytes.
@@ -96,11 +98,32 @@ pub fn task_id(file: &Path) -> String {
 
 /// Each `{name}` in `template` becomes its value; an unknown `{name}` stays as written.
 pub fn fill(template: &str, values: &[(&str, &str)]) -> String {
-    values
-        .iter()
-        .fold(template.to_owned(), |text, (name, value)| {
-            text.replace(&format!("{{{name}}}"), value)
-        })
+    // One pass over the template, so a `{name}` inside an inserted value (a path, say) stays as it is.
+    let mut out = String::with_capacity(template.len());
+    let mut rest = template;
+    while let Some(open) = rest.find('{') {
+        out.push_str(&rest[..open]);
+        let after = &rest[open..];
+        let known = after.find('}').and_then(|close| {
+            let name = &after[1..close];
+            values
+                .iter()
+                .find(|(n, _)| *n == name)
+                .map(|(_, value)| (*value, close))
+        });
+        match known {
+            Some((value, close)) => {
+                out.push_str(value);
+                rest = &after[close + 1..];
+            }
+            None => {
+                out.push('{');
+                rest = &after[1..];
+            }
+        }
+    }
+    out.push_str(rest);
+    out
 }
 
 #[derive(Debug, Deserialize)]
@@ -326,8 +349,11 @@ pub async fn task_worktree(
 }
 
 #[tauri::command]
-pub async fn task_files(folder: PathBuf) -> Vec<TaskFile> {
-    crate::blocking::blocking(move || list(&folder)).await
+pub async fn task_files(folder: PathBuf) -> Result<Vec<TaskFile>, String> {
+    crate::blocking::blocking(move || {
+        list(&folder).map_err(|e| format!("Could not read {}: {e}", folder.display()))
+    })
+    .await
 }
 
 #[tauri::command]
@@ -406,7 +432,7 @@ mod tests {
         write(dir.path(), "readme.txt", b"# not markdown\n", 1);
         fs::create_dir(dir.path().join("archive.md")).unwrap();
 
-        let found = list(dir.path());
+        let found = list(dir.path()).unwrap();
 
         let ids: Vec<_> = found.iter().map(|f| f.id.as_str()).collect();
         assert_eq!(ids, ["TASK-025", "notes", "TASK-024"]);
@@ -427,14 +453,41 @@ mod tests {
         cut.extend("é rest".as_bytes());
         write(dir.path(), "task-004.md", &cut, 50);
 
-        let ids: Vec<_> = list(dir.path()).into_iter().map(|f| f.id).collect();
+        let ids: Vec<_> = list(dir.path())
+            .unwrap()
+            .into_iter()
+            .map(|f| f.id)
+            .collect();
 
         assert_eq!(ids, ["TASK-001", "TASK-004"]);
     }
 
     #[test]
     fn a_missing_folder_lists_nothing() {
-        assert!(list(Path::new("/no/such/folder/here")).is_empty());
+        assert!(list(Path::new("/no/such/folder/here")).unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_folder_that_cannot_be_read_is_an_error_not_an_empty_list() {
+        let dir = TestDir::new();
+        let file = dir.path().join("not-a-folder.md");
+        fs::write(&file, "# x").unwrap();
+
+        assert!(list(&file).is_err());
+    }
+
+    #[test]
+    fn a_placeholder_inside_an_inserted_value_is_left_as_it_is() {
+        let text = fill(
+            "Read {task_file} on {branch}.",
+            &[
+                ("task_file", "/p/{branch}/tasks/task-025.md"),
+                ("branch", "main"),
+            ],
+        );
+
+        assert_eq!(text, "Read /p/{branch}/tasks/task-025.md on main.");
+        assert_eq!(fill("{ {x} {", &[("x", "1")]), "{ 1 {");
     }
 
     #[test]
