@@ -272,12 +272,27 @@ pub fn add_worktree(
     if out.status.success() {
         return Ok(());
     }
-    let said = String::from_utf8_lossy(&out.stderr).trim().to_owned();
-    Err(if said.is_empty() {
+    Err(refusal(&String::from_utf8_lossy(&out.stderr)))
+}
+
+/// git's `fatal:` and `error:` lines, without the progress it prints first; all of it when it has none.
+fn refusal(stderr: &str) -> String {
+    let lines: Vec<&str> = stderr
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .collect();
+    let errors: Vec<&str> = lines
+        .iter()
+        .copied()
+        .filter(|l| l.starts_with("fatal:") || l.starts_with("error:"))
+        .collect();
+    let shown = if errors.is_empty() { lines } else { errors };
+    if shown.is_empty() {
         "git worktree add failed".to_owned()
     } else {
-        said
-    })
+        shown.join("\n")
+    }
 }
 
 #[tauri::command]
@@ -630,7 +645,13 @@ mod tests {
         );
 
         assert!(
-            taken.as_ref().is_err_and(|e| e.contains("already exists")),
+            taken
+                .as_ref()
+                .is_err_and(|e| e.starts_with("fatal:") && e.contains("already exists")),
+            "{taken:?}"
+        );
+        assert!(
+            taken.as_ref().is_err_and(|e| !e.contains("Preparing")),
             "{taken:?}"
         );
         assert!(
