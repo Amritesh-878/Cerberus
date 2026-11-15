@@ -39,6 +39,7 @@ import {
   type Board,
   cleared,
   exited,
+  type LiveState,
   markOf,
   nextWaiting,
   opened,
@@ -96,6 +97,8 @@ import type { TabDragEvents } from "./tabDrag";
 import { SidebarEdge, SplitEdge } from "./SidebarEdge";
 import { menuAccount, type MenuPlace, TabMenu } from "./TabMenu";
 import { TaskDialog } from "./TaskDialog";
+import { LimitPopup } from "./LimitPopup";
+import { AFTER_LIMIT, type LimitHit, limitOffers, LimitQueue } from "./limits";
 import { openTask, plannerFor, Prefills, withProjectTasks } from "./startTask";
 import { ServiceForm } from "./ServiceForm";
 import { ServiceOutput } from "./ServiceOutput";
@@ -205,6 +208,8 @@ export function App() {
     at: MenuPlace;
     tab: TabId;
     chosen?: Account;
+    /** Opened from the low-limit banner, so the moved chat gets `continue` typed. */
+    fromLimit?: boolean;
   }>();
   const [sheet, setSheet] = createSignal(false);
   const sidebarWidth = createSavedWidth({
@@ -601,7 +606,8 @@ export function App() {
     account: string;
     reason: string;
   }>();
-  const continueOn = (id: TabId, account: Account) => {
+  // `afterLimit`: the move came from the limit popup or banner, so the chat gets `continue` typed, never sent.
+  const continueOn = (id: TabId, account: Account, afterLimit = false) => {
     if (moving().has(id)) return;
     setMovingTab(id, account.name);
     const initialRun = runOf(id);
@@ -619,6 +625,7 @@ export function App() {
       () => {
         setTree(moveToAccount(tree(), id, account));
         markEnded(id, false);
+        if (afterLimit) prefills.set(id, AFTER_LIMIT);
         restart();
       },
       (error: unknown) => {
@@ -759,6 +766,8 @@ export function App() {
     split.forget(id);
     hands.forget(id);
     prefills.forget(id);
+    limits.forget(id);
+    setLimitShown(limits.first());
     if (active() === id) {
       setActive(after);
       if (setup) setOverPage(false);
@@ -932,6 +941,49 @@ export function App() {
   const typers = new Map<TabId, (text: string) => void>();
   // A started task's prompt, typed once its chat is ready.
   const prefills = new Prefills();
+  // Each chat's limit popup, once per limit window, one shown at a time.
+  const limits = new LimitQueue();
+  const [limitShown, setLimitShown] = createSignal<LimitHit>();
+  const queueLimit = (hit: LimitHit) => {
+    if (tabById(hit.tab) && limits.hit(hit)) setLimitShown(limits.first());
+  };
+  const limitDone = () => {
+    limits.done();
+    setLimitShown(limits.first());
+  };
+  // The limit clock's record, for a chat that hit its limit before any meter said so.
+  const limitReported = (id: TabId, state: LiveState) => {
+    if (state.state !== "limited") {
+      limits.cleared(id);
+      return;
+    }
+    const account = tabById(id)?.launch.account?.id;
+    if (account === undefined) return;
+    limitOffers(account).then(
+      (offers) => {
+        queueLimit({ tab: id, account, resetsAt: state.resetsAt, offers });
+      },
+      (error: unknown) => {
+        console.error("could not read where the chat can go:", error);
+      },
+    );
+  };
+  // A meter's 5-hour window at 100% is a hit too; its warning already names the tab and the offers.
+  createEffect(
+    on(
+      () => live().warnings,
+      (warnings) => {
+        for (const w of warnings.filter((w) => w.used >= 100)) {
+          queueLimit({
+            tab: w.tab,
+            account: w.account,
+            resetsAt: w.resetsAt,
+            offers: w.offers,
+          });
+        }
+      },
+    ),
+  );
   // The tab whose Start a task dialog is open.
   const [startingTask, setStartingTask] = createSignal<TabId>();
   // A Claude tab in a project with a planner above it, or that is one, can start a task.
@@ -1305,6 +1357,7 @@ export function App() {
                     at: { x: box.left, y: box.bottom },
                     tab: id,
                     chosen: account,
+                    fromLimit: true,
                   });
                 }}
                 onDismiss={(account) => {
@@ -1483,6 +1536,7 @@ export function App() {
                               focused={shown() === id}
                               onState={(state) => {
                                 prefills.reported(id, state, typers.get(id));
+                                limitReported(id, state);
                                 notify(id, state);
                                 setBoard((b) =>
                                   reported(b, id, state, shown()),
@@ -1747,6 +1801,28 @@ export function App() {
                 />
               )}
             </Show>
+            <Show
+              when={(() => {
+                const hit = limitShown();
+                const title = hit && tabById(hit.tab)?.title;
+                return hit && title !== undefined ? { hit, title } : undefined;
+              })()}
+            >
+              {(shown) => (
+                <LimitPopup
+                  hit={shown().hit}
+                  title={shown().title}
+                  profiles={loaded()}
+                  statuses={statuses}
+                  onContinue={(account) => {
+                    const id = shown().hit.tab;
+                    limitDone();
+                    continueOn(id, account, true);
+                  }}
+                  onNotNow={limitDone}
+                />
+              )}
+            </Show>
             <Show when={moveFailed()}>
               {(failed) => (
                 <NoticePopup
@@ -1851,8 +1927,9 @@ export function App() {
                   onContinue={(account) => {
                     // Read before closing, since closing unmounts what holds the tab.
                     const id = tab().id;
+                    const fromLimit = pillMenu()?.fromLimit === true;
                     setPillMenu(undefined);
-                    continueOn(id, account);
+                    continueOn(id, account, fromLimit);
                   }}
                   onResume={() => {
                     const id = tab().id;
