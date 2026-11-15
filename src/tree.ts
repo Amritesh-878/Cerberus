@@ -7,6 +7,17 @@ export interface Project {
   id: ProjectId;
   name: string;
   folder: string;
+  /** Start a task's settings for this project; absent until first used. */
+  tasks?: ProjectTasks;
+}
+
+export interface ProjectTasks {
+  /** The folder of task files, chosen once per project. */
+  folder: string | null;
+  /** The project's own task prompt; `null` uses the default. */
+  prompt: string | null;
+  /** The account the last task in this project opened on. */
+  account: number | null;
 }
 
 export interface TreeTab {
