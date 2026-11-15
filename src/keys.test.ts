@@ -77,6 +77,23 @@ test("the platform comes from the user agent", () => {
   expect(
     platformOf("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/130.0"),
   ).toBe("other");
+  expect(
+    platformOf(
+      "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko)",
+    ),
+  ).toBe("linux");
+});
+
+test("Linux takes Windows' Ctrl keys, never the Mac remaps", () => {
+  const cmdLeft = chord("ArrowLeft", { metaKey: true });
+
+  expect(terminalAction(cmdLeft, "shell", "linux")).toBeUndefined();
+  expect(terminalAction(cmdLeft, "shell", "mac")).toEqual({
+    kind: "send",
+    bytes: "\x01",
+  });
+  expect(isReloadKey(chord("r", { ctrlKey: true }), "linux")).toBe(true);
+  expect(isReloadKey(chord("r", { metaKey: true }), "linux")).toBe(false);
 });
 
 function pasted(text: string, itemTypes: string[]): PastedData {

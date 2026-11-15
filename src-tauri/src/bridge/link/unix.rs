@@ -6,14 +6,46 @@ use std::path::PathBuf;
 
 pub type Stream = UnixStream;
 
-/// In the user's own temp folder, short enough for `sun_path`.
+/// In a folder only this user can enter, short enough for `sun_path`.
 pub fn name_for(id: &str) -> String {
     // 16 hex digits keep the path well inside the 104 bytes macOS allows.
     let short = &id[..id.len().min(16)];
-    std::env::temp_dir()
+    private_dir()
         .join(format!("cerberus-bridge-{short}.sock"))
         .to_string_lossy()
         .into_owned()
+}
+
+/// macOS gives each user their own temp folder.
+#[cfg(not(target_os = "linux"))]
+fn private_dir() -> PathBuf {
+    std::env::temp_dir()
+}
+
+/// Linux's `/tmp` is shared, so the session's runtime folder, else a `cerberus` folder in the user's cache.
+#[cfg(target_os = "linux")]
+fn private_dir() -> PathBuf {
+    dirs::runtime_dir()
+        .or_else(|| dirs::cache_dir().map(|cache| cache.join("cerberus")))
+        .unwrap_or_else(|| std::env::temp_dir().join(format!("cerberus-{}", uid())))
+}
+
+#[cfg(target_os = "linux")]
+fn uid() -> u32 {
+    // SAFETY: getuid cannot fail and touches no memory.
+    unsafe { libc::getuid() }
+}
+
+/// Makes the socket's folder, if missing, open to this user alone.
+fn make_private_dir(socket: &std::path::Path) -> io::Result<()> {
+    use std::os::unix::fs::DirBuilderExt;
+    match socket.parent() {
+        Some(dir) if !dir.exists() => fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(dir),
+        _ => Ok(()),
+    }
 }
 
 pub fn connect(name: &str) -> io::Result<Option<UnixStream>> {
@@ -67,6 +99,7 @@ pub struct Listener {
 impl Listener {
     pub fn bind(name: &str) -> io::Result<Self> {
         let path = PathBuf::from(name);
+        make_private_dir(&path)?;
         let listener = UnixListener::bind(&path)?;
         fs::set_permissions(&path, fs::Permissions::from_mode(0o600))?;
         Ok(Self { listener, path })
@@ -103,5 +136,33 @@ mod tests {
         let mode = fs::metadata(&name).unwrap().permissions().mode();
 
         assert_eq!(mode & 0o077, 0, "mode {mode:o}");
+    }
+
+    #[test]
+    fn a_missing_socket_folder_is_made_for_this_user_alone() {
+        let dir = crate::accounts::testdir::TestDir::new();
+        let name = dir.path().join("run/cerberus/s.sock");
+        let _listener = Listener::bind(&name.to_string_lossy()).unwrap();
+
+        let made = fs::metadata(name.parent().unwrap())
+            .unwrap()
+            .permissions()
+            .mode();
+        let socket = fs::metadata(&name).unwrap().permissions().mode();
+
+        assert_eq!(made & 0o777, 0o700, "folder {made:o}");
+        assert_eq!(socket & 0o777, 0o600, "socket {socket:o}");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn on_linux_the_socket_is_never_in_the_shared_tmp() {
+        let name = name_for("0123456789abcdef");
+
+        assert!(!name.starts_with("/tmp/cerberus-bridge"), "{name}");
+        assert!(
+            name.ends_with("cerberus-bridge-0123456789abcdef.sock"),
+            "{name}"
+        );
     }
 }

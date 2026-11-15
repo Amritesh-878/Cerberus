@@ -132,8 +132,8 @@ pub fn descendants(root: u32, since_ms: u64) -> Vec<u32> {
     )
 }
 
-/// Unix moves an orphan to launchd, so a parent id is never stale and no start time is needed.
-#[cfg(unix)]
+/// macOS moves an orphan to launchd, so a parent id is never stale and no start time is needed.
+#[cfg(all(unix, not(target_os = "linux")))]
 pub fn descendants(root: u32, _since_ms: u64) -> Vec<u32> {
     let listed = std::process::Command::new("/bin/ps")
         .args(["-axo", "pid=,ppid=,pgid="])
@@ -149,7 +149,7 @@ pub fn descendants(root: u32, _since_ms: u64) -> Vec<u32> {
 }
 
 /// (process, parent, group) rows from `ps -o pid=,ppid=,pgid=`; a line that is not three numbers is skipped.
-#[cfg(any(unix, test))]
+#[cfg(any(all(unix, not(target_os = "linux")), test))]
 fn ps_rows(listing: &str) -> Vec<(u32, u32, u32)> {
     listing
         .lines()
@@ -164,7 +164,7 @@ fn ps_rows(listing: &str) -> Vec<(u32, u32, u32)> {
 }
 
 /// Below `root` by parent, plus its group, since an orphan moves to launchd but keeps the group it started in.
-#[cfg(any(unix, test))]
+#[cfg(any(all(unix, not(target_os = "linux")), test))]
 fn in_tree(rows: &[(u32, u32, u32)], root: u32) -> Vec<u32> {
     let pairs: Vec<(u32, u32)> = rows.iter().map(|&(pid, ppid, _)| (pid, ppid)).collect();
     let mut found = below(&pairs, root, 0, |_| Some(0));
@@ -204,9 +204,123 @@ fn born_ms(pid: u32) -> Option<u64> {
     (read == size).then(|| info.pbi_start_tvsec * 1_000 + info.pbi_start_tvusec / 1_000)
 }
 
-#[cfg(all(unix, not(target_os = "macos")))]
+#[cfg(target_os = "linux")]
+fn born_ms(pid: u32) -> Option<u64> {
+    let clock = linux::Clock::read()?;
+    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    Some(clock.ms_at(parse_stat(&stat)?.start))
+}
+
+#[cfg(all(unix, not(any(target_os = "macos", target_os = "linux"))))]
 fn born_ms(_pid: u32) -> Option<u64> {
     None
+}
+
+/// One `/proc/<pid>/stat` line: the process, its parent, its group and its start in clock ticks since boot.
+#[cfg(any(target_os = "linux", test))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Stat {
+    pid: u32,
+    ppid: u32,
+    pgid: u32,
+    start: u64,
+}
+
+/// The command name sits in parentheses and may itself hold spaces and `)`, so fields count from the last `)`.
+#[cfg(any(target_os = "linux", test))]
+fn parse_stat(line: &str) -> Option<Stat> {
+    let (head, rest) = line.rsplit_once(')')?;
+    let pid = head.split_once('(')?.0.trim().parse().ok()?;
+    // After the name: state is field 3, ppid 4, pgrp 5 and starttime 22.
+    let fields: Vec<&str> = rest.split_whitespace().collect();
+    Some(Stat {
+        pid,
+        ppid: fields.get(1)?.parse().ok()?,
+        pgid: fields.get(2)?.parse().ok()?,
+        start: fields.get(19)?.parse().ok()?,
+    })
+}
+
+/// Below `root` by parent and by its group (which outlives a parent), none started before the root, or before `since` ticks once it is gone.
+#[cfg(any(target_os = "linux", test))]
+fn proc_tree(stats: &[Stat], root: u32, since: u64) -> Vec<u32> {
+    let starts: std::collections::HashMap<u32, u64> =
+        stats.iter().map(|s| (s.pid, s.start)).collect();
+    let root_start = starts.get(&root).copied().unwrap_or(since);
+    let pairs: Vec<(u32, u32)> = stats.iter().map(|s| (s.pid, s.ppid)).collect();
+    let mut found = below(&pairs, root, root_start, |pid| starts.get(&pid).copied());
+    for s in stats {
+        if s.pgid == root && s.pid != root && s.start >= root_start && !found.contains(&s.pid) {
+            found.push(s.pid);
+        }
+    }
+    found
+}
+
+/// Every process below `root`, which started at `since_ms`, from `/proc`.
+#[cfg(target_os = "linux")]
+pub fn descendants(root: u32, since_ms: u64) -> Vec<u32> {
+    let Some(clock) = linux::Clock::read() else {
+        return Vec::new();
+    };
+    // `btime` is whole seconds, so a tick count from it can run up to a second late.
+    let since = clock.ticks_at(since_ms.saturating_sub(1_000));
+    proc_tree(&linux::stats(), root, since)
+}
+
+#[cfg(target_os = "linux")]
+mod linux {
+    use super::{Stat, parse_stat};
+
+    /// Boot time and tick rate, to turn a stat line's start ticks into Unix milliseconds and back.
+    pub struct Clock {
+        boot_ms: u64,
+        hz: u64,
+    }
+
+    impl Clock {
+        pub fn read() -> Option<Self> {
+            let stat = std::fs::read_to_string("/proc/stat").ok()?;
+            let boot: u64 = stat
+                .lines()
+                .find_map(|line| line.strip_prefix("btime "))?
+                .trim()
+                .parse()
+                .ok()?;
+            // SAFETY: sysconf reads a constant and touches no memory.
+            let hz = unsafe { libc::sysconf(libc::_SC_CLK_TCK) };
+            let hz = u64::try_from(hz).ok().filter(|&hz| hz > 0)?;
+            Some(Self {
+                boot_ms: boot.saturating_mul(1_000),
+                hz,
+            })
+        }
+
+        pub fn ms_at(&self, ticks: u64) -> u64 {
+            self.boot_ms + ticks.saturating_mul(1_000) / self.hz
+        }
+
+        pub fn ticks_at(&self, ms: u64) -> u64 {
+            ms.saturating_sub(self.boot_ms).saturating_mul(self.hz) / 1_000
+        }
+    }
+
+    /// Every readable process; one that exits mid-read is simply left out.
+    pub fn stats() -> Vec<Stat> {
+        let Ok(entries) = std::fs::read_dir("/proc") else {
+            return Vec::new();
+        };
+        entries
+            .flatten()
+            .filter(|e| {
+                e.file_name()
+                    .to_str()
+                    .is_some_and(|n| n.bytes().all(|b| b.is_ascii_digit()))
+            })
+            .filter_map(|e| std::fs::read_to_string(e.path().join("stat")).ok())
+            .filter_map(|line| parse_stat(&line))
+            .collect()
+    }
 }
 
 /// Whether a process with this id is still running.
@@ -324,7 +438,90 @@ mod tests {
         assert!(!is_running(child.id()));
     }
 
-    #[cfg(any(windows, target_os = "macos"))]
+    fn stat_line(pid: u32, name: &str, ppid: u32, pgid: u32, start: u64) -> String {
+        // Fields 10 to 21 are zeros here; starttime is field 22, and real lines run on past it.
+        format!(
+            "{pid} ({name}) S {ppid} {pgid} {pgid} 0 -1 4194560 {}{start} 1 0 0",
+            "0 ".repeat(12)
+        )
+    }
+
+    #[test]
+    fn a_stat_line_is_read_past_a_name_with_spaces_and_parentheses() {
+        let odd = stat_line(4242, "my (odd) name) x", 17, 4000, 987_654);
+
+        assert_eq!(
+            parse_stat(&odd),
+            Some(Stat {
+                pid: 4242,
+                ppid: 17,
+                pgid: 4000,
+                start: 987_654
+            })
+        );
+        assert_eq!(
+            parse_stat(&stat_line(1, "systemd", 0, 1, 2)).map(|s| s.start),
+            Some(2)
+        );
+        assert_eq!(parse_stat("12 (cut short) S 1 12"), None);
+        assert_eq!(parse_stat("no parentheses at all"), None);
+        assert_eq!(parse_stat(""), None);
+    }
+
+    fn stat(pid: u32, ppid: u32, pgid: u32, start: u64) -> Stat {
+        Stat {
+            pid,
+            ppid,
+            pgid,
+            start,
+        }
+    }
+
+    #[test]
+    fn the_proc_walk_follows_children_started_after_their_parent() {
+        // Root 50 started at 5_000; 7 is older and names 50 only because its parent's id was reused.
+        let stats = [
+            stat(50, 1, 50, 5_000),
+            stat(60, 50, 50, 5_100),
+            stat(61, 60, 50, 5_200),
+            stat(7, 50, 7, 1_000),
+            stat(8, 7, 7, 6_000),
+            stat(99, 1, 99, 100),
+        ];
+
+        assert_eq!(proc_tree(&stats, 50, 0), [60, 61]);
+    }
+
+    #[test]
+    fn the_proc_walk_finds_an_orphan_by_the_roots_group_but_not_an_older_member() {
+        // 600 outlived the tab's program 500 and now hangs off 1; 450 sits in group 500 but predates it.
+        let stats = [
+            stat(1, 0, 1, 0),
+            stat(500, 1, 500, 5_000),
+            stat(600, 1, 500, 5_500),
+            stat(601, 600, 500, 5_600),
+            stat(450, 1, 500, 4_000),
+        ];
+
+        assert_eq!(proc_tree(&stats, 500, 0), [600, 601]);
+    }
+
+    #[test]
+    fn once_the_root_is_gone_since_bounds_the_walk() {
+        let stats = [stat(600, 1, 500, 5_500), stat(300, 1, 500, 3_000)];
+
+        assert_eq!(proc_tree(&stats, 500, 5_000), [600]);
+        assert_eq!(proc_tree(&stats, 500, 0), [600, 300]);
+    }
+
+    #[test]
+    fn a_loop_in_proc_parents_ends() {
+        let stats = [stat(1, 2, 1, 0), stat(2, 1, 2, 0)];
+
+        assert_eq!(proc_tree(&stats, 1, 0), [2]);
+    }
+
+    #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
     #[test]
     fn a_process_started_after_a_files_stamp_is_not_the_one_that_wrote_it() {
         let now_ms = u64::try_from(

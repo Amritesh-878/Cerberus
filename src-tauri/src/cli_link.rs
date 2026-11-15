@@ -10,12 +10,16 @@ const LINK_NAME: &str = "cerberus";
 
 #[derive(Debug, thiserror::Error)]
 pub enum LinkError {
-    #[error("the `cerberus` command is installed this way only on macOS")]
+    #[error("the `cerberus` command is installed this way only on macOS and Linux")]
     Unsupported,
     #[error(
         "Cerberus is running from a disk image or a temporary copy; move it to Applications and open it from there first, so the link keeps working"
     )]
     NotInstalled,
+    #[error(
+        "Cerberus is running from an AppImage, whose files are gone once it closes; install the .deb to get the `cerberus` command"
+    )]
+    AppImage,
     #[error("`{COMMAND}` is missing beside the app; reinstall Cerberus")]
     NoCommand,
     #[error(
@@ -44,14 +48,54 @@ pub struct Linked {
 
 /// Links `~/.local/bin/cerberus` to the console command inside the running app.
 pub fn install(home: Option<PathBuf>) -> Result<Linked, LinkError> {
-    if !cfg!(target_os = "macos") {
+    if !cfg!(any(target_os = "macos", target_os = "linux")) {
         return Err(LinkError::Unsupported);
     }
     let exe = std::env::current_exe()?;
     let home = home.ok_or(LinkError::NoHome)?;
     let shell = std::env::var("SHELL").ok();
     link(&exe, &home)?;
+    // The .deb's app is `/usr/bin/cerberus`, which a PATH with `/usr/bin` first would run instead.
+    if let Some(first) = shadowing(&home, login_path(), Path::is_file) {
+        return Ok(linked_behind(&first, &home, shell.as_deref()));
+    }
     Ok(linked(&home, login_path(), shell.as_deref()))
+}
+
+/// A `cerberus` in a login `PATH` folder ahead of the link's, which a shell would run instead.
+fn shadowing(
+    home: &Path,
+    login_path: Option<&str>,
+    exists: impl Fn(&Path) -> bool,
+) -> Option<PathBuf> {
+    let dir = home.join(LINK_DIR);
+    login_path?
+        .split(':')
+        .map(Path::new)
+        .take_while(|d| *d != dir)
+        .map(|d| d.join(LINK_NAME))
+        .find(|candidate| exists(candidate))
+}
+
+fn linked_behind(first: &Path, home: &Path, shell: Option<&str>) -> Linked {
+    let behind = format!(
+        "Linked ~/{LINK_DIR}/{LINK_NAME} to this app, but {} comes first on your login shell's PATH, so `cerberus` runs that.",
+        first.display()
+    );
+    match startup_line(home, shell) {
+        Some((file, line)) => Linked {
+            message: format!(
+                "{behind} Add this line to the end of {file}, then open a new terminal:"
+            ),
+            path_line: Some(line),
+        },
+        None => Linked {
+            message: format!(
+                "{behind} Put ~/{LINK_DIR} ahead of it on your shell's PATH, or run `cerberus-cli`."
+            ),
+            path_line: None,
+        },
+    }
 }
 
 #[cfg(unix)]
@@ -74,6 +118,10 @@ fn is_temporary(exe: &Path) -> bool {
 fn link(exe: &Path, home: &Path) -> Result<(), LinkError> {
     if is_temporary(exe) {
         return Err(LinkError::NotInstalled);
+    }
+    // An AppImage runs from a mount under the temp folder that goes away when the app closes.
+    if exe.to_string_lossy().contains("/.mount_") {
+        return Err(LinkError::AppImage);
     }
     let target = exe
         .parent()
@@ -169,6 +217,38 @@ mod tests {
     use crate::accounts::testdir::TestDir;
 
     const HOME: &str = "/Users/u";
+
+    #[test]
+    fn a_cerberus_ahead_of_the_link_on_path_is_reported_with_the_line_that_puts_the_link_first() {
+        let home = Path::new("/home/u");
+        let deb = Path::new("/usr/bin/cerberus");
+        let exists = |p: &Path| p == deb;
+
+        let behind = "/usr/local/bin:/usr/bin:/home/u/.local/bin";
+        let ahead = "/home/u/.local/bin:/usr/bin";
+        assert_eq!(shadowing(home, Some(behind), exists).as_deref(), Some(deb));
+        assert_eq!(shadowing(home, Some(ahead), exists), None);
+        assert_eq!(shadowing(home, Some("/usr/local/bin"), |_| false), None);
+        assert_eq!(shadowing(home, None, exists), None);
+
+        let told = linked_behind(deb, home, Some("/bin/zsh"));
+        assert!(
+            told.message.contains("/usr/bin/cerberus comes first"),
+            "{}",
+            told.message
+        );
+        assert_eq!(
+            told.path_line.as_deref(),
+            Some(r#"export PATH="$HOME/.local/bin:$PATH""#)
+        );
+        let unknown = linked_behind(deb, home, Some("/opt/bin/nu"));
+        assert!(
+            unknown.message.contains("cerberus-cli"),
+            "{}",
+            unknown.message
+        );
+        assert_eq!(unknown.path_line, None);
+    }
 
     #[test]
     fn a_link_dir_on_the_login_path_needs_no_line() {
@@ -323,6 +403,33 @@ mod tests {
             Err(LinkError::NotInstalled)
         ));
         assert!(!home.path().join(LINK_DIR).exists());
+    }
+
+    #[test]
+    fn an_app_run_from_an_appimage_mount_is_refused_and_a_deb_install_is_linked() {
+        let home = TestDir::new();
+        let mounted = Path::new("/tmp/.mount_CerberXyZ12/usr/bin/cerberus");
+
+        assert!(matches!(
+            link(mounted, home.path()),
+            Err(LinkError::AppImage)
+        ));
+        assert!(!home.path().join(LINK_DIR).exists());
+
+        let root = TestDir::new();
+        let bin = root.path().join("usr/bin");
+        fs::create_dir_all(&bin).unwrap();
+        fs::write(bin.join("cerberus"), "").unwrap();
+        fs::write(bin.join(COMMAND), "").unwrap();
+        let linked = link(&bin.join("cerberus"), home.path());
+
+        if cfg!(unix) {
+            assert!(linked.is_ok(), "{linked:?}");
+            assert_eq!(
+                fs::read_link(home.path().join(LINK_DIR).join(LINK_NAME)).unwrap(),
+                bin.join(COMMAND)
+            );
+        }
     }
 
     fn app(root: &Path) -> PathBuf {
