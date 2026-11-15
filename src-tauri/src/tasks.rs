@@ -45,10 +45,11 @@ pub fn list(folder: &Path) -> Vec<TaskFile> {
                 .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
                 .and_then(|d| u64::try_from(d.as_millis()).ok())
                 .unwrap_or(0);
+            let id = task_id(&path);
             Some(TaskFile {
-                id: task_id(&path),
+                heading: heading.as_deref().and_then(|h| short_heading(&id, h)),
+                id,
                 path: path.to_string_lossy().into_owned(),
-                heading,
                 modified_ms,
             })
         })
@@ -154,9 +155,9 @@ pub fn plan(request: &PlanRequest, heading: Option<&str>, branch: Option<&str>) 
             ("planner_tab", &request.planner_tab),
         ],
     );
-    let title = match heading.map(|h| h.strip_prefix(&format!("{id}:")).unwrap_or(h).trim()) {
-        Some(h) if !h.is_empty() => format!("{id} · {h}"),
-        _ => id,
+    let title = match heading.and_then(|h| short_heading(&id, h)) {
+        Some(h) => format!("{id} · {h}"),
+        None => id,
     };
     Plan {
         title,
@@ -164,6 +165,16 @@ pub fn plan(request: &PlanRequest, heading: Option<&str>, branch: Option<&str>) 
         cwd: folder,
         dirs,
     }
+}
+
+/// A heading without the task id it starts with, since the id is shown beside it; `None` once nothing is left.
+fn short_heading(id: &str, heading: &str) -> Option<String> {
+    let rest = heading
+        .get(..id.len())
+        .filter(|start| start.eq_ignore_ascii_case(id))
+        .map_or(heading, |_| &heading[id.len()..]);
+    let rest = rest.trim_start_matches([':', ' ', '-', '·']).trim();
+    (!rest.is_empty()).then(|| rest.to_owned())
 }
 
 /// `completed/<task id>.md` beside the task folder, lower case like the task file names.
@@ -384,9 +395,9 @@ mod tests {
 
         let ids: Vec<_> = found.iter().map(|f| f.id.as_str()).collect();
         assert_eq!(ids, ["TASK-025", "notes", "TASK-024"]);
-        assert_eq!(found[0].heading.as_deref(), Some("TASK-025: Start a task"));
+        assert_eq!(found[0].heading.as_deref(), Some("Start a task"));
         assert_eq!(found[1].heading, None);
-        assert_eq!(found[2].heading.as_deref(), Some("TASK-024: File pane"));
+        assert_eq!(found[2].heading.as_deref(), Some("File pane"));
         assert!(found[0].path.ends_with("task-025.md"));
     }
 
@@ -418,6 +429,27 @@ mod tests {
         assert_eq!(task_id(Path::new("bug-12-crash.md")), "BUG-12-CRASH");
         assert_eq!(task_id(Path::new("Release notes.md")), "Release notes");
         assert_eq!(task_id(Path::new("v2-plan.md")), "v2-plan");
+    }
+
+    #[test]
+    fn a_heading_drops_the_task_id_it_starts_with() {
+        assert_eq!(
+            short_heading("TASK-025", "TASK-025: Start a task").as_deref(),
+            Some("Start a task")
+        );
+        assert_eq!(
+            short_heading("TASK-025", "task-025 - Start").as_deref(),
+            Some("Start")
+        );
+        assert_eq!(
+            short_heading("TASK-025", "Start a task").as_deref(),
+            Some("Start a task")
+        );
+        assert_eq!(short_heading("TASK-025", "TASK-025"), None);
+        assert_eq!(
+            short_heading("notes", "Notés on ünicode").as_deref(),
+            Some("Notés on ünicode")
+        );
     }
 
     #[test]

@@ -3624,6 +3624,15 @@ button.card-row:focus-visible,
   height: 30px;
 }
 
+.task-prompt {
+  margin-top: 14px;
+}
+
+.task-prompt .secondary.small {
+  flex: none;
+  white-space: nowrap;
+}
+
 .task-prompt summary {
   font-size: 13px;
   color: var(--text);
