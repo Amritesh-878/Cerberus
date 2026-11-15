@@ -20,7 +20,14 @@ pub fn login_dirs() -> Option<&'static str> {
     LOGIN_PATH.get().map(String::as_str)
 }
 
-/// An app opened from Finder or the Dock gets launchd's bare PATH, where `claude` is rarely found.
+// Each system's default login shell, for when `SHELL` is unset.
+const FALLBACK_SHELL: &str = if cfg!(target_os = "macos") {
+    "/bin/zsh"
+} else {
+    "/bin/bash"
+};
+
+/// An app opened from Finder, the Dock or a Linux desktop launcher gets a bare PATH, where `claude` is rarely found.
 pub fn adopt() {
     // Only a terminal sets TERM, and a PATH from there is already the user's.
     if std::env::var_os("TERM").is_some() {
@@ -31,7 +38,7 @@ pub fn adopt() {
     }
     let shell = std::env::var_os("SHELL")
         .filter(|s| Path::new(s).is_absolute())
-        .unwrap_or_else(|| OsString::from("/bin/zsh"));
+        .unwrap_or_else(|| OsString::from(FALLBACK_SHELL));
     let Some(login) = read_within(Path::new(&shell), TIMEOUT) else {
         eprintln!(
             "could not read the login shell's PATH; programs outside /usr/bin may not be found"
@@ -177,6 +184,18 @@ __CERBERUS_"
             merged,
             "/Users/u/.local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin"
         );
+    }
+
+    #[test]
+    fn without_shell_set_the_systems_own_login_shell_is_read() {
+        let expected = if cfg!(target_os = "macos") {
+            "/bin/zsh"
+        } else {
+            "/bin/bash"
+        };
+
+        assert_eq!(FALLBACK_SHELL, expected);
+        assert!(Path::new(FALLBACK_SHELL).is_file(), "{FALLBACK_SHELL}");
     }
 
     #[test]
