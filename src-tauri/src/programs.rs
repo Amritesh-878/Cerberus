@@ -168,25 +168,21 @@ impl Finder {
 
     /// Antigravity's `agy`: from PATH only when its folder is the installer's or names it, else from the installer's folder.
     fn agy(&self) -> Option<PathBuf> {
-        // Another program may be called `agy`, so one elsewhere on PATH is not taken for Antigravity's.
-        let ours = |program: &PathBuf| {
-            program.parent().is_some_and(|dir| {
-                let named = dir.to_string_lossy().to_lowercase();
-                self.agy_dirs.iter().any(|d| d == dir)
-                    || named.contains("antigravity")
-                    || named.contains("agy")
-            })
+        // Another program may be called `agy`, so only PATH folders that are the installer's or name it are searched.
+        let ours = |dir: &&PathBuf| {
+            let named = dir.to_string_lossy().to_lowercase();
+            self.agy_dirs.contains(dir) || named.contains("antigravity") || named.contains("agy")
         };
-        self.find("agy").filter(ours).or_else(|| {
-            self.agy_dirs
-                .iter()
-                .flat_map(|dir| {
-                    self.exts
-                        .iter()
-                        .map(move |ext| dir.join(format!("agy{ext}")))
-                })
-                .find(|candidate| (self.is_file)(candidate))
-        })
+        self.dirs
+            .iter()
+            .filter(ours)
+            .chain(&self.agy_dirs)
+            .flat_map(|dir| {
+                self.exts
+                    .iter()
+                    .map(move |ext| dir.join(format!("agy{ext}")))
+            })
+            .find(|candidate| (self.is_file)(candidate))
     }
 
     pub fn choices(&self) -> Vec<ProgramChoice> {
@@ -554,6 +550,20 @@ mod tests {
         );
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn an_unrelated_agy_earlier_on_path_does_not_hide_antigravitys_later_one() {
+        let f = finder(
+            &[r"C:\tools", r"D:\Antigravity\bin"],
+            &[r"C:\tools\agy.exe", r"D:\Antigravity\bin\agy.exe"],
+        );
+
+        assert_eq!(
+            program_of(&f.choices(), "agy").as_deref(),
+            Some(r"D:\Antigravity\bin\agy.exe")
+        );
+    }
+
     #[test]
     fn pathext_keeps_only_what_a_tab_can_start_in_its_order() {
         assert_eq!(
@@ -786,6 +796,15 @@ mod tests {
         assert_eq!(
             program(unix_finder(&["/usr/bin"], &["/usr/bin/agy"], None)),
             None
+        );
+        assert_eq!(
+            program(unix_finder(
+                &["/usr/bin", "/opt/antigravity/bin"],
+                &["/usr/bin/agy", "/opt/antigravity/bin/agy"],
+                None
+            ))
+            .as_deref(),
+            Some("/opt/antigravity/bin/agy")
         );
     }
 
