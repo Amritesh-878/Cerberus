@@ -99,12 +99,9 @@ impl Finder {
                 .unwrap_or_default(),
         );
         #[cfg(windows)]
-        let exts = env::var("PATHEXT")
-            .unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".to_owned())
-            .split(';')
-            .filter(|ext| !ext.is_empty())
-            .map(str::to_lowercase)
-            .collect();
+        let exts = launchable_exts(
+            &env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".to_owned()),
+        );
         // Unix programs carry no extension, so the bare name is the one candidate.
         #[cfg(unix)]
         let exts = vec![String::new()];
@@ -294,6 +291,16 @@ fn unix_shells(
         shells[..=at].rotate_right(1);
     }
     shells
+}
+
+/// PATHEXT's entries a tab can start: npm puts a `.ps1` beside each `.cmd`, and a PTY cannot run a script file.
+#[cfg(any(windows, test))]
+fn launchable_exts(pathext: &str) -> Vec<String> {
+    pathext
+        .split(';')
+        .map(str::to_lowercase)
+        .filter(|ext| [".com", ".exe", ".bat", ".cmd"].contains(&ext.as_str()))
+        .collect()
 }
 
 fn shown(path: Option<PathBuf>) -> Option<String> {
@@ -545,6 +552,15 @@ mod tests {
             program_of(&both.choices(), "agy").as_deref(),
             Some(r"C:\Users\u\AppData\Local\agy\bin\agy.cmd")
         );
+    }
+
+    #[test]
+    fn pathext_keeps_only_what_a_tab_can_start_in_its_order() {
+        assert_eq!(
+            launchable_exts(".COM;.PS1;.EXE;.BAT;.CMD;.VBS;.JS;;.Py"),
+            [".com", ".exe", ".bat", ".cmd"]
+        );
+        assert_eq!(launchable_exts(".CMD;.EXE"), [".cmd", ".exe"]);
     }
 
     #[test]
