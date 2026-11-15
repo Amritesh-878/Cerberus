@@ -144,4 +144,8 @@ Stack: Tauri 2, Rust, Solid + TypeScript with Vite, xterm.js over `portable-pty`
 
 MIT, see `LICENSE`. Skills under `.claude/skills/` keep their own MIT notices in
 `.claude/skills/notice.md`. The bundled zsh-autosuggestions (MIT) is listed with its version and
-licence in `src-tauri/vendor/notice.md`.
+licence in `src-tauri/vendor/notice.md`. The Gemini CLI tab icon is the `googlegemini` file from
+[Simple Icons](https://simpleicons.org) 16.36.0 (CC0).
+
+Claude, Gemini and Codex names and marks belong to Anthropic, Google and OpenAI; Cerberus uses them
+only to show which CLI a tab runs, and is not affiliated with or endorsed by them.

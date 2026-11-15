@@ -111,6 +111,9 @@ right panel shows only **Environment** (folder and branch) and **Changes**.
   tab's own chat without its history, so pick it inside the CLI with `/resume`, or reopen the
   folder's newest chat by hand with `gemini --resume latest` or `codex resume --last`.
 
+Claude, Gemini and Codex names and marks belong to Anthropic, Google and OpenAI; Cerberus uses them
+only to show which CLI a tab runs, and is not affiliated with or endorsed by them.
+
 ## Restarts and resuming
 
 Projects and tabs are saved as you change them, in `tree.db` in the app's data folder. After a
