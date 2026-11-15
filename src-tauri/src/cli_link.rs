@@ -55,7 +55,47 @@ pub fn install(home: Option<PathBuf>) -> Result<Linked, LinkError> {
     let home = home.ok_or(LinkError::NoHome)?;
     let shell = std::env::var("SHELL").ok();
     link(&exe, &home)?;
+    // The .deb's app is `/usr/bin/cerberus`, which a PATH with `/usr/bin` first would run instead.
+    if let Some(first) = shadowing(&home, login_path(), Path::is_file) {
+        return Ok(linked_behind(&first, &home, shell.as_deref()));
+    }
     Ok(linked(&home, login_path(), shell.as_deref()))
+}
+
+/// A `cerberus` in a login `PATH` folder ahead of the link's, which a shell would run instead.
+fn shadowing(
+    home: &Path,
+    login_path: Option<&str>,
+    exists: impl Fn(&Path) -> bool,
+) -> Option<PathBuf> {
+    let dir = home.join(LINK_DIR);
+    login_path?
+        .split(':')
+        .map(Path::new)
+        .take_while(|d| *d != dir)
+        .map(|d| d.join(LINK_NAME))
+        .find(|candidate| exists(candidate))
+}
+
+fn linked_behind(first: &Path, home: &Path, shell: Option<&str>) -> Linked {
+    let behind = format!(
+        "Linked ~/{LINK_DIR}/{LINK_NAME} to this app, but {} comes first on your login shell's PATH, so `cerberus` runs that.",
+        first.display()
+    );
+    match startup_line(home, shell) {
+        Some((file, line)) => Linked {
+            message: format!(
+                "{behind} Add this line to the end of {file}, then open a new terminal:"
+            ),
+            path_line: Some(line),
+        },
+        None => Linked {
+            message: format!(
+                "{behind} Put ~/{LINK_DIR} ahead of it on your shell's PATH, or run `cerberus-cli`."
+            ),
+            path_line: None,
+        },
+    }
 }
 
 #[cfg(unix)]
@@ -177,6 +217,38 @@ mod tests {
     use crate::accounts::testdir::TestDir;
 
     const HOME: &str = "/Users/u";
+
+    #[test]
+    fn a_cerberus_ahead_of_the_link_on_path_is_reported_with_the_line_that_puts_the_link_first() {
+        let home = Path::new("/home/u");
+        let deb = Path::new("/usr/bin/cerberus");
+        let exists = |p: &Path| p == deb;
+
+        let behind = "/usr/local/bin:/usr/bin:/home/u/.local/bin";
+        let ahead = "/home/u/.local/bin:/usr/bin";
+        assert_eq!(shadowing(home, Some(behind), exists).as_deref(), Some(deb));
+        assert_eq!(shadowing(home, Some(ahead), exists), None);
+        assert_eq!(shadowing(home, Some("/usr/local/bin"), |_| false), None);
+        assert_eq!(shadowing(home, None, exists), None);
+
+        let told = linked_behind(deb, home, Some("/bin/zsh"));
+        assert!(
+            told.message.contains("/usr/bin/cerberus comes first"),
+            "{}",
+            told.message
+        );
+        assert_eq!(
+            told.path_line.as_deref(),
+            Some(r#"export PATH="$HOME/.local/bin:$PATH""#)
+        );
+        let unknown = linked_behind(deb, home, Some("/opt/bin/nu"));
+        assert!(
+            unknown.message.contains("cerberus-cli"),
+            "{}",
+            unknown.message
+        );
+        assert_eq!(unknown.path_line, None);
+    }
 
     #[test]
     fn a_link_dir_on_the_login_path_needs_no_line() {

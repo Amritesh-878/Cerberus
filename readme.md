@@ -39,6 +39,9 @@ chmod +x Cerberus_<version>_amd64.AppImage
 ./Cerberus_<version>_amd64.AppImage
 ```
 
+It uses the static AppImage runtime, so it needs FUSE but not `libfuse2`. Where FUSE is off (some
+containers and sandboxes), run it with `--appimage-extract-and-run`.
+
 The .deb (Ubuntu 24.04 and later, Debian 13) installs `cerberus` with its helpers in `/usr/bin` and
 adds it to the app menu:
 
@@ -47,7 +50,10 @@ sudo apt install ./Cerberus_<version>_amd64.deb
 ```
 
 To use `cerberus` in a terminal from the .deb, click **Install `cerberus` command** in **Accounts**.
-An AppImage can't link it, since its files are gone once it closes.
+It links `~/.local/bin/cerberus`, which must come before `/usr/bin` on your `PATH` (Ubuntu's
+`~/.profile` puts it first), since `/usr/bin/cerberus` is the app itself; Cerberus says so if it
+doesn't, and `cerberus-cli` always works. An AppImage can't link it, since its files are gone once
+it closes.
 
 You also need [Claude Code](https://code.claude.com/docs/en/setup). Each release lists its files'
 SHA-256 so you can check a download.
