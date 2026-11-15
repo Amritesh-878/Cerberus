@@ -1,4 +1,13 @@
-import { createSignal, For, Match, Show, Switch } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  Match,
+  on,
+  Show,
+  Switch,
+} from "solid-js";
 
 import { type AccountId, type Profiles, savedColor } from "./accounts";
 import { Card, Note, Row } from "./Cards";
@@ -10,6 +19,7 @@ import {
   DiffIcon,
   FolderIcon,
   GearIcon,
+  MoreIcon,
   PlugIcon,
   PlusIcon,
   SkillIcon,
@@ -39,6 +49,7 @@ import {
 } from "./panelFeed";
 import type { PanelState } from "./panelPrefs";
 import { type PrActions, PrList } from "./PrList";
+import { type MenuItem, RowMenu } from "./RowMenu";
 import type { LiveView } from "./live";
 import { ContextCard, UsageCard } from "./LiveCards";
 import { PanelEdge } from "./SidebarEdge";
@@ -46,6 +57,7 @@ import type { Statuses } from "./statuses";
 import { isOtherCli } from "./tab";
 import { folderName, type TabId, type TreeTab } from "./tree";
 import { OutputsCard, TasksCard } from "./WorkCards";
+import { type TabKind, type WorktreeActions, WorktreeList } from "./Worktrees";
 
 /** The value once loaded, so a card can show a note while loading or on an error. */
 function loadedValue<T>(loaded: Loaded<T>): T | undefined {
@@ -81,6 +93,12 @@ export function Panel(props: {
   onEditEnvironment: () => void;
   /** Set for a planner tab, or a tab under one, which can open a task's coder tab. */
   onStartTask?: () => void;
+  /** A new shell or Claude tab in a folder, beside the shown tab. */
+  onOpenTab: (folder: string, kind: TabKind) => void;
+  /** Saves a folder to the shown tab, as Edit environment's Add folder does. */
+  onAddFolder: (folder: string) => void;
+  /** A tab's title, to name the tabs running in a worktree. */
+  tabTitle: (id: TabId) => string | undefined;
   /** Over the chat, since beside it the chat would be too narrow; it then has its own close button. */
   overlay?: boolean;
   onClose?: () => void;
@@ -134,6 +152,18 @@ export function Panel(props: {
         },
         (error: unknown) => setFailed(String(error)),
       );
+    },
+  };
+  const inProject = () => props.tab?.projectId != null;
+  const worktreeActions: WorktreeActions = {
+    openVsCode: (path) => {
+      act(openVsCode(path));
+    },
+    openFolder: (path) => {
+      act(openFolder(path));
+    },
+    get openTab() {
+      return inProject() ? props.onOpenTab : undefined;
     },
   };
   const account = () => props.tab?.launch.account ?? null;
@@ -333,6 +363,10 @@ export function Panel(props: {
           </Show>
           <Card id="changes" title="Changes" state={props.state}>
             <ChangesBody
+              tab={props.tab?.id ?? 0}
+              tabTitle={props.tabTitle}
+              worktreeActions={worktreeActions}
+              onAddFolder={inProject() ? props.onAddFolder : undefined}
               folder={props.tab?.launch.spec.cwd ?? null}
               folders={feed.folders()}
               prs={loadedValue(feed.prs()) ?? []}
@@ -530,58 +564,108 @@ type RepoChanges = Extract<Changes, { kind: "repo" }>;
 function RepoRow(props: {
   folder: string;
   repo: RepoChanges;
+  /** Shown because the chat wrote into it, not because it is one of the tab's folders. */
+  written: boolean;
+  worktreesShown: boolean;
+  onWorktrees: () => void;
+  onAddToTab: (() => void) | undefined;
   onCreatePr: (folder: string) => void;
   onOpenVsCode: (folder: string) => void;
 }) {
+  const [menu, setMenu] = createSignal(false);
+  const items = (): MenuItem[] => {
+    const all: MenuItem[] = [
+      {
+        label: props.worktreesShown ? "Hide worktrees" : "Worktrees",
+        pick: props.onWorktrees,
+      },
+    ];
+    const add = props.onAddToTab;
+    if (props.written && add) {
+      all.push({
+        label: "Add to the tab",
+        title:
+          "Saves it as one of this tab's folders, as Edit environment does",
+        pick: add,
+      });
+    }
+    return all;
+  };
   return (
-    <Row
-      icon={<DiffIcon />}
-      text={props.repo.name}
+    <div
+      class="card-row repo-row"
+      classList={{ written: props.written }}
       title={
         props.repo.base === null
           ? "Uncommitted work"
           : `Against ${props.repo.base}, uncommitted work included`
       }
-      meta={
-        <>
-          <span class="added">+{props.repo.added}</span>
-          <span class="removed">−{props.repo.removed}</span>
+    >
+      <span class="row-icon">
+        <DiffIcon />
+      </span>
+      <span class="row-text">
+        <span class="row-main">{props.repo.name}</span>
+        <Show when={props.written}>
+          <span class="row-detail">{branchText(props.repo)}</span>
+          <span class="row-detail row-tag">written by this chat</span>
+        </Show>
+      </span>
+      <span class="row-meta">
+        <span class="added">+{props.repo.added}</span>
+        <span class="removed">−{props.repo.removed}</span>
+        <button
+          type="button"
+          class="row-button"
+          disabled={!props.repo.gh || props.repo.branch === null}
+          title={
+            props.repo.gh
+              ? "Opens a shell with gh pr create typed, for you to send"
+              : "Install the GitHub CLI (gh) to create a PR from here"
+          }
+          onClick={() => {
+            props.onCreatePr(props.folder);
+          }}
+        >
+          Create PR
+        </button>
+        <Show when={props.repo.vscode}>
           <button
             type="button"
-            class="row-button"
-            disabled={!props.repo.gh || props.repo.branch === null}
-            title={
-              props.repo.gh
-                ? "Opens a shell with gh pr create typed, for you to send"
-                : "Install the GitHub CLI (gh) to create a PR from here"
-            }
+            class="row-button icon"
+            aria-label="Open in VS Code"
+            title="Open in VS Code, whose Source Control view shows the diff"
             onClick={() => {
-              props.onCreatePr(props.folder);
+              props.onOpenVsCode(props.folder);
             }}
           >
-            Create PR
+            <CodeIcon />
           </button>
-          <Show when={props.repo.vscode}>
-            <button
-              type="button"
-              class="row-button icon"
-              aria-label="Open in VS Code"
-              title="Open in VS Code, whose Source Control view shows the diff"
-              onClick={() => {
-                props.onOpenVsCode(props.folder);
-              }}
-            >
-              <CodeIcon />
-            </button>
-          </Show>
-        </>
-      }
-    />
+        </Show>
+        <button
+          type="button"
+          class="row-button icon"
+          aria-label={`More for ${props.repo.name}`}
+          aria-haspopup="menu"
+          aria-expanded={menu()}
+          onClick={() => setMenu((open) => !open)}
+        >
+          <MoreIcon />
+        </button>
+      </span>
+      <Show when={menu()}>
+        <RowMenu items={items()} onClose={() => setMenu(false)} />
+      </Show>
+    </div>
   );
 }
 
 /** One row per repo among the tab's folders, the main folder first, each with its PRs below it. */
 function ChangesBody(props: {
+  tab: TabId;
+  tabTitle: (id: TabId) => string | undefined;
+  worktreeActions: WorktreeActions;
+  onAddFolder: ((folder: string) => void) | undefined;
   folder: string | null;
   folders: Loaded<FolderChanges[]>;
   prs: RepoPrs[];
@@ -593,17 +677,43 @@ function ChangesBody(props: {
   const main = () => loadedValue(props.folders)?.[0];
   // Folders in one repo show its row once, under the first of them.
   const repos = () => {
-    const seen = new Map<string, { folder: string; repo: RepoChanges }>();
+    const seen = new Map<
+      string,
+      { folder: string; repo: RepoChanges; written: boolean }
+    >();
     for (const f of loadedValue(props.folders) ?? []) {
       const changes = f.changes;
       if (changes?.kind === "repo" && !seen.has(changes.root)) {
-        seen.set(changes.root, { folder: f.folder, repo: changes });
+        seen.set(changes.root, {
+          folder: f.folder,
+          repo: changes,
+          written: f.written === true,
+        });
       }
     }
     return seen;
   };
+  // Repos whose worktrees are shown, by root; a tab change closes them, so a list is always the shown tab's.
+  const [shown, setShown] = createSignal<ReadonlySet<string>>(new Set());
+  // A memo, so a save that changes the tab but not which tab it is keeps them open.
+  const tabId = createMemo(() => props.tab);
+  createEffect(on(tabId, () => setShown(new Set<string>()), { defer: true }));
+  const toggle = (root: string) => {
+    setShown((all) => {
+      const next = new Set(all);
+      if (!next.delete(root)) next.add(root);
+      return next;
+    });
+  };
   // Keyed by root, so each poll's fresh objects keep the rows, and an open PR menu, in place.
   const roots = () => [...repos().keys()];
+  // Worktrees of one GitHub repo list the same PRs; each shows once, under the first of them.
+  const listedAbove = (root: string, key: string) => {
+    const earlier = roots().slice(0, roots().indexOf(root));
+    return props.prs.some(
+      (r) => earlier.includes(r.root) && r.prs.some((pr) => pr.key === key),
+    );
+  };
   return (
     <Switch fallback={<Note>Reading…</Note>}>
       <Match when={props.folder === null}>
@@ -632,19 +742,42 @@ function ChangesBody(props: {
             <>
               <Show when={repos().get(root)}>
                 {(found) => (
-                  <RepoRow
-                    folder={found().folder}
-                    repo={found().repo}
-                    onCreatePr={props.onCreatePr}
-                    onOpenVsCode={props.onOpenVsCode}
-                  />
+                  <>
+                    <RepoRow
+                      folder={found().folder}
+                      repo={found().repo}
+                      written={found().written}
+                      worktreesShown={shown().has(root)}
+                      onWorktrees={() => {
+                        toggle(root);
+                      }}
+                      onAddToTab={
+                        props.onAddFolder
+                          ? () => props.onAddFolder?.(found().folder)
+                          : undefined
+                      }
+                      onCreatePr={props.onCreatePr}
+                      onOpenVsCode={props.onOpenVsCode}
+                    />
+                    <Show when={shown().has(root)}>
+                      <WorktreeList
+                        tab={props.tab}
+                        folder={found().folder}
+                        vscode={found().repo.vscode}
+                        tabTitle={props.tabTitle}
+                        actions={props.worktreeActions}
+                      />
+                    </Show>
+                  </>
                 )}
               </Show>
               <Show when={props.prs.find((r) => r.root === root)}>
                 {(repoPrs) => (
                   <PrList
                     repo={repoPrs()}
-                    isDismissed={props.isDismissed}
+                    isDismissed={(pr) =>
+                      props.isDismissed(pr) || listedAbove(root, pr.key)
+                    }
                     actions={props.actions}
                   />
                 )}

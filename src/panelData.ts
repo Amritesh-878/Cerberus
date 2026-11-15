@@ -34,6 +34,47 @@ export interface PrRow {
   updated: string;
 }
 
+/** A repo the shown chat wrote into, found by the core from its own reports. */
+export interface Written {
+  /** The repo's folder in the platform's own form, as Add to the tab saves it. */
+  folder: string;
+  changes: Changes;
+}
+
+/** Why the core leaves a worktree in place. */
+export type Refusal =
+  "main" | "locked" | "dirty" | "unread" | "inUse" | "unknown" | "failed";
+
+export interface Worktree {
+  path: string;
+  name: string;
+  /** `null` when detached, and `commit` names it. */
+  branch: string | null;
+  commit: string | null;
+  main: boolean;
+  dirty: boolean;
+  /** Its folder is gone and only git's record of it is left. */
+  missing: boolean;
+  locked: boolean;
+  pr: { number: number; state: PrRow["state"] } | null;
+  /** Its branch tracked a remote branch that is gone. */
+  gone: boolean;
+  /** Tabs whose folder or added folder is inside it. */
+  tabs: number[];
+  stale: boolean;
+  refusal: Refusal | null;
+}
+
+export interface Removed {
+  path: string;
+  name: string;
+  /** Why it is still there; `null` once removed. */
+  refusal: Refusal | null;
+  branch: string | null;
+  /** Only a merged branch is deleted, and only locally. */
+  branchDeleted: boolean;
+}
+
 export interface Connector {
   name: string;
   kind: "stdio" | "http" | "sse" | "ws" | "other";
@@ -58,6 +99,28 @@ export interface Skill {
 
 export function panelChanges(folder: string): Promise<Changes> {
   return invoke<Changes>("panel_changes", { folder });
+}
+
+/** The repos the tab's chat wrote into this session; the core finds them from its own reports, so nothing is named here. */
+export function panelWritten(tab: number): Promise<Written[]> {
+  return invoke<Written[]>("panel_written", { tab });
+}
+
+/** The worktrees of the repo of one of the tab's folders, or of a repo its chat wrote into. */
+export function panelWorktrees(
+  tab: number,
+  folder: string,
+): Promise<Worktree[]> {
+  return invoke<Worktree[]>("panel_worktrees", { tab, folder });
+}
+
+/** Call only after the user confirmed the list; the core checks each one again and never forces. */
+export function removeWorktrees(
+  tab: number,
+  folder: string,
+  paths: string[],
+): Promise<Removed[]> {
+  return invoke<Removed[]>("panel_remove_worktrees", { tab, folder, paths });
 }
 
 /** Every PR of the folder's repo, newest first; the core asks GitHub at most once a minute per repo. */

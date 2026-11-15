@@ -83,6 +83,7 @@ pub fn run() {
         .manage(Arc::new(RunningTabs::default()))
         .manage(open::Pending::default())
         .manage(PrCache::default())
+        .manage(panel::Roots::default())
         .manage(ChatFinder::default())
         .setup(move |app| {
             let paths = app.path();
@@ -165,6 +166,9 @@ pub fn run() {
             tasks::task_plan,
             tasks::task_worktree,
             tasks::task_worktree_defaults,
+            panel::panel_written,
+            panel::panel_worktrees,
+            panel::panel_remove_worktrees,
             panel::panel_prs,
             panel::panel_open_pr,
             panel::panel_pr_link,
