@@ -20,15 +20,25 @@ jobs:
         include:
           - os: windows-latest
             bundle: nsis
-            installer: "*-setup.exe"
+            installers: "nsis/*-setup.exe"
           - os: macos-latest
             bundle: dmg
-            installer: "*.dmg"
+            installers: "dmg/*.dmg"
+          # The oldest LTS still on runners, so the AppImage's glibc is one most distros have.
+          - os: ubuntu-24.04
+            bundle: appimage,deb
+            installers: "appimage/*.AppImage deb/*.deb"
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+
+      - name: Install the Linux build packages
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf
 
       - uses: actions/setup-node@v7
         with:
@@ -82,24 +92,44 @@ jobs:
           test -x "$app/Contents/MacOS/cerberus-live"
           hdiutil detach "$RUNNER_TEMP/dmg"
 
-      - name: Hash the installer
+      - name: Show what the Linux packages hold
+        if: runner.os == 'Linux'
+        run: |
+          bundle=src-tauri/target/release/bundle
+          deb=$(ls "$bundle"/deb/*.deb)
+          listed=$(dpkg-deb --contents "$deb")
+          for bin in cerberus cerberus-cli cerberus-mcp cerberus-live; do
+            echo "$listed" | grep -q "usr/bin/$bin\$" || { echo "$bin missing from $deb"; exit 1; }
+          done
+          echo "deb usr/bin: $(echo "$listed" | grep -o 'usr/bin/[^ ]*$' | xargs)" >> "$GITHUB_STEP_SUMMARY"
+          image=$(ls "$bundle"/appimage/*.AppImage)
+          chmod +x "$image"
+          (cd "$RUNNER_TEMP" && "$OLDPWD/$image" --appimage-extract >/dev/null)
+          for bin in cerberus cerberus-cli cerberus-mcp cerberus-live; do
+            test -x "$RUNNER_TEMP/squashfs-root/usr/bin/$bin" || { echo "$bin missing from the AppImage"; exit 1; }
+          done
+          echo "AppImage usr/bin: $(ls "$RUNNER_TEMP/squashfs-root/usr/bin" | xargs)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Hash the installers
         shell: pwsh
         run: |
-          $exe = @(Get-Item src-tauri/target/release/bundle/${{ matrix.bundle }}/${{ matrix.installer }})
-          if ($exe.Count -ne 1) { throw "Expected one installer, found $($exe.Count)" }
-          $exe = $exe[0]
-          $hash = (Get-FileHash $exe.FullName -Algorithm SHA256).Hash.ToLower()
-          [IO.File]::WriteAllText("$($exe.FullName).sha256", "$hash  $($exe.Name)`n")
-          "$($exe.Name): $([math]::Round($exe.Length / 1MB, 2)) MB, sha256 $hash" >> $env:GITHUB_STEP_SUMMARY
+          New-Item -ItemType Directory -Force out | Out-Null
+          foreach ($pattern in "${{ matrix.installers }}".Split(' ')) {
+            $exe = @(Get-Item "src-tauri/target/release/bundle/$pattern")
+            if ($exe.Count -ne 1) { throw "Expected one $pattern, found $($exe.Count)" }
+            $exe = $exe[0]
+            $hash = (Get-FileHash $exe.FullName -Algorithm SHA256).Hash.ToLower()
+            Copy-Item $exe.FullName out/
+            [IO.File]::WriteAllText("out/$($exe.Name).sha256", "$hash  $($exe.Name)`n")
+            "$($exe.Name): $([math]::Round($exe.Length / 1MB, 2)) MB, sha256 $hash" >> $env:GITHUB_STEP_SUMMARY
+          }
 
-      - name: Hand the installer to the release job
+      - name: Hand the installers to the release job
         if: github.event_name == 'push'
         uses: actions/upload-artifact@v7
         with:
-          name: installer-${{ matrix.bundle }}
-          path: |
-            src-tauri/target/release/bundle/${{ matrix.bundle }}/${{ matrix.installer }}
-            src-tauri/target/release/bundle/${{ matrix.bundle }}/${{ matrix.installer }}.sha256
+          name: installer-${{ matrix.os }}
+          path: out/*
           retention-days: 1
           if-no-files-found: error
 
@@ -123,7 +153,8 @@ jobs:
             macOS (Apple silicon): the app is not signed by Apple. After copying Cerberus to
             Applications, run `xattr -dr com.apple.quarantine /Applications/Cerberus.app` once,
             or open it, close the warning and choose Open Anyway in System Settings > Privacy &
-            Security.
+            Security. Linux (x86_64, preview): run the AppImage after `chmod +x`, or install the
+            .deb with `sudo apt install ./Cerberus_<version>_amd64.deb`.
         run: >
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft --verify-tag
           --title "Cerberus $GITHUB_REF_NAME" --notes "$NOTES" --generate-notes installer/*
