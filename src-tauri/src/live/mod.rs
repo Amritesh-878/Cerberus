@@ -269,6 +269,21 @@ impl Live {
         self.core.as_ref().map(|c| c.view()).unwrap_or_default()
     }
 
+    /// Accounts other than `from` below the warning line; `None` while live cards are off and no limits are known.
+    pub fn offers(&self, from: AccountId) -> Option<Vec<AccountId>> {
+        let core = self.core.as_ref()?;
+        let accounts = core.sink.accounts();
+        let warn_at = core.sink.warn_at();
+        let state = core.state();
+        Some(crate::live::meters::offers(
+            &state.meters,
+            &accounts,
+            from,
+            warn_at,
+            now_s(),
+        ))
+    }
+
     pub fn dismiss(&self, account: AccountId) {
         if let Some(core) = &self.core {
             core.state().warner.dismiss(account);

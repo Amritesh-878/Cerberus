@@ -181,6 +181,7 @@ pub fn run() {
             messages::set_messages,
             cards::live_view,
             cards::live_dismiss,
+            cards::live_offers,
             cards::live_open_output,
             cards::live_read_output,
             cards::live_output_stamp,

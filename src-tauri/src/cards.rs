@@ -54,6 +54,27 @@ pub async fn live_view(app: AppHandle) -> View {
     blocking(move || app.state::<Live>().view()).await
 }
 
+/// Where a chat that hit its limit can go: accounts below the warning line, or every other one while no limits are known.
+#[tauri::command]
+pub async fn live_offers(app: AppHandle, account: AccountId) -> Vec<AccountId> {
+    blocking(move || {
+        app.state::<Live>().offers(account).unwrap_or_else(|| {
+            // An unreadable profiles file is reported elsewhere; then there is nowhere to offer.
+            app.state::<Accounts>()
+                .load()
+                .map(|p| {
+                    p.accounts
+                        .iter()
+                        .map(|a| a.id)
+                        .filter(|&id| id != account)
+                        .collect()
+                })
+                .unwrap_or_default()
+        })
+    })
+    .await
+}
+
 /// Hides an account's warning until its next 5-hour window.
 #[tauri::command]
 pub async fn live_dismiss(app: AppHandle, account: AccountId) {
