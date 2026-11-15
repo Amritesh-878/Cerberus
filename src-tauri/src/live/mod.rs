@@ -219,6 +219,14 @@ impl Live {
         })
     }
 
+    /// The files this tab's chat reported writing, newest first; the only source of the repos it wrote into.
+    pub fn written(&self, tab: TabId) -> Vec<String> {
+        self.core
+            .as_ref()
+            .and_then(|core| core.state().work.get(&tab).map(|(_, work)| work.paths()))
+            .unwrap_or_default()
+    }
+
     /// A written file for the file pane, with its `HEAD` version from `head`.
     pub fn read_output(
         &self,

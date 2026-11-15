@@ -3,6 +3,7 @@ import { createRoot, createSignal } from "solid-js";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { field } from "./harness";
+import type { Written } from "./panelData";
 import { createPanelFeed, POLL_MS, type Target } from "./panelFeed";
 
 let dispose: (() => void) | undefined;
@@ -22,10 +23,14 @@ const A: Target = { tab: 1, folder: String.raw`C:\a`, account: 1, dirs: [] };
 const B: Target = { tab: 2, folder: String.raw`C:\b`, account: 2, dirs: [] };
 
 /** A core that records each read and can hold `panel_changes` replies to release them in any order. */
-function core(options: { hold?: boolean } = {}) {
+function core(options: { hold?: boolean; written?: Written[] } = {}) {
   const calls: string[] = [];
   const held: (() => void)[] = [];
   mockIPC((cmd, args) => {
+    if (cmd === "panel_written") {
+      calls.push(`${cmd} ${String(field(args, "tab"))}`);
+      return options.written ?? [];
+    }
     const folder = String(field(args, "folder"));
     calls.push(`${cmd} ${folder}`);
     switch (cmd) {
@@ -91,6 +96,7 @@ test("a feed reads every card once on start, then only git on each poll", async 
     String.raw`panel_connectors C:\a`,
     String.raw`panel_prs C:\a`,
     String.raw`panel_skills C:\a`,
+    "panel_written 1",
   ]);
 
   calls.length = 0;
@@ -99,6 +105,7 @@ test("a feed reads every card once on start, then only git on each poll", async 
   expect(calls.sort()).toEqual([
     String.raw`panel_changes C:\a`,
     String.raw`panel_prs C:\a`,
+    "panel_written 1",
   ]);
 });
 
@@ -117,7 +124,7 @@ test("a poll is skipped while the last read is still out, then resumes", async (
   calls.length = 0;
   await vi.advanceTimersByTimeAsync(POLL_MS);
 
-  expect(calls).toEqual([String.raw`panel_changes C:\a`]);
+  expect(calls).toEqual([String.raw`panel_changes C:\a`, "panel_written 1"]);
 });
 
 test("each extra folder is read, and a repo's PRs once however many of its folders", async () => {
@@ -154,8 +161,48 @@ test("a tab change reads the new tab's cards and polls only the new folder", asy
   await flush();
   await vi.advanceTimersByTimeAsync(POLL_MS);
 
-  expect(calls.every((c) => c.endsWith(String.raw`C:\b`))).toBe(true);
-  expect(calls.filter((c) => c.startsWith("panel_changes"))).toHaveLength(2);
+  const [written, folders] = [
+    calls.filter((c) => c.startsWith("panel_written")),
+    calls.filter((c) => !c.startsWith("panel_written")),
+  ];
+  expect(folders.every((c) => c.endsWith(String.raw`C:\b`))).toBe(true);
+  expect(folders.filter((c) => c.startsWith("panel_changes"))).toHaveLength(2);
+  expect(written).toEqual(["panel_written 2", "panel_written 2"]);
+});
+
+test("repos the chat wrote into follow the tab's folders, marked, with their PRs read once per repo", async () => {
+  const repo = (root: string) => ({
+    kind: "repo" as const,
+    name: root,
+    root,
+    branch: "feature",
+    commit: null,
+    base: "origin/main",
+    added: 1,
+    removed: 0,
+    gh: true,
+    vscode: true,
+  });
+  const { calls } = core({
+    written: [
+      { folder: String.raw`C:\a-wt`, changes: repo("C:/a-wt") },
+      { folder: String.raw`C:\a`, changes: repo(String.raw`C:\a`) },
+    ],
+  });
+  const { feed } = feedFor(A);
+  await flush();
+
+  const shown = feed.folders();
+  const rows = shown && "value" in shown ? shown.value : [];
+  expect(rows.map((r) => [r.folder, r.written === true])).toEqual([
+    [String.raw`C:\a`, false],
+    [String.raw`C:\a-wt`, true],
+    [String.raw`C:\a`, true],
+  ]);
+  expect(calls.filter((c) => c.startsWith("panel_prs ")).sort()).toEqual([
+    String.raw`panel_prs C:\a`,
+    String.raw`panel_prs C:\a-wt`,
+  ]);
 });
 
 test("a Antigravity CLI or Codex CLI tab reads its folder's changes and no Claude skills or connectors", async () => {

@@ -25,6 +25,15 @@ pub struct Pr {
     pub state: String,
     pub is_draft: bool,
     pub updated_at: String,
+    /// The branch it merges from, which the worktree list matches a worktree's branch against.
+    #[serde(default)]
+    pub head_ref_name: String,
+    /// The branch's commit when the PR last changed, so a merged one tells whether a local branch has more.
+    #[serde(default)]
+    pub head_ref_oid: String,
+    /// From a fork, whose branch names say nothing about this repo's branches.
+    #[serde(default)]
+    pub is_cross_repository: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -48,15 +57,22 @@ pub struct PrRow {
     pub updated: String,
 }
 
+impl Pr {
+    /// `None` for a state this app does not know.
+    pub fn shown_state(&self) -> Option<PrState> {
+        match (self.state.as_str(), self.is_draft) {
+            ("OPEN", true) => Some(PrState::Draft),
+            ("OPEN", false) => Some(PrState::Open),
+            ("MERGED", _) => Some(PrState::Merged),
+            ("CLOSED", _) => Some(PrState::Closed),
+            _ => None,
+        }
+    }
+}
+
 impl PrRow {
     fn from(pr: &Pr) -> Option<Self> {
-        let state = match (pr.state.as_str(), pr.is_draft) {
-            ("OPEN", true) => PrState::Draft,
-            ("OPEN", false) => PrState::Open,
-            ("MERGED", _) => PrState::Merged,
-            ("CLOSED", _) => PrState::Closed,
-            _ => return None,
-        };
+        let state = pr.shown_state()?;
         Some(Self {
             number: pr.number,
             title: pr.title.clone(),
@@ -185,7 +201,7 @@ fn list_state(gh: &Path, folder: &Path, state: &str) -> Option<Vec<Pr>> {
         "pr",
         "list",
         &format!("--state={state}"),
-        "--json=number,title,url,state,isDraft,updatedAt",
+        "--json=number,title,url,state,isDraft,updatedAt,headRefName,headRefOid,isCrossRepository",
         &format!("--limit={MOST_PRS}"),
     ]);
     let ran = run(command, TIMEOUT).ok().filter(|ran| ran.success)?;
@@ -244,6 +260,9 @@ mod tests {
             state: state.to_owned(),
             is_draft,
             updated_at: "2026-01-02T03:04:05Z".to_owned(),
+            head_ref_name: format!("branch-{number}"),
+            head_ref_oid: String::new(),
+            is_cross_repository: false,
         }
     }
 

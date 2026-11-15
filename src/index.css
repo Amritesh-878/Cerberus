@@ -2715,6 +2715,106 @@ button.card-row:focus-visible,
   background: var(--hover);
 }
 
+/* A repo row's ⋯ menu, and its worktrees listed under it when asked for. */
+.repo-row,
+.worktree-row {
+  position: relative;
+}
+
+/* A written repo's name, branch and mark keep the full width; its counts and buttons go under them when short of room. */
+.repo-row.written {
+  flex-wrap: wrap;
+}
+
+.repo-row.written .row-text {
+  min-width: 150px;
+}
+
+.repo-row.written .row-meta {
+  margin-left: auto;
+}
+
+.worktrees {
+  display: flex;
+  flex-direction: column;
+  padding-left: 10px;
+  margin: 2px 0 6px 8px;
+  border-left: 1px solid #2c2c2c;
+}
+
+.worktrees-head {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  min-height: 26px;
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.worktrees-head .row-button {
+  margin-left: auto;
+}
+
+.worktrees .faint {
+  color: var(--faint);
+}
+
+.worktree-tag {
+  padding: 0 5px;
+  margin-left: 6px;
+  font-size: 10px;
+  color: var(--dim);
+  border: 1px solid #353535;
+  border-radius: 4px;
+}
+
+.worktree-tag.stale {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+/* What keeps a worktree, or makes it stale, is never cut off. */
+.worktree-row .row-detail {
+  white-space: normal;
+}
+
+.worktree-row.stale .row-icon {
+  color: var(--accent);
+}
+
+.worktree-confirm {
+  padding: 8px;
+  margin: 4px 0;
+  font-size: 12px;
+  background: #1d1d1d;
+  border: 1px solid #353535;
+  border-radius: 6px;
+}
+
+.worktree-confirm p {
+  margin: 0 0 6px;
+}
+
+.worktree-confirm ul {
+  padding-left: 16px;
+  margin: 0 0 8px;
+}
+
+.worktree-confirm li {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.worktree-confirm-buttons {
+  display: flex;
+  gap: 6px;
+}
+
+.worktree-confirm-buttons .row-button {
+  margin-left: 0;
+}
+
 /* Services: background programs at the foot of the sidebar, their form and their output. */
 .services {
   display: flex;
