@@ -63,14 +63,21 @@ fn script_for(shell: &Path) -> String {
 
 fn read_within(shell: &Path, timeout: Duration) -> Option<String> {
     let deadline = Instant::now() + timeout;
-    let mut child = Command::new(shell)
+    // Its own session, since an interactive shell in a background group of the app's terminal stops on SIGTTOU.
+    let mut command = Command::new(shell);
+    command
         .args(["-ilc", &script_for(shell)])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .process_group(0)
-        .spawn()
-        .ok()?;
+        .stderr(Stdio::null());
+    // SAFETY: setsid is async-signal-safe and touches no memory of the parent.
+    unsafe {
+        command.pre_exec(|| match libc::setsid() {
+            -1 => Err(std::io::Error::last_os_error()),
+            _ => Ok(()),
+        });
+    }
+    let mut child = command.spawn().ok()?;
     let mut stdout = child.stdout.take()?;
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
