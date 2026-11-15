@@ -22,10 +22,12 @@ function isTextPaste(chord: KeyChord): boolean {
   );
 }
 
-export type Platform = "mac" | "other";
+/** `other` is Windows; Linux takes its keys from Windows, so only fonts and the command link tell it apart. */
+export type Platform = "mac" | "linux" | "other";
 
 export function platformOf(userAgent: string): Platform {
-  return /Macintosh|Mac OS X/.test(userAgent) ? "mac" : "other";
+  if (/Macintosh|Mac OS X/.test(userAgent)) return "mac";
+  return /Linux|X11/.test(userAgent) ? "linux" : "other";
 }
 
 export const PLATFORM: Platform = platformOf(navigator.userAgent);
