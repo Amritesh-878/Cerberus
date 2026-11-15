@@ -3,7 +3,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 import type { AccountId, Profiles } from "./accounts";
 import type { ProgramChoice } from "./pty";
-import { installed, type Tab } from "./tab";
+import { installed, isOtherCli, type Tab } from "./tab";
 import type { Project, ProjectId, TabId, Tree, TreeTab } from "./tree";
 
 export interface SavedTab {
@@ -87,14 +87,16 @@ function launchOf(
   programs: readonly ProgramChoice[],
 ): Tab {
   const choice = installed(programs, saved.program);
+  // Antigravity CLI and Codex CLI never run on an account, whatever an older save says.
+  const accountId = isOtherCli(saved.program) ? null : saved.account;
   const account =
-    saved.account === null
+    accountId === null
       ? null
       : {
-          id: saved.account,
+          id: accountId,
           name:
             [...profiles.accounts, ...profiles.retired].find(
-              (a) => a.id === saved.account,
+              (a) => a.id === accountId,
             )?.name ?? "removed account",
         };
   return {
@@ -104,7 +106,7 @@ function launchOf(
       program: choice?.program ?? saved.program,
       args: choice?.args ?? [],
       cwd: saved.cwd,
-      account: saved.account,
+      account: accountId,
       dirs: saved.dirs ?? [],
     },
     imagePasteKey: choice?.imagePasteKey ?? null,

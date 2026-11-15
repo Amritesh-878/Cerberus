@@ -7,11 +7,11 @@ import {
   type Profiles,
   statusText,
 } from "./accounts";
-import { AccountDot, ClaudeIcon, ShellIcon } from "./icons";
+import { AccountDot, ClaudeIcon, ProgramIcon, ShellIcon } from "./icons";
 import { type Anchor, placeBox, type Side } from "./place";
 import type { ProgramChoice } from "./pty";
 import type { Statuses } from "./statuses";
-import { installed, shellChoice } from "./tab";
+import { installed, OTHER_CLIS, shellChoice } from "./tab";
 import type { Project, TabId, TreeTab } from "./tree";
 
 const WIDTH = 280;
@@ -40,6 +40,9 @@ export function NewTab(props: {
   const [parentId, setParentId] = createSignal<TabId | null>(null);
   const claude = () => installed(props.programs ?? [], "claude");
   const shell = () => shellChoice(props.profiles, props.programs ?? []);
+  // Listed only when installed; the guide says how to install them.
+  const otherClis = () =>
+    OTHER_CLIS.flatMap((id) => installed(props.programs ?? [], id) ?? []);
   const [height, setHeight] = createSignal(0);
   const [viewport, setViewport] = createSignal({
     width: innerWidth,
@@ -171,6 +174,20 @@ export function NewTab(props: {
           <ShellIcon />
           <span class="menu-text">Shell</span>
         </button>
+        <For each={otherClis()}>
+          {(choice) => (
+            <button
+              type="button"
+              class="menu-item"
+              onClick={() => {
+                launch(choice);
+              }}
+            >
+              <ProgramIcon program={choice.id} />
+              <span class="menu-text">{choice.label}</span>
+            </button>
+          )}
+        </For>
         <Show when={props.programs && !claude()}>
           <p class="menu-note-line">Claude Code isn't installed.</p>
         </Show>

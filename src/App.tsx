@@ -90,7 +90,7 @@ import { createSavedWidth } from "./savedWidth";
 import { createSplit, dropSide, type Side as Half } from "./split";
 import { createStatuses } from "./statuses";
 import { setupGaps, type Step, stepFor } from "./steps";
-import { installed, shellChoice, type Tab, tabFor } from "./tab";
+import { installed, shellChoice, type Tab, tabFor, tabKind } from "./tab";
 import { ShortcutsSheet } from "./ShortcutsSheet";
 import type { TabDragEvents } from "./tabDrag";
 import { SidebarEdge, SplitEdge } from "./SidebarEdge";
@@ -1411,12 +1411,10 @@ export function App() {
                             <TerminalView
                               tab={id}
                               spec={tab().launch.spec}
-                              kind={
-                                tab().launch.program === "claude" &&
-                                !ended().has(id)
-                                  ? "claude"
-                                  : "shell"
-                              }
+                              kind={tabKind(
+                                tab().launch.program,
+                                ended().has(id),
+                              )}
                               imagePasteKey={
                                 ended().has(id)
                                   ? null

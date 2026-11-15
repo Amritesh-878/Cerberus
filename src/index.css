@@ -12,6 +12,8 @@
   --added: #6cc07a;
   --removed: #e5736b;
   --warn: #e0a43a;
+  --agy: #8e9cf8;
+  --codex: #9fd6b4;
   --sidebar-width: 248px;
 
   color-scheme: dark;
@@ -114,6 +116,14 @@ button {
 
 .icon-shell {
   color: var(--dim);
+}
+
+.icon-agy {
+  color: var(--agy);
+}
+
+.icon-codex {
+  color: var(--codex);
 }
 
 .sidebar {

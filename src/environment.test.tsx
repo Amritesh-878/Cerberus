@@ -192,7 +192,9 @@ test("a new main folder restarts the tab there after the core carries the chat",
 
   click(dialog(), "Change…");
   await settle();
-  expect(dialog().textContent).toContain("restarts in the new folder");
+  expect(dialog().textContent).toContain(
+    "restarts in the new folder and resumes the same chat",
+  );
   click(dialog(), "Save");
   await settle();
   await settle();
@@ -247,6 +249,8 @@ test("a shell tab just restarts in the new folder and types nothing", async () =
   click(dialog(), "Add folder…");
   await settle();
   expect(dialog().textContent).not.toContain("/add-dir");
+  expect(dialog().textContent).toContain("restarts in the new folder.");
+  expect(dialog().textContent).not.toContain("resumes");
   click(dialog(), "Save");
   await settle();
   await settle();

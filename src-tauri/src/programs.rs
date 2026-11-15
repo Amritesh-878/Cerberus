@@ -36,6 +36,34 @@ const CLAUDE_INSTALL: (&str, Option<&str>) = (
 const CLAUDE_INSTALL: (&str, Option<&str>) =
     ("curl -fsSL https://claude.ai/install.sh | bash", None);
 
+/// Other AI CLIs a tab can run as a plain program, by id and label.
+const OTHER_CLIS: [(&str, &str); 2] = [("agy", "Antigravity CLI"), ("codex", "Codex CLI")];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Kind {
+    Claude,
+    /// Antigravity CLI or Codex CLI: no account, bridge, live cards or chat tracking.
+    OtherCli,
+    Shell,
+}
+
+/// What a tab's program is, read from its file name the way `is_claude` reads it.
+pub fn kind_of(program: &str) -> Kind {
+    if crate::sessions::is_claude(program) {
+        return Kind::Claude;
+    }
+    let stem = Path::new(program).file_stem().and_then(|s| s.to_str());
+    if stem.is_some_and(|stem| {
+        OTHER_CLIS
+            .iter()
+            .any(|(id, _)| stem.eq_ignore_ascii_case(id))
+    }) {
+        Kind::OtherCli
+    } else {
+        Kind::Shell
+    }
+}
+
 /// The shell the Shell button opens: the saved choice when installed, else the first shell installed.
 pub fn pick_shell(choices: Vec<ProgramChoice>, saved: Option<&str>) -> Option<ProgramChoice> {
     let mut shells: Vec<_> = choices
@@ -58,6 +86,8 @@ pub struct Finder {
     login_shell: Option<PathBuf>,
     #[cfg(unix)]
     etc_shells: String,
+    /// Where Antigravity's installer puts `agy`, which an app started before the install has no PATH entry for.
+    agy_dirs: Vec<PathBuf>,
     is_file: Box<dyn Fn(&Path) -> bool + Send + Sync>,
 }
 
@@ -69,12 +99,9 @@ impl Finder {
                 .unwrap_or_default(),
         );
         #[cfg(windows)]
-        let exts = env::var("PATHEXT")
-            .unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".to_owned())
-            .split(';')
-            .filter(|ext| !ext.is_empty())
-            .map(str::to_lowercase)
-            .collect();
+        let exts = launchable_exts(
+            &env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".to_owned()),
+        );
         // Unix programs carry no extension, so the bare name is the one candidate.
         #[cfg(unix)]
         let exts = vec![String::new()];
@@ -88,6 +115,16 @@ impl Finder {
             // A system without the file simply offers fewer shells.
             #[cfg(unix)]
             etc_shells: std::fs::read_to_string("/etc/shells").unwrap_or_default(),
+            #[cfg(windows)]
+            agy_dirs: env::var_os("LOCALAPPDATA")
+                .map(|dir| PathBuf::from(dir).join("agy").join("bin"))
+                .into_iter()
+                .collect(),
+            #[cfg(unix)]
+            agy_dirs: env::var_os("HOME")
+                .map(|home| PathBuf::from(home).join(".local").join("bin"))
+                .into_iter()
+                .collect(),
             #[cfg(windows)]
             is_file: Box::new(Path::is_file),
             #[cfg(unix)]
@@ -129,6 +166,25 @@ impl Finder {
             .find(|bash| (self.is_file)(bash))
     }
 
+    /// Antigravity's `agy`: from PATH only when its folder is the installer's or names it, else from the installer's folder.
+    fn agy(&self) -> Option<PathBuf> {
+        // Another program may be called `agy`, so only PATH folders that are the installer's or name it are searched.
+        let ours = |dir: &&PathBuf| {
+            let named = dir.to_string_lossy().to_lowercase();
+            self.agy_dirs.contains(dir) || named.contains("antigravity") || named.contains("agy")
+        };
+        self.dirs
+            .iter()
+            .filter(ours)
+            .chain(&self.agy_dirs)
+            .flat_map(|dir| {
+                self.exts
+                    .iter()
+                    .map(move |ext| dir.join(format!("agy{ext}")))
+            })
+            .find(|candidate| (self.is_file)(candidate))
+    }
+
     pub fn choices(&self) -> Vec<ProgramChoice> {
         let claude = ProgramChoice {
             id: "claude".to_owned(),
@@ -140,7 +196,24 @@ impl Finder {
             install_command: Some(CLAUDE_INSTALL.0),
             install_shell: CLAUDE_INSTALL.1,
         };
-        std::iter::once(claude).chain(self.shells()).collect()
+        let others = OTHER_CLIS.iter().map(|&(id, label)| ProgramChoice {
+            id: id.to_owned(),
+            label: label.to_owned(),
+            program: shown(if id == "agy" {
+                self.agy()
+            } else {
+                self.find(id)
+            }),
+            args: Vec::new(),
+            image_paste_key: None,
+            is_shell: false,
+            install_command: None,
+            install_shell: None,
+        });
+        std::iter::once(claude)
+            .chain(self.shells())
+            .chain(others)
+            .collect()
     }
 
     #[cfg(windows)]
@@ -216,6 +289,16 @@ fn unix_shells(
     shells
 }
 
+/// PATHEXT's entries a tab can start: npm puts a `.ps1` beside each `.cmd`, and a PTY cannot run a script file.
+#[cfg(any(windows, test))]
+fn launchable_exts(pathext: &str) -> Vec<String> {
+    pathext
+        .split(';')
+        .map(str::to_lowercase)
+        .filter(|ext| [".com", ".exe", ".bat", ".cmd"].contains(&ext.as_str()))
+        .collect()
+}
+
 fn shown(path: Option<PathBuf>) -> Option<String> {
     path.map(|p| p.to_string_lossy().into_owned())
 }
@@ -253,6 +336,7 @@ mod tests {
             dirs: path.iter().map(PathBuf::from).collect(),
             exts: vec![".exe".to_owned(), ".cmd".to_owned()],
             program_files: Some(PathBuf::from(r"C:\Program Files")),
+            agy_dirs: vec![PathBuf::from(r"C:\Users\u\AppData\Local\agy\bin")],
             is_file: Box::new(move |p| files.contains(p)),
         }
     }
@@ -376,19 +460,141 @@ mod tests {
         let f = finder(&[r"C:\w"], &[r"C:\w\powershell.exe"]);
         let choices = f.choices();
 
-        assert_eq!(ids(&choices), ["claude", "powershell", "git-bash"]);
+        assert_eq!(
+            ids(&choices),
+            ["claude", "powershell", "git-bash", "agy", "codex"]
+        );
         assert_eq!(choices[0].program, None);
         assert_eq!(choices[1].program.as_deref(), Some(r"C:\w\powershell.exe"));
         assert_eq!(choices[2].program, None);
+        assert_eq!(choices[3].program, None);
+        assert_eq!(choices[4].program, None);
         let paste_keys: Vec<_> = choices.iter().map(|c| c.image_paste_key).collect();
-        assert_eq!(paste_keys, [Some("\x1bv"), None, None]);
+        assert_eq!(paste_keys, [Some("\x1bv"), None, None, None, None]);
         assert_eq!(
             choices[0].install_command,
             Some("irm https://claude.ai/install.ps1 | iex")
         );
         assert_eq!(choices[0].install_shell, Some("powershell"));
         let shells: Vec<_> = choices.iter().map(|c| c.is_shell).collect();
-        assert_eq!(shells, [false, true, true]);
+        assert_eq!(shells, [false, true, true, false, false]);
+    }
+
+    #[cfg(windows)]
+    fn program_of(choices: &[ProgramChoice], id: &str) -> Option<String> {
+        choices.iter().find(|c| c.id == id)?.program.clone()
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn antigravity_and_codex_are_offered_from_path_with_their_labels() {
+        let f = finder(
+            &[r"C:\Users\u\AppData\Local\agy\bin", r"C:\tools"],
+            &[
+                r"C:\Users\u\AppData\Local\agy\bin\agy.exe",
+                r"C:\tools\codex.exe",
+            ],
+        );
+        let choices = f.choices();
+        let other = |id: &str| choices.iter().find(|c| c.id == id).unwrap();
+
+        assert_eq!(other("agy").label, "Antigravity CLI");
+        assert_eq!(
+            program_of(&choices, "agy").as_deref(),
+            Some(r"C:\Users\u\AppData\Local\agy\bin\agy.exe")
+        );
+        assert_eq!(other("codex").label, "Codex CLI");
+        assert_eq!(
+            program_of(&choices, "codex").as_deref(),
+            Some(r"C:\tools\codex.exe")
+        );
+        assert!(!other("codex").is_shell);
+        assert_eq!(id(pick_shell(choices, Some("agy"))), None);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn agy_is_found_in_its_install_folder_when_path_lacks_it() {
+        let f = finder(&[r"C:\w"], &[r"C:\Users\u\AppData\Local\agy\bin\agy.exe"]);
+
+        assert_eq!(
+            program_of(&f.choices(), "agy").as_deref(),
+            Some(r"C:\Users\u\AppData\Local\agy\bin\agy.exe")
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn an_agy_on_path_counts_only_from_a_folder_that_names_antigravity_or_agy() {
+        let named = finder(
+            &[r"C:\Program Files\Google\Antigravity\bin"],
+            &[r"C:\Program Files\Google\Antigravity\bin\agy.exe"],
+        );
+        let unrelated = finder(&[r"C:\tools"], &[r"C:\tools\agy.exe"]);
+        let both = finder(
+            &[r"C:\tools"],
+            &[
+                r"C:\tools\agy.exe",
+                r"C:\Users\u\AppData\Local\agy\bin\agy.cmd",
+            ],
+        );
+
+        assert_eq!(
+            program_of(&named.choices(), "agy").as_deref(),
+            Some(r"C:\Program Files\Google\Antigravity\bin\agy.exe")
+        );
+        assert_eq!(program_of(&unrelated.choices(), "agy"), None);
+        assert_eq!(
+            program_of(&both.choices(), "agy").as_deref(),
+            Some(r"C:\Users\u\AppData\Local\agy\bin\agy.cmd")
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn an_unrelated_agy_earlier_on_path_does_not_hide_antigravitys_later_one() {
+        let f = finder(
+            &[r"C:\tools", r"D:\Antigravity\bin"],
+            &[r"C:\tools\agy.exe", r"D:\Antigravity\bin\agy.exe"],
+        );
+
+        assert_eq!(
+            program_of(&f.choices(), "agy").as_deref(),
+            Some(r"D:\Antigravity\bin\agy.exe")
+        );
+    }
+
+    #[test]
+    fn pathext_keeps_only_what_a_tab_can_start_in_its_order() {
+        assert_eq!(
+            launchable_exts(".COM;.PS1;.EXE;.BAT;.CMD;.VBS;.JS;;.Py"),
+            [".com", ".exe", ".bat", ".cmd"]
+        );
+        assert_eq!(launchable_exts(".CMD;.EXE"), [".cmd", ".exe"]);
+    }
+
+    #[test]
+    fn kind_of_tells_claude_the_other_clis_and_shells_apart() {
+        assert_eq!(kind_of("/Users/u/.local/bin/claude"), Kind::Claude);
+        assert_eq!(kind_of("/home/u/.local/bin/agy"), Kind::OtherCli);
+        assert_eq!(kind_of("/usr/local/bin/codex"), Kind::OtherCli);
+        assert_eq!(kind_of("/usr/local/bin/codex-helper"), Kind::Shell);
+        assert_eq!(kind_of("/opt/homebrew/bin/gemini"), Kind::Shell);
+        assert_eq!(kind_of("/bin/zsh"), Kind::Shell);
+    }
+
+    // Backslashes separate folders only on Windows.
+    #[cfg(windows)]
+    #[test]
+    fn kind_of_reads_windows_paths() {
+        assert_eq!(kind_of(r"C:\Users\u\.local\bin\claude.exe"), Kind::Claude);
+        assert_eq!(
+            kind_of(r"C:\Users\u\AppData\Local\agy\bin\agy.exe"),
+            Kind::OtherCli
+        );
+        assert_eq!(kind_of(r"C:\npm\Codex.CMD"), Kind::OtherCli);
+        assert_eq!(kind_of(r"C:\tools\codex-helper.exe"), Kind::Shell);
+        assert_eq!(kind_of(r"C:\w\powershell.exe"), Kind::Shell);
     }
 
     const MAC_ETC_SHELLS: &str = "# List of acceptable shells for chpass(1).
@@ -564,8 +770,42 @@ mod tests {
             exts: vec![String::new()],
             login_shell: login.map(PathBuf::from),
             etc_shells: MAC_ETC_SHELLS.to_owned(),
+            agy_dirs: vec![PathBuf::from("/Users/u/.local/bin")],
             is_file: Box::new(move |p| files.contains(p)),
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn agy_comes_from_local_bin_or_a_folder_that_names_it() {
+        let program = |f: Finder| f.choices().into_iter().find(|c| c.id == "agy")?.program;
+
+        assert_eq!(
+            program(unix_finder(&[], &["/Users/u/.local/bin/agy"], None)).as_deref(),
+            Some("/Users/u/.local/bin/agy")
+        );
+        assert_eq!(
+            program(unix_finder(
+                &["/opt/antigravity/bin"],
+                &["/opt/antigravity/bin/agy"],
+                None
+            ))
+            .as_deref(),
+            Some("/opt/antigravity/bin/agy")
+        );
+        assert_eq!(
+            program(unix_finder(&["/usr/bin"], &["/usr/bin/agy"], None)),
+            None
+        );
+        assert_eq!(
+            program(unix_finder(
+                &["/usr/bin", "/opt/antigravity/bin"],
+                &["/usr/bin/agy", "/opt/antigravity/bin/agy"],
+                None
+            ))
+            .as_deref(),
+            Some("/opt/antigravity/bin/agy")
+        );
     }
 
     #[cfg(unix)]
@@ -598,7 +838,10 @@ mod tests {
         );
         let choices = f.choices();
 
-        assert_eq!(ids(&choices), ["claude", "fish", "zsh", "bash"]);
+        assert_eq!(
+            ids(&choices),
+            ["claude", "fish", "zsh", "bash", "agy", "codex"]
+        );
         assert_eq!(choices[0].image_paste_key, Some("\x16"));
         assert_eq!(choices[1].image_paste_key, None);
         assert!(

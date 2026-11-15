@@ -223,6 +223,43 @@ test("the cards show the shown tab and switch with it", async () => {
   expect(field(last?.args, "tab")).toBe(4);
 });
 
+test("a Antigravity CLI tab's panel shows only Environment and Changes, with no account", async () => {
+  const core = panelCore(withPanel({ open: true }));
+  const tree: SavedTree = {
+    ...TREE,
+    tabs: [
+      ...TREE.tabs,
+      {
+        id: 5,
+        projectId: 1,
+        parentId: null,
+        title: "agy",
+        program: "agy",
+        cwd: ALPHA,
+        account: null,
+      },
+    ],
+    nextId: 6,
+  };
+  const root = await renderApp(core.profiles, {
+    ...core.core,
+    tree_load: () => ({ tree, notice: null }),
+  });
+  await open(root, "agy");
+
+  const titles = [...root.querySelectorAll(".panel .card-title")].map(
+    (t) => t.textContent,
+  );
+  expect(titles).toEqual(["Environment", "Changes"]);
+  expect(card(root, "Environment").textContent).toContain("alpha");
+  expect(card(root, "Environment").textContent).toContain("feature");
+  expect(card(root, "Environment").textContent).not.toContain("No account");
+  expect(card(root, "Changes").textContent).toContain("Add the export");
+  const reads = core.reads().map((c) => c.cmd);
+  expect(reads).not.toContain("panel_skills");
+  expect(reads).not.toContain("panel_connectors");
+});
+
 test("a card folds from its title and the folded set is saved", async () => {
   const core = panelCore(withPanel({ open: true }));
   const root = await renderApp(core.profiles, core.core);

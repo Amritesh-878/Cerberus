@@ -27,6 +27,8 @@ export interface Target {
   account: AccountId | null;
   /** Extra folders, each read like the main one. */
   dirs: readonly string[];
+  /** Antigravity CLI or Codex CLI, which read no Claude skills or connectors. */
+  otherCli?: boolean;
 }
 
 /** One folder's changes, or why they could not be read. */
@@ -194,10 +196,12 @@ export function createPanelFeed(
       } else {
         read();
       }
-      void connectors.load(key, () =>
-        panelConnectors(t.account, folder, t.tab),
-      );
-      void skills.load(key, () => panelSkills(t.account, folder));
+      if (t.otherCli !== true) {
+        void connectors.load(key, () =>
+          panelConnectors(t.account, folder, t.tab),
+        );
+        void skills.load(key, () => panelSkills(t.account, folder));
+      }
       if (folder === null) return;
       // Only git can change under a running chat often enough to poll; config and skills reload on a tab change.
       // A read slower than the poll is not stacked on, since each one holds a core thread until git or gh answers.
@@ -217,7 +221,9 @@ export function createPanelFeed(
       () => {
         const key = untrack(current);
         const t = untrack(target);
-        if (key === undefined || t === undefined) return;
+        if (key === undefined || t === undefined || t.otherCli === true) {
+          return;
+        }
         void connectors.load(key, () =>
           panelConnectors(t.account, t.folder, t.tab),
         );
