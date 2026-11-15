@@ -3,6 +3,7 @@ import { render } from "solid-js/web";
 import { afterEach, expect, test } from "vitest";
 
 import { CliInstall } from "./AccountsScreen";
+import { linksCli } from "./cli";
 
 let dispose: (() => void) | undefined;
 
@@ -96,4 +97,10 @@ test("a refusal is shown as an error", async () => {
   expect(root.querySelector(".error")?.textContent).toContain(
     "move it to Applications first",
   );
+});
+
+test("macOS and Linux offer the command link; Windows' installer already puts it on PATH", () => {
+  expect(linksCli("mac")).toBe(true);
+  expect(linksCli("linux")).toBe(true);
+  expect(linksCli("other")).toBe(false);
 });

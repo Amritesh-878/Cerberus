@@ -10,12 +10,16 @@ const LINK_NAME: &str = "cerberus";
 
 #[derive(Debug, thiserror::Error)]
 pub enum LinkError {
-    #[error("the `cerberus` command is installed this way only on macOS")]
+    #[error("the `cerberus` command is installed this way only on macOS and Linux")]
     Unsupported,
     #[error(
         "Cerberus is running from a disk image or a temporary copy; move it to Applications and open it from there first, so the link keeps working"
     )]
     NotInstalled,
+    #[error(
+        "Cerberus is running from an AppImage, whose files are gone once it closes; install the .deb to get the `cerberus` command"
+    )]
+    AppImage,
     #[error("`{COMMAND}` is missing beside the app; reinstall Cerberus")]
     NoCommand,
     #[error(
@@ -44,7 +48,7 @@ pub struct Linked {
 
 /// Links `~/.local/bin/cerberus` to the console command inside the running app.
 pub fn install(home: Option<PathBuf>) -> Result<Linked, LinkError> {
-    if !cfg!(target_os = "macos") {
+    if !cfg!(any(target_os = "macos", target_os = "linux")) {
         return Err(LinkError::Unsupported);
     }
     let exe = std::env::current_exe()?;
@@ -74,6 +78,10 @@ fn is_temporary(exe: &Path) -> bool {
 fn link(exe: &Path, home: &Path) -> Result<(), LinkError> {
     if is_temporary(exe) {
         return Err(LinkError::NotInstalled);
+    }
+    // An AppImage runs from a mount under the temp folder that goes away when the app closes.
+    if exe.to_string_lossy().contains("/.mount_") {
+        return Err(LinkError::AppImage);
     }
     let target = exe
         .parent()
@@ -323,6 +331,33 @@ mod tests {
             Err(LinkError::NotInstalled)
         ));
         assert!(!home.path().join(LINK_DIR).exists());
+    }
+
+    #[test]
+    fn an_app_run_from_an_appimage_mount_is_refused_and_a_deb_install_is_linked() {
+        let home = TestDir::new();
+        let mounted = Path::new("/tmp/.mount_CerberXyZ12/usr/bin/cerberus");
+
+        assert!(matches!(
+            link(mounted, home.path()),
+            Err(LinkError::AppImage)
+        ));
+        assert!(!home.path().join(LINK_DIR).exists());
+
+        let root = TestDir::new();
+        let bin = root.path().join("usr/bin");
+        fs::create_dir_all(&bin).unwrap();
+        fs::write(bin.join("cerberus"), "").unwrap();
+        fs::write(bin.join(COMMAND), "").unwrap();
+        let linked = link(&bin.join("cerberus"), home.path());
+
+        if cfg!(unix) {
+            assert!(linked.is_ok(), "{linked:?}");
+            assert_eq!(
+                fs::read_link(home.path().join(LINK_DIR).join(LINK_NAME)).unwrap(),
+                bin.join(COMMAND)
+            );
+        }
     }
 
     fn app(root: &Path) -> PathBuf {
