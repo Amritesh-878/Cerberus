@@ -5,7 +5,7 @@ use std::time::Duration;
 use rusqlite::{Connection, ErrorCode, OpenFlags, OptionalExtension, params};
 
 use crate::saved::env::{self, EnvVar};
-use crate::saved::{SavedProject, SavedTab, SavedTree, Snapshot, TabId, TreeError};
+use crate::saved::{ProjectTasks, SavedProject, SavedTab, SavedTree, Snapshot, TabId, TreeError};
 
 /// SQLite reads `%`, `?` and `#` in a URI path as syntax, so they are escaped.
 fn unlocked_uri(path: &Path) -> String {
@@ -28,7 +28,7 @@ fn unlocked_uri(path: &Path) -> String {
 }
 
 // Forward only: a merged step is never edited, and each one runs once, in order.
-const MIGRATIONS: [&str; 3] = [
+const MIGRATIONS: [&str; 4] = [
     "
     CREATE TABLE projects (
         id INTEGER PRIMARY KEY,
@@ -59,12 +59,17 @@ const MIGRATIONS: [&str; 3] = [
     ALTER TABLE tabs ADD COLUMN dirs TEXT NOT NULL DEFAULT '[]';
     ALTER TABLE tabs ADD COLUMN env TEXT NOT NULL DEFAULT '[]';
 ",
+    // A project's Start a task settings, as JSON.
+    "ALTER TABLE projects ADD COLUMN tasks TEXT NOT NULL DEFAULT '{}';",
 ];
 
 /// A JSON column; a broken one makes the file corrupt, so it is set aside rather than half read.
 fn json_column<T: serde::de::DeserializeOwned>(text: &str) -> Result<T, TreeError> {
-    serde_json::from_str(text)
-        .map_err(|_| TreeError::Invalid("a tab's folders or variables cannot be read".to_owned()))
+    serde_json::from_str(text).map_err(|_| {
+        TreeError::Invalid(
+            "a tab's folders or variables, or a project's task settings, cannot be read".to_owned(),
+        )
+    })
 }
 
 pub struct Db(Connection);
@@ -144,17 +149,32 @@ impl Db {
         } else {
             "'[]', '[]'"
         };
+        let tasks_column = if version >= 4 { "tasks" } else { "'{}'" };
         let projects = self
             .0
-            .prepare("SELECT id, name, folder FROM projects ORDER BY sort")?
+            .prepare(&format!(
+                "SELECT id, name, folder, {tasks_column} FROM projects ORDER BY sort"
+            ))?
             .query_map([], |row| {
-                Ok(SavedProject {
-                    id: row.get(0)?,
-                    name: row.get(1)?,
-                    folder: row.get(2)?,
-                })
+                Ok((
+                    SavedProject {
+                        id: row.get(0)?,
+                        name: row.get(1)?,
+                        folder: row.get(2)?,
+                        tasks: ProjectTasks::default(),
+                    },
+                    row.get::<_, String>(3)?,
+                ))
             })?
-            .collect::<Result<Vec<_>, _>>()?;
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .map(|(project, tasks)| {
+                Ok(SavedProject {
+                    tasks: json_column(&tasks)?,
+                    ..project
+                })
+            })
+            .collect::<Result<Vec<_>, TreeError>>()?;
         let mut sessions = HashMap::new();
         let mut ended = HashSet::new();
         let mut env = HashMap::new();
@@ -220,10 +240,13 @@ impl Db {
         tx.execute("DELETE FROM tabs", [])?;
         tx.execute("DELETE FROM projects", [])?;
         {
-            let mut insert = tx
-                .prepare("INSERT INTO projects (id, name, folder, sort) VALUES (?1, ?2, ?3, ?4)")?;
+            let mut insert = tx.prepare(
+                "INSERT INTO projects (id, name, folder, sort, tasks) VALUES (?1, ?2, ?3, ?4, ?5)",
+            )?;
             for (sort, p) in (0_i64..).zip(&snapshot.tree.projects) {
-                insert.execute(params![p.id, p.name, p.folder, sort])?;
+                let tasks = serde_json::to_string(&p.tasks)
+                    .map_err(|e| TreeError::Invalid(e.to_string()))?;
+                insert.execute(params![p.id, p.name, p.folder, sort, tasks])?;
             }
             let mut insert = tx.prepare(
                 "INSERT INTO tabs (id, project_id, parent_id, title, program, cwd, account_id, session_id, ended, sort, dirs, env)
@@ -326,10 +349,57 @@ mod tests {
             .connection()
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 3);
+        assert_eq!(version, i64::try_from(MIGRATIONS.len()).unwrap());
         let loaded = db.load().unwrap();
         assert_eq!(loaded.tree.tabs.len(), 1);
         assert!(loaded.ended.is_empty());
+    }
+
+    #[test]
+    fn a_projects_task_settings_survive_a_round_trip() {
+        let mut db = Db::in_memory().unwrap();
+        let mut tree = two_projects();
+        tree.projects[1].tasks = ProjectTasks {
+            folder: Some("C:/plans/tasks".to_owned()),
+            prompt: Some("Do {task_id} in {folder}".to_owned()),
+            account: Some(2),
+        };
+        let snapshot = Snapshot {
+            tree,
+            sessions: HashMap::new(),
+            ended: HashSet::new(),
+            env: HashMap::new(),
+        };
+
+        db.write(&snapshot).unwrap();
+
+        assert_eq!(db.load().unwrap(), snapshot);
+    }
+
+    #[test]
+    fn a_file_from_before_task_settings_loads_with_none_set() {
+        let dir = TestDir::new();
+        let path = dir.path().join("tree.db");
+        {
+            let first = Connection::open(&path).unwrap();
+            for step in &MIGRATIONS[..3] {
+                first.execute_batch(step).unwrap();
+            }
+            first
+                .execute_batch(
+                    "INSERT INTO projects VALUES (1, 'app', 'C:/work/app', 0);
+                     INSERT INTO meta VALUES ('next_id', 2);",
+                )
+                .unwrap();
+            first.pragma_update(None, "user_version", 3).unwrap();
+        }
+
+        let read = Db::read_unlocked(&path).unwrap();
+        let migrated = Db::open(&path).unwrap().load().unwrap();
+
+        assert_eq!(read.projects[0].tasks, ProjectTasks::default());
+        assert_eq!(migrated.tree.projects[0].tasks, ProjectTasks::default());
+        assert_eq!(migrated.tree.projects[0].name, "app");
     }
 
     #[test]

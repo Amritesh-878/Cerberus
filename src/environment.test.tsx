@@ -157,7 +157,7 @@ test("adding a folder saves it and types /add-dir into the running chat, never E
     cwd: ALPHA,
     dirs: [PLANS],
   });
-  expect(env.writes).toEqual([`/add-dir ${PLANS}`]);
+  expect(env.writes).toEqual([`\x1b[200~/add-dir ${PLANS}\x1b[201~`]);
   expect(env.calls.map((c) => c.cmd)).not.toContain("tab_move_folder");
   // No restart: the chat keeps running in the one pane it had.
   expect(env.pty.spawned).toHaveLength(1);

@@ -4,9 +4,22 @@ import { backdropDismiss } from "./backdrop";
 import { CloseIcon } from "./icons";
 import { shortcutSheet } from "./keys";
 
+/** The sheet's controls Tab can reach: enabled, and not inside a closed `<details>` other than its summary. */
+function tabStops(sheet: HTMLElement): HTMLElement[] {
+  return [
+    ...sheet.querySelectorAll<HTMLElement>(
+      "button, input, select, textarea, summary",
+    ),
+  ].filter(
+    (el) =>
+      !el.matches(":disabled") &&
+      (el.tagName === "SUMMARY" || !el.closest("details:not([open])")),
+  );
+}
+
 /** Wraps Tab and Shift+Tab inside the sheet, so focus never reaches the page behind a modal. */
 export function keepInside(sheet: HTMLElement, event: KeyboardEvent): boolean {
-  const stops = [...sheet.querySelectorAll<HTMLElement>("button, input")];
+  const stops = tabStops(sheet);
   const first = stops[0];
   const last = stops.at(-1);
   const active = document.activeElement;

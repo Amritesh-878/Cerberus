@@ -22,6 +22,7 @@ mod saved;
 mod services;
 mod sessions;
 mod suggestions;
+mod tasks;
 #[cfg(windows)]
 mod winsec;
 
@@ -159,6 +160,13 @@ pub fn run() {
             commands::continue_on_account,
             commands::install_cli,
             panel::panel_changes,
+            tasks::task_branches,
+            tasks::task_default_prompt,
+            tasks::task_files,
+            tasks::task_folder,
+            tasks::task_plan,
+            tasks::task_worktree,
+            tasks::task_worktree_defaults,
             panel::panel_written,
             panel::panel_worktrees,
             panel::panel_remove_worktrees,

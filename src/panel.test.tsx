@@ -487,7 +487,10 @@ test("shift-click or Shift+Enter types the skill into the chat without Enter, an
   );
   await settle();
 
-  expect(writes).toEqual(["/verify", "/notes"]);
+  expect(writes).toEqual([
+    "\x1b[200~/verify\x1b[201~",
+    "\x1b[200~/notes\x1b[201~",
+  ]);
   expect(skillRow(root, "verify").title).toContain(
     "Shift-click or Shift+Enter types /verify into the chat, for you to send",
   );

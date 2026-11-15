@@ -169,7 +169,7 @@ test("the context card shows the shown chat's use, and Compact types /compact wi
   expect(context.querySelector(".card-body")).toBeNull();
   expect(context.querySelector("[aria-expanded]")).toBeNull();
   expect(context.querySelector(".card-compact")).not.toBeNull();
-  expect(live.writes).toEqual(["/compact"]);
+  expect(live.writes).toEqual(["\x1b[200~/compact\x1b[201~"]);
 });
 
 test("usage kept from before a restart shows dimmed with its time, and a reset window says so", async () => {
@@ -405,7 +405,7 @@ test("the tasks card lists running then finished tasks by description, and a cli
 
   click(tasks, "Build the appshell · done1m 02s");
   await settle();
-  expect(live.writes).toEqual(["/tasks"]);
+  expect(live.writes).toEqual(["\x1b[200~/tasks\x1b[201~"]);
 });
 
 test("the warning text, elapsed time and a window past its reset", () => {

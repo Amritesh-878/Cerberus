@@ -21,6 +21,7 @@ import {
   GearIcon,
   MoreIcon,
   PlugIcon,
+  PlusIcon,
   SkillIcon,
   StarIcon,
 } from "./icons";
@@ -90,6 +91,8 @@ export function Panel(props: {
   openedFile?: string;
   onOpenFile: (tab: TabId, path: string) => void;
   onEditEnvironment: () => void;
+  /** Set for a planner tab, or a tab under one, which can open a task's coder tab. */
+  onStartTask?: () => void;
   /** A new shell or Claude tab in a folder, beside the shown tab. */
   onOpenTab: (folder: string, kind: TabKind) => void;
   /** Saves a folder to the shown tab, as Edit environment's Add folder does. */
@@ -307,6 +310,23 @@ export function Panel(props: {
             </For>
             <Show when={branchText(changes())}>
               {(branch) => <Row icon={<BranchIcon />} text={branch()} />}
+            </Show>
+            <Show when={props.onStartTask !== undefined}>
+              <button
+                type="button"
+                class="card-row action"
+                title="Open a coder tab for a task file, its prompt typed in"
+                onClick={() => {
+                  props.onStartTask?.();
+                }}
+              >
+                <span class="row-icon">
+                  <PlusIcon />
+                </span>
+                <span class="row-text">
+                  <span class="row-main">Start a task…</span>
+                </span>
+              </button>
             </Show>
           </Card>
           <Show when={props.tab?.launch.program === "claude"}>

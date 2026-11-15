@@ -3557,3 +3557,95 @@ button.card-row:focus-visible,
   width: 7px;
   height: 7px;
 }
+
+.task-files {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 220px;
+  margin-top: 8px;
+  overflow-y: auto;
+}
+
+.task-file {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  padding: 6px 8px;
+  font-size: 13px;
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.task-file:hover {
+  background: var(--hover);
+}
+
+.task-file:has(input:checked) {
+  background: var(--selected);
+}
+
+.task-file input {
+  flex: none;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.task-id {
+  flex: none;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.task-heading {
+  overflow: hidden;
+  color: var(--dim);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-dialog select,
+.task-prompt textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid #333;
+  border-radius: 6px;
+}
+
+.task-dialog select {
+  height: 30px;
+}
+
+.task-prompt {
+  margin-top: 14px;
+}
+
+.task-prompt .secondary.small {
+  flex: none;
+  white-space: nowrap;
+}
+
+.task-prompt summary {
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.task-prompt textarea {
+  margin-top: 8px;
+  resize: vertical;
+}
+
+.task-dialog select:focus,
+.task-prompt textarea:focus {
+  border-color: var(--accent);
+  outline: none;
+}

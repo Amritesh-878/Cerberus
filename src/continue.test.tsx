@@ -371,17 +371,21 @@ test("the account pill names the tab's account and offers the others, then Accou
   expect(root.querySelector(".menu-account")?.textContent).toBe(
     "workuser@example.com · Pro",
   );
-  expect(menuItems(root)).toEqual(["Continue on personal…", "Accounts"]);
+  expect(menuItems(root)).toEqual([
+    "Continue on personal…",
+    "Start a task…",
+    "Accounts",
+  ]);
 });
 
-test("with one account the account pill offers only Accounts, which opens the page", async () => {
+test("with one account the account pill offers Start a task and Accounts, which opens the page", async () => {
   const root = await renderApp(
     () => ({ ...SAVED, accounts: SAVED.accounts.slice(1) }),
     core().core,
   );
 
   await openPill(root);
-  expect(menuItems(root)).toEqual(["Accounts"]);
+  expect(menuItems(root)).toEqual(["Start a task…", "Accounts"]);
   click(root.querySelector(".tab-menu") ?? root, "Accounts");
   await settle();
 
