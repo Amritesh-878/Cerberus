@@ -160,36 +160,64 @@ impl Finder {
     fn shells(&self) -> Vec<ProgramChoice> {
         let login = self.login_shell.as_deref().and_then(Path::to_str);
         unix_shells(&self.etc_shells, login, |path| {
-            (self.is_file)(Path::new(path))
+            (self.is_file)(Path::new(path)).then(|| {
+                std::fs::canonicalize(path)
+                    .map_or_else(|_| path.to_owned(), |p| p.to_string_lossy().into_owned())
+            })
         })
     }
 }
 
 // Listed ahead of `/etc/shells`, whose macOS order puts csh, dash, ksh and sh before zsh; Homebrew's fish is often missing from it.
 #[cfg(any(unix, test))]
-const KNOWN_SHELLS: [&str; 4] = [
+const KNOWN_SHELLS: [&str; 5] = [
     "/bin/zsh",
     "/bin/bash",
     "/opt/homebrew/bin/fish",
     "/usr/local/bin/fish",
+    "/usr/bin/fish",
 ];
 
-/// Every installed shell in `/etc/shells` and Homebrew, the login shell first so a new install opens what Terminal would.
+// Linux lists these in `/etc/shells`, but none is a shell to open a tab in.
+#[cfg(any(unix, test))]
+const NOT_SHELLS: [&str; 7] = [
+    "nologin",
+    "false",
+    "true",
+    "rbash",
+    "tmux",
+    "screen",
+    "git-shell",
+];
+
+/// Every installed shell in `/etc/shells` and Homebrew, login shell first; `real` follows links so `/bin/bash` and `/usr/bin/bash` count once.
 #[cfg(any(unix, test))]
 fn unix_shells(
     etc_shells: &str,
     login: Option<&str>,
-    installed: impl Fn(&str) -> bool,
+    real: impl Fn(&str) -> Option<String>,
 ) -> Vec<ProgramChoice> {
-    let login = login.filter(|l| l.starts_with('/') && installed(l));
+    let login = login
+        .filter(|l| l.starts_with('/'))
+        .and_then(|l| Some((l, real(l)?)));
     let listed = etc_shells
         .lines()
         .map(|line| line.split('#').next().unwrap_or_default().trim())
         .filter(|line| line.starts_with('/'));
     let mut paths: Vec<&str> = Vec::new();
-    for path in KNOWN_SHELLS.into_iter().chain(listed).chain(login) {
-        if !paths.contains(&path) && installed(path) {
+    let mut reals: Vec<String> = Vec::new();
+    for path in KNOWN_SHELLS
+        .into_iter()
+        .chain(listed)
+        .chain(login.as_ref().map(|(l, _)| *l))
+    {
+        let name = path.rsplit('/').next().unwrap_or_default();
+        let Some(target) = real(path).filter(|_| !NOT_SHELLS.contains(&name)) else {
+            continue;
+        };
+        if !paths.contains(&path) && !reals.contains(&target) {
             paths.push(path);
+            reals.push(target);
         }
     }
     let name_of = |path: &str| path.rsplit('/').next().unwrap_or_default().to_owned();
@@ -210,7 +238,10 @@ fn unix_shells(
         };
         shells.push(shell(id, id, Some(PathBuf::from(path)), &["-l"]));
     }
-    if let Some(at) = shells.iter().position(|s| s.program.as_deref() == login) {
+    if let Some(at) = login
+        .as_ref()
+        .and_then(|(_, target)| reals.iter().position(|r| r == target))
+    {
         shells[..=at].rotate_right(1);
     }
     shells
@@ -405,7 +436,48 @@ mod tests {
 ";
 
     fn shells_with(etc_shells: &str, files: &[&str], login: Option<&str>) -> Vec<ProgramChoice> {
-        unix_shells(etc_shells, login, |path| files.contains(&path))
+        unix_shells(etc_shells, login, |path| {
+            files.contains(&path).then(|| path.to_owned())
+        })
+    }
+
+    const UBUNTU_ETC_SHELLS: &str = "# /etc/shells: valid login shells
+/bin/sh
+/usr/bin/sh
+/bin/bash
+/usr/bin/bash
+/bin/rbash
+/usr/bin/rbash
+/usr/bin/dash
+/usr/bin/tmux
+/usr/bin/screen
+/bin/zsh
+/usr/bin/zsh
+/usr/bin/fish
+";
+
+    // Ubuntu's merged /usr: each /bin path is a link into /usr/bin, and sh is dash.
+    fn ubuntu_real(path: &str) -> Option<String> {
+        let real = path.replace("/bin/sh", "/bin/dash");
+        let real = real
+            .strip_prefix("/usr")
+            .map_or(real.clone(), str::to_owned);
+        UBUNTU_ETC_SHELLS
+            .lines()
+            .any(|line| line == path)
+            .then(|| format!("/usr{real}"))
+    }
+
+    #[test]
+    fn ubuntu_lists_each_real_shell_once_and_no_multiplexers() {
+        let ids_for = |login| ids(&unix_shells(UBUNTU_ETC_SHELLS, login, ubuntu_real)).join(" ");
+
+        assert_eq!(ids_for(Some("/bin/bash")), "bash zsh fish sh");
+        assert_eq!(ids_for(Some("/usr/bin/bash")), "bash zsh fish sh");
+        assert_eq!(ids_for(Some("/usr/bin/fish")), "fish zsh bash sh");
+        assert_eq!(ids_for(None), "zsh bash fish sh");
+        let shells = unix_shells(UBUNTU_ETC_SHELLS, Some("/usr/bin/bash"), ubuntu_real);
+        assert_eq!(shells[0].program.as_deref(), Some("/bin/bash"));
     }
 
     #[test]
