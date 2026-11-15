@@ -57,12 +57,26 @@ export function TaskDialog(props: {
   );
   onMount(() => {
     if (folder() !== undefined) return;
-    guessTaskFolder(tabFolders).then(setFolder, () => setFolder(null));
+    // A folder chosen while the guess was out stays chosen.
+    guessTaskFolder(tabFolders).then(
+      (guess) => {
+        if (folder() === undefined) setFolder(guess);
+      },
+      () => {
+        if (folder() === undefined) setFolder(null);
+      },
+    );
   });
-  const [files] = createResource(
+  // A folder that cannot be read says so, rather than looking empty.
+  const [listing] = createResource(
     () => folder() ?? undefined,
-    (dir) => taskFiles(dir),
+    (dir) =>
+      taskFiles(dir).then(
+        (found) => ({ files: found, error: undefined }),
+        (failure: unknown) => ({ files: [], error: String(failure) }),
+      ),
   );
+  const files = () => listing()?.files;
   const [picked, setPicked] = createSignal<string>();
   const taskFile = () => picked() ?? files()?.[0]?.path;
   const [account, setAccount] = createSignal<AccountId | null>(
@@ -83,19 +97,25 @@ export function TaskDialog(props: {
   });
   // A new task file names a new worktree, unless the names were already typed over.
   const [typed, setTyped] = createSignal(false);
+  // The task file the shown names were made for, so a late answer for another file is dropped.
+  const [namedFor, setNamedFor] = createSignal<string>();
   createEffect(
     on([taskFile, inWorktree], ([file, wanted]) => {
       if (!file || !wanted || untrack(typed)) return;
       worktreeDefaults(props.project.folder, file).then(
         (d) => {
-          if (untrack(typed)) return;
+          if (untrack(typed) || untrack(taskFile) !== file) return;
           setWtFolder(d.folder);
           setWtBranch(d.branch);
+          setNamedFor(file);
         },
         () => undefined,
       );
     }),
   );
+  // Open waits until the names belong to the task picked, unless they were typed by hand.
+  const namesPending = () =>
+    inWorktree() && !typed() && namedFor() !== taskFile();
 
   const [standard] = createResource(defaultPrompt);
   const [prompt, setPrompt] = createSignal<string | null>(
@@ -245,8 +265,12 @@ export function TaskDialog(props: {
             <For
               each={files()}
               fallback={
-                <Show when={folder() && files.state === "ready"}>
-                  <p class="env-note">No Markdown files in this folder.</p>
+                <Show when={folder() ? listing() : undefined}>
+                  {(read) => (
+                    <p class="env-note">
+                      {read().error ?? "No Markdown files in this folder."}
+                    </p>
+                  )}
                 </Show>
               }
             >
@@ -382,7 +406,7 @@ export function TaskDialog(props: {
           </button>
           <button
             type="button"
-            disabled={opening() || !taskFile()}
+            disabled={opening() || !taskFile() || namesPending()}
             onClick={openTask}
           >
             {opening() ? "Opening…" : "Open"}

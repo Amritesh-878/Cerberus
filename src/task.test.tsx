@@ -53,7 +53,20 @@ const FILES = [
   },
 ];
 
-function taskCore(options: { worktreeFails?: string } = {}) {
+function taskCore(
+  options: {
+    worktreeFails?: string;
+    filesFail?: string;
+    /** Answers the task folder guess, which a test may hold. */
+    guess?: () => Promise<string | null>;
+    /** Answers worktree defaults per task file, which a test may hold. */
+    defaults?: (
+      taskFile: string,
+    ) => Promise<{ folder: string; branch: string }>;
+    /** What the folder picker returns. */
+    pick?: string;
+  } = {},
+) {
   const pty = ptyCore();
   const writes: string[] = [];
   const saves: SavedTree[] = [];
@@ -81,13 +94,17 @@ function taskCore(options: { worktreeFails?: string } = {}) {
       panel_changes: () => ({ kind: "notRepo" }),
       panel_connectors: () => ({ servers: [], unreadable: [] }),
       panel_skills: () => [],
-      ...record("task_folder", () => TASKS),
-      ...record("task_files", () => FILES),
-      task_default_prompt: () => DEFAULT,
-      task_worktree_defaults: () => ({
-        folder: WORKTREE,
-        branch: "feat/task-025",
+      "plugin:dialog|open": () => options.pick ?? null,
+      ...record("task_folder", () => (options.guess ? options.guess() : TASKS)),
+      ...record("task_files", () => {
+        if (options.filesFail) throw new Error(options.filesFail);
+        return FILES;
       }),
+      task_default_prompt: () => DEFAULT,
+      task_worktree_defaults: (args: unknown) =>
+        options.defaults
+          ? options.defaults(String(field(args, "taskFile")))
+          : { folder: WORKTREE, branch: "feat/task-025" },
       ...record("task_branches", () => ({
         default: "main",
         names: ["dev", "main"],
@@ -307,4 +324,80 @@ test("the planner's panel opens the same dialog", async () => {
   await settle();
 
   expect(dialog().querySelector("h2")?.textContent).toBe("Start a task");
+});
+
+test("a folder that cannot be read says so instead of looking empty", async () => {
+  const env = taskCore({
+    filesFail: String.raw`Could not read C:\p\plans\tasks: Access is denied.`,
+  });
+  const root = await renderApp(() => SAVED, env.core);
+
+  await startTask(root);
+
+  expect(dialog().textContent).toContain("Access is denied.");
+  expect(dialog().querySelectorAll(".task-file")).toHaveLength(0);
+});
+
+test("a folder chosen while the guess is out stays chosen", async () => {
+  let answer: (folder: string | null) => void = () => undefined;
+  const chosen = String.raw`C:\p\other\tasks`;
+  const env = taskCore({
+    guess: () => new Promise((resolve) => (answer = resolve)),
+    pick: chosen,
+  });
+  const root = await renderApp(() => SAVED, env.core);
+  await startTask(root);
+
+  click(dialog(), "Choose folder…");
+  await settle();
+  answer(TASKS);
+  await settle();
+  await settle();
+
+  const read = env.calls.filter((c) => c.cmd === "task_files");
+  expect(field(read.at(-1)?.args, "folder")).toBe(chosen);
+  expect(project(env.saves)?.tasks?.folder).toBe(chosen);
+});
+
+test("worktree names answered late for an earlier task never replace the current task's", async () => {
+  const held = new Map<string, () => void>();
+  const env = taskCore({
+    defaults: (file) =>
+      new Promise((resolve) => {
+        const id = file.endsWith("task-025.md") ? "task-025" : "task-024";
+        held.set(id, () => {
+          resolve({
+            folder: String.raw`C:\p\code-${id}`,
+            branch: `feat/${id}`,
+          });
+        });
+      }),
+  });
+  const root = await renderApp(() => SAVED, env.core);
+  await startTask(root);
+
+  click(dialog(), "New worktree");
+  await settle();
+  const second =
+    dialog().querySelectorAll<HTMLInputElement>(".task-file input")[1];
+  second?.click();
+  await settle();
+  const open = [...dialog().querySelectorAll("button")].find(
+    (b) => b.textContent === "Open",
+  );
+  expect(open?.hasAttribute("disabled")).toBe(true);
+
+  held.get("task-024")?.();
+  await settle();
+  held.get("task-025")?.();
+  await settle();
+
+  const inputs = [
+    ...dialog().querySelectorAll<HTMLInputElement>(".env-field input"),
+  ];
+  expect(inputs.map((i) => i.value)).toEqual([
+    String.raw`C:\p\code-task-024`,
+    "feat/task-024",
+  ]);
+  expect(open?.hasAttribute("disabled")).toBe(false);
 });
