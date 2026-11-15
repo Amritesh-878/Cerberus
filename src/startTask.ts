@@ -66,6 +66,24 @@ export function worktreeDefaults(
   });
 }
 
+export interface Branches {
+  /** The repo's default branch, the base a new worktree starts from unless changed. */
+  default: string | null;
+  names: string[];
+}
+
+export function taskBranches(folder: string): Promise<Branches> {
+  return invoke<Branches>("task_branches", { folder });
+}
+
+/** Runs `git worktree add`; a failure rejects with git's own message. */
+export function createWorktree(
+  repo: string,
+  worktree: { folder: string; branch: string; base: string },
+): Promise<void> {
+  return invoke("task_worktree", { repo, ...worktree });
+}
+
 export function planTask(request: {
   taskFile: string;
   projectFolder: string;
@@ -129,6 +147,50 @@ export function addCoderTab(
     withDirs,
   );
   return [renameTab(added, id, plan.title), id];
+}
+
+export interface TaskDeps {
+  tree: () => Tree;
+  setTree: (tree: Tree) => void;
+  profiles: () => Profiles | undefined;
+  claude: () => ProgramChoice | undefined;
+  prefills: Prefills;
+  select: (id: TabId) => void;
+}
+
+/** Makes the worktree if asked, then the coder sub-tab with its prompt waiting; a failure rejects and opens nothing. */
+export async function openTask(
+  deps: TaskDeps,
+  from: TabId,
+  choice: TaskChoice,
+): Promise<void> {
+  const tab = deps.tree().tabs.find((t) => t.id === from);
+  const planner = tab && plannerFor(deps.tree(), tab);
+  const project = deps.tree().projects.find((p) => p.id === planner?.projectId);
+  if (!planner || !project) throw new Error("The planner tab is gone.");
+  const claude = deps.claude();
+  if (!claude) throw new Error("Claude Code isn't installed.");
+  if (choice.worktree) await createWorktree(project.folder, choice.worktree);
+  const plan = await planTask({
+    taskFile: choice.taskFile,
+    projectFolder: project.folder,
+    worktree: choice.worktree && [
+      choice.worktree.folder,
+      choice.worktree.branch,
+    ],
+    template: choice.template,
+    plannerTab: planner.title,
+  });
+  const account =
+    deps.profiles()?.accounts.find((a) => a.id === choice.accountId) ?? null;
+  // Read again, since the tree may have changed while git ran.
+  const now = deps.tree().tabs.find((t) => t.id === planner.id);
+  const added = now && addCoderTab(deps.tree(), now, claude, account, plan);
+  if (!added) throw new Error("The planner tab is gone.");
+  const [tree, id] = added;
+  deps.setTree(tree);
+  deps.prefills.set(id, plan.prompt);
+  deps.select(id);
 }
 
 /** Prompts waiting for their chat: one is typed the first time the chat reports it is idle, so after any trust prompt. */

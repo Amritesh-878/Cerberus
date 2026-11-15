@@ -84,6 +84,8 @@ export function TabMenu(props: {
   ended: boolean;
   onContinue: (account: Account) => void;
   onResume: () => void;
+  /** Set for a Claude tab in a project, which can open a task's coder tab under its planner. */
+  onStartTask?: () => void;
   /** Last in the menu, so a signed-out account can be signed in from there. */
   onAccounts?: () => void;
   onDismiss: () => void;
@@ -222,8 +224,29 @@ export function TabMenu(props: {
                   </button>
                 )}
               </For>
-              <Show when={props.onAccounts}>
+              <Show when={props.onStartTask}>
                 <Show when={props.targets.length > 0 || props.ended}>
+                  <div class="menu-sep" role="separator" />
+                </Show>
+                <button
+                  type="button"
+                  class="menu-item"
+                  role="menuitem"
+                  onClick={() => {
+                    props.onStartTask?.();
+                  }}
+                >
+                  <span class="menu-text">Start a task…</span>
+                </button>
+              </Show>
+              <Show when={props.onAccounts}>
+                <Show
+                  when={
+                    props.targets.length > 0 ||
+                    props.ended ||
+                    props.onStartTask !== undefined
+                  }
+                >
                   <div class="menu-sep" role="separator" />
                 </Show>
                 <button

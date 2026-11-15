@@ -95,6 +95,8 @@ import { ShortcutsSheet } from "./ShortcutsSheet";
 import type { TabDragEvents } from "./tabDrag";
 import { SidebarEdge, SplitEdge } from "./SidebarEdge";
 import { menuAccount, type MenuPlace, TabMenu } from "./TabMenu";
+import { TaskDialog } from "./TaskDialog";
+import { openTask, plannerFor, Prefills, withProjectTasks } from "./startTask";
 import { ServiceForm } from "./ServiceForm";
 import { ServiceOutput } from "./ServiceOutput";
 import {
@@ -755,6 +757,7 @@ export function App() {
     setTree(closeTab(tree(), id));
     split.forget(id);
     hands.forget(id);
+    prefills.forget(id);
     if (active() === id) {
       setActive(after);
       if (setup) setOverPage(false);
@@ -900,6 +903,17 @@ export function App() {
 
   // Each open pane's way to type into its program, for the panel's prefills.
   const typers = new Map<TabId, (text: string) => void>();
+  // A started task's prompt, typed once its chat is ready.
+  const prefills = new Prefills();
+  // The tab whose Start a task dialog is open.
+  const [startingTask, setStartingTask] = createSignal<TabId>();
+  // A Claude tab in a project with a planner above it, or that is one, can start a task.
+  const canStartTask = (id: TabId) => {
+    const tab = tabById(id);
+    return (
+      tab?.launch.program === "claude" && plannerFor(tree(), tab) !== undefined
+    );
+  };
   const chatShown = () => {
     const tab = shownTab();
     return tab?.launch.program === "claude" && isRunning(tab.id)
@@ -1424,6 +1438,7 @@ export function App() {
                               active={shown() === id || split.has(id)}
                               focused={shown() === id}
                               onState={(state) => {
+                                prefills.reported(id, state, typers.get(id));
                                 notify(id, state);
                                 setBoard((b) =>
                                   reported(b, id, state, shown()),
@@ -1639,6 +1654,46 @@ export function App() {
                 />
               )}
             </Show>
+            <Show
+              when={(() => {
+                const id = startingTask();
+                const tab = id === undefined ? undefined : tabById(id);
+                const project = tree().projects.find(
+                  (p) => p.id === tab?.projectId,
+                );
+                return tab && project && { tab, project };
+              })()}
+            >
+              {(open) => (
+                <TaskDialog
+                  tab={open().tab}
+                  project={open().project}
+                  profiles={loaded()}
+                  onOpen={(choice) =>
+                    openTask(
+                      {
+                        tree,
+                        setTree,
+                        profiles: loaded,
+                        claude: () => installed(programList() ?? [], "claude"),
+                        prefills,
+                        select,
+                      },
+                      open().tab.id,
+                      choice,
+                    )
+                  }
+                  onTasks={(change) => {
+                    setTree(
+                      withProjectTasks(tree(), open().project.id, change),
+                    );
+                  }}
+                  onClose={() => {
+                    setStartingTask(undefined);
+                  }}
+                />
+              )}
+            </Show>
             <Show when={moveFailed()}>
               {(failed) => (
                 <NoticePopup
@@ -1751,6 +1806,15 @@ export function App() {
                     setPillMenu(undefined);
                     resume(id);
                   }}
+                  onStartTask={
+                    canStartTask(tab().id)
+                      ? () => {
+                          const id = tab().id;
+                          setPillMenu(undefined);
+                          setStartingTask(id);
+                        }
+                      : undefined
+                  }
                   onAccounts={() => {
                     setPillMenu(undefined);
                     showPage("accounts");
