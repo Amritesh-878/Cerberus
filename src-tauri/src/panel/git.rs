@@ -8,6 +8,8 @@ use crate::live::files::is_private;
 use crate::run::run;
 
 const TIMEOUT: Duration = Duration::from_secs(5);
+// Removing a worktree deletes its ignored files too, such as a large `node_modules`.
+const REMOVE_TIMEOUT: Duration = Duration::from_secs(180);
 // Untracked files count by their lines up to these limits, so a stray build folder costs little.
 const UNTRACKED_FILES: usize = 200;
 const UNTRACKED_BYTES: u64 = 1 << 20;
@@ -34,6 +36,15 @@ pub struct Repo {
     pub removed: u64,
 }
 
+/// A local branch as the worktree list needs it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Branch {
+    pub name: String,
+    pub tip: String,
+    /// It tracked a remote branch that no longer exists there.
+    pub gone: bool,
+}
+
 pub struct Git {
     program: PathBuf,
 }
@@ -45,6 +56,10 @@ impl Git {
 
     /// Runs in `folder` with no shell and no prompt; `None` for any failure, which callers read as "not known".
     fn output(&self, folder: &Path, args: &[&str]) -> Option<String> {
+        self.output_within(folder, args, TIMEOUT)
+    }
+
+    fn output_within(&self, folder: &Path, args: &[&str], timeout: Duration) -> Option<String> {
         let mut command = Command::new(&self.program);
         command
             .args(args)
@@ -52,7 +67,7 @@ impl Git {
             // Read-only callers must not take the index lock a commit in a terminal is waiting for.
             .env("GIT_OPTIONAL_LOCKS", "0")
             .env("GIT_TERMINAL_PROMPT", "0");
-        let ran = run(command, TIMEOUT).ok()?;
+        let ran = run(command, timeout).ok()?;
         // Only line ends go, since a record can end in a tab-separated empty field.
         ran.success.then(|| {
             String::from_utf8_lossy(&ran.stdout)
@@ -166,7 +181,7 @@ impl Git {
     }
 
     // The remote's default branch, else a usual name for one, local as a last resort; one git call.
-    fn base(&self, folder: &Path) -> Option<String> {
+    pub(crate) fn base(&self, folder: &Path) -> Option<String> {
         let listed = self.output(
             folder,
             &[
@@ -200,6 +215,87 @@ impl Git {
                     .trim_start_matches("refs/heads/")
                     .to_owned()
             })
+    }
+
+    /// The folder's repo's top folder, a linked worktree's own included; `None` outside a repo.
+    pub fn toplevel(&self, folder: &Path) -> Option<PathBuf> {
+        self.output(folder, &["rev-parse", "--show-toplevel"])
+            .filter(|root| !root.is_empty())
+            .map(PathBuf::from)
+    }
+
+    /// Every worktree of the folder's repo, the main one first, as `git worktree list --porcelain -z` gives them.
+    pub fn worktrees(&self, folder: &Path) -> Option<String> {
+        self.output(folder, &["worktree", "list", "--porcelain", "-z"])
+    }
+
+    /// Whether the worktree has uncommitted or untracked files; `None` when git cannot tell.
+    pub fn dirty(&self, worktree: &Path) -> Option<bool> {
+        self.output(
+            worktree,
+            &["status", "--porcelain", "--untracked-files=normal"],
+        )
+        .map(|out| !out.is_empty())
+    }
+
+    /// Each local branch's tip and whether the remote branch it tracked is gone.
+    pub fn branches(&self, folder: &Path) -> Vec<Branch> {
+        let Some(listed) = self.output(
+            folder,
+            &[
+                "for-each-ref",
+                "--format=%(refname)%09%(objectname)%09%(upstream)%09%(upstream:track)",
+                "refs/heads",
+            ],
+        ) else {
+            return Vec::new();
+        };
+        listed
+            .lines()
+            .filter_map(|line| {
+                let mut fields = line.split('\t');
+                let name = fields.next()?.strip_prefix("refs/heads/")?;
+                let tip = fields.next()?;
+                let upstream = fields.next().unwrap_or("");
+                let track = fields.next().unwrap_or("");
+                Some(Branch {
+                    name: name.to_owned(),
+                    tip: tip.to_owned(),
+                    gone: !upstream.is_empty() && track == "[gone]",
+                })
+            })
+            .collect()
+    }
+
+    /// Whether `commit` is already part of `base`'s history.
+    pub fn contains(&self, folder: &Path, base: &str, commit: &str) -> bool {
+        self.output(folder, &["merge-base", "--is-ancestor", commit, base])
+            .is_some()
+    }
+
+    /// `git worktree remove` without `--force`, so git itself also refuses a dirty or locked one.
+    pub fn remove_worktree(&self, from: &Path, worktree: &Path) -> bool {
+        let path = worktree.to_string_lossy();
+        self.output_within(from, &["worktree", "remove", "--", &path], REMOVE_TIMEOUT)
+            .is_some()
+    }
+
+    /// Deletes a local branch only while it still points at `tip`, then its tracking settings.
+    pub fn delete_branch(&self, from: &Path, branch: &str, tip: &str) -> bool {
+        let deleted = self
+            .output(
+                from,
+                &["update-ref", "-d", &format!("refs/heads/{branch}"), tip],
+            )
+            .is_some();
+        if deleted {
+            // A branch with no upstream has no section, so a failure here means nothing was left.
+            let _ = self.output(
+                from,
+                &["config", "--remove-section", &format!("branch.{branch}")],
+            );
+        }
+        deleted
     }
 
     fn untracked_lines(&self, folder: &Path, root: &Path) -> u64 {
@@ -262,19 +358,19 @@ fn text_lines(path: &Path) -> u64 {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::fs;
 
     use super::*;
     use crate::accounts::testdir::TestDir;
     use crate::programs::Finder;
 
-    fn git() -> Git {
+    pub(crate) fn git() -> Git {
         Git::new(Finder::from_env().find("git").expect("git is installed"))
     }
 
     // Identity and signing come from the command line, so the machine's own git config cannot fail a commit.
-    fn sh(folder: &Path, args: &[&str]) {
+    pub(crate) fn sh(folder: &Path, args: &[&str]) {
         let status = Command::new("git")
             .args([
                 "-c",
@@ -295,7 +391,7 @@ mod tests {
         assert!(status.status.success(), "git {args:?}: {status:?}");
     }
 
-    fn lines(n: usize, word: &str) -> String {
+    pub(crate) fn lines(n: usize, word: &str) -> String {
         (0..n).map(|i| format!("{word} {i}\n")).collect()
     }
 
