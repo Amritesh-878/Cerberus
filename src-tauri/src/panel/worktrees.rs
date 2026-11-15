@@ -148,14 +148,31 @@ fn key(path: &Path) -> Vec<String> {
         .collect()
 }
 
-/// The folder as the file system names it, so a link or a short name matches the path git prints; as given when it is gone.
+/// The folder as the file system names it, so a link or a short name matches the path git prints.
+/// A part that does not exist yet is kept as written on top of its nearest existing parent.
 fn real(path: &Path) -> PathBuf {
-    let Ok(resolved) = std::fs::canonicalize(path) else {
-        return path.to_path_buf();
-    };
-    // Windows answers `\\?\C:\…`, which would never match a plain `C:\…` of a folder that is gone.
+    let mut missing = Vec::new();
+    let mut at = path;
+    loop {
+        if let Ok(resolved) = std::fs::canonicalize(at) {
+            let mut found = plain(resolved);
+            found.extend(missing.iter().rev());
+            return found;
+        }
+        match (at.parent(), at.file_name()) {
+            (Some(parent), Some(name)) => {
+                missing.push(name.to_os_string());
+                at = parent;
+            }
+            _ => return path.to_path_buf(),
+        }
+    }
+}
+
+// Windows answers `\\?\C:\…`, which would never match a plain `C:\…` of a folder that is gone.
+fn plain(resolved: PathBuf) -> PathBuf {
     match resolved.to_str().and_then(|s| s.strip_prefix(r"\\?\")) {
-        Some(plain) if plain.as_bytes().get(1) == Some(&b':') => PathBuf::from(plain),
+        Some(rest) if rest.as_bytes().get(1) == Some(&b':') => PathBuf::from(rest),
         _ => resolved,
     }
 }
@@ -784,9 +801,10 @@ mod tests {
         let spare = dir.path().join("spare-alias");
         link(&dir.path().join("linked"), &alias);
         link(&dir.path().join("spare"), &spare);
+        // A folder not made yet, behind the link, still counts.
         let tabs = [TabFolders {
             tab: 7,
-            folders: vec![alias.clone()],
+            folders: vec![alias.join("src").join("later")],
         }];
 
         let rows = list(&git(), &repo, &[], &tabs).unwrap();
