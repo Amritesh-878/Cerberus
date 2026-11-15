@@ -453,6 +453,19 @@ and a popup says why; in the rare case that putting the older copy back fails to
 it stays under a `.cerberus-old` name. The copy moves files only; Cerberus never reads what is in
 them.
 
+### When a chat hits its limit
+
+When a chat hits its usage limit, from Claude Code's limit message or its 5-hour meter at 100%, a
+popup says so, once per chat per limit window, with a desktop notification when the tab isn't
+shown. It offers **Continue on `<account>`** for each signed-in account below the warning line,
+the first one as the default, and **Not now**, which leaves the tab as it is. Continue runs the
+same move as above, without a second confirm (the popup's click is it). Once the moved chat is
+ready, `continue` is typed into it for you to send, so Claude carries on with the request that hit
+the limit. The limit banner's **Continue on** types it too; a move from the tab's menu doesn't.
+
+Cerberus never switches accounts by itself: using several accounts to get around usage limits
+automatically is against Anthropic's Usage Policy, so every move waits for your click.
+
 ## Messages between accounts
 
 Claude Code's own `SendMessage` reaches chats on the same account only. Cerberus lets a Claude Code

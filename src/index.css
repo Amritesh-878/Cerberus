@@ -3649,3 +3649,35 @@ button.card-row:focus-visible,
   border-color: var(--accent);
   outline: none;
 }
+
+.limit-popup {
+  width: min(460px, 100%);
+}
+
+.limit-popup h2 {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.limit-text {
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--dim);
+}
+
+.limit-text code {
+  padding: 0 4px;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  color: var(--text);
+  background: var(--bg);
+  border-radius: 4px;
+}
+
+/* The row takes the dialogs' action styles; its buttons also hold an account dot. */
+.limit-actions button {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}

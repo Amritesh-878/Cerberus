@@ -248,6 +248,27 @@ fn without_the_pipe_the_helper_still_passes_his_input_on() {
 }
 
 #[test]
+fn a_limited_chat_is_offered_only_the_accounts_below_the_line() {
+    let fx = start(85);
+    let other = fx
+        .live
+        .register(8, 3, fx.dir.path(), fx.dir.path())
+        .unwrap();
+    assert_eq!(
+        fx.live.offers(2),
+        Some(vec![1, 3]),
+        "nothing reported is below"
+    );
+
+    status_line(&env_of(&other), &FAKE_INPUT.replace("87.2", "91"), false);
+    next_view_where(&fx.views, |v| v.meters.iter().any(|m| m.account == 3));
+
+    assert_eq!(fx.live.offers(2), Some(vec![1]));
+    assert_eq!(fx.live.offers(3), Some(vec![1, 2]));
+    assert_eq!(Live::off().offers(2), None);
+}
+
+#[test]
 fn off_registers_nothing() {
     let live = Live::off();
 
