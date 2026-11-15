@@ -50,7 +50,8 @@ SHA-256 so you can check a download.
   line between them to resize.
 - **A right panel for the tab on screen**: its account, folders and branch, each repo's changes
   and every PR (open, draft, merged; ready a draft from its menu) with **Create PR** and **Open in
-  VS Code**, an **Edit environment** dialog for the tab's name, extra folders (`--add-dir`), main
+  VS Code**, repos the chat wrote into, each repo's worktrees with stale ones removed on request
+  (never forced, merged branches only, nothing pushed), an **Edit environment** dialog for the tab's name, extra folders (`--add-dir`), main
   folder and variables, its skills (most used first, starred ones
   on top, shift-click to type one in; plugin and claude.ai skills included) and the MCP servers
   its `claude` would load, plugin servers included.

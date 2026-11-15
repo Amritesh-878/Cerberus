@@ -175,7 +175,11 @@ it is open, its width, the folded cards, their order, starred skills and dismiss
   PRs follow its row, newest first: up to 100 drafts and open PRs, however old, and the newest 100 of any state,
   five at a time with **Show more**. A PR row's arrow button opens it on GitHub; its **⋯** menu has **Copy link**, **Dismiss** (hidden until the PR
   changes on GitHub) and, on a draft, **Ready for review**, which asks first and then runs
-  `gh pr ready <number>`.
+  `gh pr ready <number>`. A repo the chat wrote into (from Outputs, a worktree beside the
+  tab's folder for instance) gets a row of its own for this session, marked "written by this
+  chat", with its branch, changes, PRs and Open in VS Code. Its **⋯** menu has **Add to the tab**,
+  which saves it as one of the tab's folders, as Edit environment's Add folder does. Every repo
+  row's **⋯** menu also has **Worktrees** (below).
 - **Skills:** the project's `.claude/skills`, the account's `skills` folder, the skills synced
   from claude.ai (named `anthropic-skills:<skill>`, marked "claude.ai") and the skills of each
   enabled plugin (named `<plugin>:<skill>`, marked "plugin"), with each skill's description. The
@@ -203,6 +207,30 @@ read. Any of these files that exists but cannot be read is named at the end of C
 Nothing runs while the panel is closed. While it is open, git is read when it opens, on a tab
 change and every 10 seconds; GitHub is asked about a repo at most once a minute. Connectors are
 read again when a chat links to Cerberus for messages or leaves it.
+
+### Worktrees
+
+**Worktrees** in a repo row's **⋯** menu lists every worktree of the repo (`git worktree list`),
+the main folder first, each with its branch, its PR's number and state (from the PR list above),
+"uncommitted changes" when it has any, and the tabs whose folder or added folder is inside it.
+
+- **Stale** marks a worktree whose work is over (its branch's PR merged or closed, the remote
+  branch it tracked is gone, or its folder is already gone) with no uncommitted or untracked
+  files and no tab in it.
+- **Remove stale (N)**, or **Remove…** in one worktree's **⋯** menu, lists what it will remove
+  and asks first. Each is then checked again and removed with `git worktree remove`, never with
+  `--force`. Its local branch is deleted only if it is merged: already in the default branch's
+  history, or its PR merged at exactly the commit the branch is on (a squash merge). Nothing on
+  GitHub changes: no push, and the remote branch stays.
+- **Refused, with the reason:** the main folder, a worktree with uncommitted or untracked files,
+  one a tab runs in, and one git has locked. "In use" means a tab's folder or added folder; a
+  program you `cd` into the worktree from a shell is not seen, and Windows may then stop git
+  from deleting the folder itself (its files go, and nothing uncommitted is lost, since a dirty
+  worktree is never removed).
+- **Open** from a worktree's **⋯** menu: in VS Code, in the file manager, or as a new shell or
+  Claude tab there, under the tab on screen and on its account.
+
+The list is read when you open it and again after a removal, and closes when you switch tabs.
 
 ### Edit environment
 
