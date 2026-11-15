@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  asPaste,
   isReloadKey,
   type KeyChord,
   keyHelp,
@@ -66,6 +67,14 @@ describe("terminalHandlesKey", () => {
   ])("passes %s to the program on macOS", (_name, key) => {
     expect(terminalHandlesKey(key, "mac")).toBe(true);
   });
+});
+
+test("typed text is one bracketed paste that can never press Enter or end itself", () => {
+  const typed = asPaste("one\r\ntwo\rthree\x1b[201~\r\x03four\u009b\ttab");
+
+  expect(typed).toBe("\x1b[200~one\ntwo\nthree[201~\nfour\ttab\x1b[201~");
+  expect(typed).not.toContain("\r");
+  expect(asPaste("/compact")).toBe("\x1b[200~/compact\x1b[201~");
 });
 
 test("the platform comes from the user agent", () => {

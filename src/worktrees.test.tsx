@@ -235,7 +235,7 @@ test("Add to the tab saves the written repo as the tab's folder and types /add-d
   await settle();
 
   expect(core.saves.at(-1)?.tabs.find((t) => t.id === 3)?.dirs).toEqual([WT]);
-  expect(core.writes).toEqual([`/add-dir ${WT}`]);
+  expect(core.writes).toEqual([`\x1b[200~/add-dir ${WT}\x1b[201~`]);
 });
 
 test("the worktree list shows each branch, PR state, uncommitted work and the tabs in it, with stale ones marked", async () => {

@@ -40,6 +40,12 @@ export function terminalHandlesKey(
   return platform === "mac" ? !chord.metaKey : !isTextPaste(chord);
 }
 
+/** Text Cerberus types for the user as one bracketed paste: line ends become `\n` and control characters go, so it can never press Enter. */
+export function asPaste(text: string): string {
+  const clean = text.replace(/\r\n?/g, "\n").replace(/[^\P{Cc}\n\t]/gu, "");
+  return `\x1b[200~${clean}\x1b[201~`;
+}
+
 /** Input to send in place of a paste, or `undefined` to let xterm paste the text. */
 export function pasteInput(
   pasted: PastedData,

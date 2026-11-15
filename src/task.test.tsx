@@ -182,7 +182,7 @@ test("Open adds a sub-tab named for the task and types its prompt only once the 
   await settle();
   emit(env.pty.spawned, index, { state: "idle" });
   await settle();
-  expect(env.writes).toEqual([`${DEFAULT} [main]`]);
+  expect(env.writes).toEqual([`\x1b[200~${DEFAULT} [main]\x1b[201~`]);
   expect(env.writes.join("")).not.toContain("\r");
   expect(project(env.saves)?.tasks).toEqual({
     folder: null,
@@ -242,6 +242,29 @@ test("a worktree git refuses opens no tab and shows git's message", async () => 
   expect(sidebarTitles(root)).toEqual(["planner"]);
   expect(env.pty.spawned).toHaveLength(spawnedBefore);
   expect(env.calls.map((c) => c.cmd)).not.toContain("task_plan");
+});
+
+test("a two-line task prompt arrives as one paste, with no line end outside it to send it", async () => {
+  const env = taskCore();
+  const root = await renderApp(() => SAVED, env.core);
+  await startTask(root);
+  const area = dialog().querySelector("textarea");
+  if (!area) throw new Error("no prompt editor");
+  type(area, "Read {task_file}.\r\nThen do it.");
+
+  click(dialog(), "Open");
+  await settle();
+  await settle();
+  emit(env.pty.spawned, env.pty.spawned.length - 1, { state: "idle" });
+  await settle();
+
+  expect(env.writes).toHaveLength(1);
+  const typed = env.writes[0] ?? "";
+  expect(typed.startsWith("\x1b[200~")).toBe(true);
+  expect(typed.endsWith("\x1b[201~")).toBe(true);
+  const inside = typed.slice("\x1b[200~".length, -"\x1b[201~".length);
+  expect(inside).toBe("Read {task_file}.\nThen do it. [main]");
+  expect(typed).not.toContain("\r");
 });
 
 test("an edited task prompt is used and remembered for the project, and Reset goes back to the default", async () => {

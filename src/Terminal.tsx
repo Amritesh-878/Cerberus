@@ -8,6 +8,7 @@ import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import type { LiveState } from "./board";
 import { terminalFont } from "./font";
 import {
+  asPaste,
   PLATFORM,
   pasteInput,
   type TabKind,
@@ -255,7 +256,7 @@ export function TerminalView(props: {
     };
     element.addEventListener("paste", onPaste, true);
     const untype = props.onTyper?.((text) => {
-      session.write(text);
+      session.write(asPaste(text));
       term.focus();
     });
 
