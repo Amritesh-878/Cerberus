@@ -151,3 +151,25 @@ test("a program no longer installed keeps its tab, which fails visibly when open
   });
   expect(tab?.launch.account).toEqual({ id: 7, name: "removed account" });
 });
+
+test("a saved Gemini CLI or Codex CLI tab comes back with no account, whatever was saved", () => {
+  const tab = (id: number, program: string) => ({
+    id,
+    projectId: 1,
+    parentId: null,
+    title: program,
+    program,
+    cwd: String.raw`C:\code\app`,
+    account: 0,
+  });
+  const saved: SavedTree = {
+    projects: [{ id: 1, name: "app", folder: String.raw`C:\code\app` }],
+    tabs: [tab(2, "gemini"), tab(3, "codex")],
+    nextId: 4,
+  };
+
+  for (const restored of fromSaved(saved, PROFILES, [CLAUDE]).tabs) {
+    expect(restored.launch.account).toBeNull();
+    expect(restored.launch.spec.account).toBeNull();
+  }
+});
