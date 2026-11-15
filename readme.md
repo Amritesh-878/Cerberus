@@ -5,7 +5,9 @@ pick, on Windows with a macOS preview. Every project is a folder in the sidebar 
 it, and each tab keeps its Claude Code chat, so after a restart or a crash your tabs come back and
 their chats resume.
 
-Each Claude Code tab runs the official `claude` CLI. Claude Code is the only AI in it. Built with Claude Code.
+Each Claude Code tab runs the official `claude` CLI. Cerberus is built around Claude Code, and can
+also open Gemini CLI and Codex CLI tabs when they are installed; it never signs in to them or reads
+their config or history. Built with Claude Code.
 
 ## Install
 
