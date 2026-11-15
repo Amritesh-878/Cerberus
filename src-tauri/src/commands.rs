@@ -74,7 +74,7 @@ pub async fn pty_spawn(
     blocking(move || {
         let manager = app.state::<PtyManager>();
         let accounts = app.state::<Accounts>();
-        // Gemini CLI and Codex CLI have no Claude account, so they get no `CLAUDE_CONFIG_DIR`.
+        // Antigravity CLI and Codex CLI have no Claude account, so they get no `CLAUDE_CONFIG_DIR`.
         request.claude_config_dir = match kind_of(&request.program) {
             Kind::OtherCli => None,
             Kind::Claude | Kind::Shell => accounts.claude_config_dir(account)?,

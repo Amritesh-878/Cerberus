@@ -243,7 +243,7 @@ test("a new tab starts in its project's folder under the account picked", async 
   expect(activeTitle(root)).toBe("PowerShell · personal");
 });
 
-test("Gemini CLI and Codex CLI are listed only when installed, and open in the folder with no account", async () => {
+test("Antigravity CLI and Codex CLI are listed only when installed, and open in the folder with no account", async () => {
   const pty = ptyCore();
   const other = (id: string, label: string, program: string | null) => ({
     ...CHOICES[0],
@@ -258,26 +258,26 @@ test("Gemini CLI and Codex CLI are listed only when installed, and open in the f
     ...pty.core,
     list_programs: () => [
       ...CHOICES,
-      other("gemini", "Gemini CLI", String.raw`C:\npm\gemini.cmd`),
+      other("agy", "Antigravity CLI", String.raw`C:\npm\agy.cmd`),
       other("codex", "Codex CLI", null),
     ],
   });
   await newProject(root);
 
-  expect(newTabBox(root).textContent).toContain("Gemini CLI");
+  expect(newTabBox(root).textContent).toContain("Antigravity CLI");
   expect(newTabBox(root).textContent).not.toContain("Codex CLI");
 
   click(newTabBox(root), "work");
-  click(newTabBox(root), "Gemini CLI");
+  click(newTabBox(root), "Antigravity CLI");
   await settle();
 
   expect(pty.spawned).toHaveLength(1);
   expect(field(pty.spawned[0], "account")).toBeNull();
   const request = field(pty.spawned[0], "request");
-  expect(field(request, "program")).toBe(String.raw`C:\npm\gemini.cmd`);
+  expect(field(request, "program")).toBe(String.raw`C:\npm\agy.cmd`);
   expect(field(request, "cwd")).toBe(String.raw`C:\code\alpha`);
-  expect(activeTitle(root)).toBe("Gemini CLI");
-  expect(root.querySelector(".tab-row .icon-gemini")).not.toBeNull();
+  expect(activeTitle(root)).toBe("Antigravity CLI");
+  expect(root.querySelector(".tab-row .icon-agy")).not.toBeNull();
 });
 
 test("a coder sub-tab lists under its planner", async () => {

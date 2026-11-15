@@ -38,7 +38,7 @@ opens its folder picker, and whether alerts and shell suggestions are on.
 
 **New project** opens a folder picker, and the folder's name becomes the project's name. The
 **+** beside a project opens the new tab box beside it: pick the account, whether the tab goes on
-its own or under a planner, then **Claude Code** (Enter) or **Shell** (or **Gemini CLI** or
+its own or under a planner, then **Claude Code** (Enter) or **Shell** (or **Antigravity CLI** or
 **Codex CLI**, when installed: see below). The tab starts in the
 project's folder. Ctrl+Shift+T (Cmd+T on macOS) opens the box beside the current project's **+**.
 
@@ -89,16 +89,22 @@ the menu button, as before.
 When the right panel would leave the chat less than about 60 columns, it opens over the chat
 instead of beside it, with a close button in its own bar.
 
-### Gemini CLI and Codex CLI tabs
+### Antigravity CLI and Codex CLI tabs
 
-When `gemini` or `codex` is on your `PATH`, the new tab box lists **Gemini CLI** or **Codex CLI**
-under **Shell**. Neither is listed when it isn't installed; install them with npm and reopen
-Cerberus:
+The new tab box lists **Antigravity CLI** (`agy`) and **Codex CLI** (`codex`) under **Shell** when
+they are installed, and neither when it isn't. `codex` is found on your `PATH`. `agy` is found in its
+installer's folder (`%LOCALAPPDATA%\agy\bin` on Windows, `~/.local/bin` on macOS and Linux), even
+when Cerberus started before the install, or on your `PATH` from a folder whose name has
+`antigravity` or `agy` in it; an unrelated program named `agy` elsewhere is not offered. To install:
 
 ```sh
-npm install -g @google/gemini-cli
-npm install -g @openai/codex
+irm https://antigravity.google/cli/install.ps1 | iex           # Antigravity CLI, Windows PowerShell
+curl -fsSL https://antigravity.google/cli/install.sh | bash    # Antigravity CLI, macOS and Linux
+npm install -g @openai/codex                                   # Codex CLI
 ```
+
+Google replaced Gemini CLI with Antigravity CLI for unpaid and Google One users on 2026-06-18. If
+your Gemini Code Assist plan still includes Gemini CLI, run `gemini` in a shell tab.
 
 These tabs run the program as it is, in the tab's folder with the tab's environment variables.
 Cerberus never signs in to them or reads their config, sign-in or history files, and none of the
@@ -109,10 +115,10 @@ right panel shows only **Environment** (folder and branch) and **Changes**.
 - **Shift+Enter** sends Ctrl+J, which both CLIs document as a new line in the prompt.
 - **A restart** starts the program again, fresh, in the same folder. Neither CLI can resume one
   tab's own chat without its history, so pick it inside the CLI with `/resume`, or reopen the
-  folder's newest chat by hand with `gemini --resume latest` or `codex resume --last`.
+  folder's newest chat by hand with `agy --continue` or `codex resume --last`.
 
-Claude, Gemini and Codex names and marks belong to Anthropic, Google and OpenAI; Cerberus uses them
-only to show which CLI a tab runs, and is not affiliated with or endorsed by them.
+Claude, Antigravity and Codex names and marks belong to Anthropic, Google and OpenAI; Cerberus uses
+them only to show which CLI a tab runs, and is not affiliated with or endorsed by them.
 
 ## Restarts and resuming
 
@@ -487,7 +493,7 @@ the disk image. In a dev build the command is `src-tauri/target/debug/cerberus-c
 | Program | What runs |
 |---|---|
 | Claude Code | `claude` from `PATH` |
-| Gemini CLI, Codex CLI | `gemini`, `codex` from `PATH`, listed only when found |
+| Antigravity CLI, Codex CLI | `agy` from its install folder or `PATH`, `codex` from `PATH`, listed only when found |
 | PowerShell (Windows) | `pwsh` from `PATH`, else Windows PowerShell |
 | Git Bash (Windows) | `bin\bash.exe` under Git's install folder |
 | Shells (macOS) | Your login shell first, then `/bin/zsh`, `/bin/bash` and Homebrew's `fish`, then each other installed shell in `/etc/shells`, each with `-l` |

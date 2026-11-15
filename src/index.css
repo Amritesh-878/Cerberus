@@ -12,7 +12,7 @@
   --added: #6cc07a;
   --removed: #e5736b;
   --warn: #e0a43a;
-  --gemini: #8e75b2;
+  --agy: #8e9cf8;
   --codex: #9fd6b4;
   --sidebar-width: 248px;
 
@@ -118,8 +118,8 @@ button {
   color: var(--dim);
 }
 
-.icon-gemini {
-  color: var(--gemini);
+.icon-agy {
+  color: var(--agy);
 }
 
 .icon-codex {

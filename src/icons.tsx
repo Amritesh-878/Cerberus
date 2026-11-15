@@ -38,23 +38,23 @@ export function ShellIcon(props: { size?: number }) {
   );
 }
 
-// Simple Icons 16.36.0 `googlegemini` (CC0 file; the mark is Google's), padded by the view box to the other icons' size.
-export function GeminiIcon(props: { size?: number }) {
+// Simple Icons 16.37.0 has no Antigravity mark, so Antigravity CLI gets a generic four-point sparkle.
+export function AntigravityIcon(props: { size?: number }) {
   return (
     <svg
-      class="icon-gemini"
+      class="icon-agy"
       width={props.size ?? 14}
       height={props.size ?? 14}
-      viewBox="-1.5 -1.5 27 27"
+      viewBox="0 0 16 16"
       fill="currentColor"
       aria-hidden="true"
     >
-      <path d="M11.04 19.32Q12 21.51 12 24q0-2.49.93-4.68.96-2.19 2.58-3.81t3.81-2.55Q21.51 12 24 12q-2.49 0-4.68-.93a12.3 12.3 0 0 1-3.81-2.58 12.3 12.3 0 0 1-2.58-3.81Q12 2.49 12 0q0 2.49-.96 4.68-.93 2.19-2.55 3.81a12.3 12.3 0 0 1-3.81 2.58Q2.49 12 0 12q2.49 0 4.68.96 2.19.93 3.81 2.55t2.55 3.81" />
+      <path d="M8 1.2C8.5 5.1 10.9 7.5 14.8 8 10.9 8.5 8.5 10.9 8 14.8 7.5 10.9 5.1 8.5 1.2 8 5.1 7.5 7.5 5.1 8 1.2Z" />
     </svg>
   );
 }
 
-// Simple Icons 16.36.0 has no OpenAI mark, so Codex CLI gets generic curly braces.
+// Simple Icons 16.37.0 has no OpenAI mark, so Codex CLI gets generic curly braces.
 export function CodexIcon(props: { size?: number }) {
   return (
     <svg
@@ -80,8 +80,8 @@ export function ProgramIcon(props: { program: string; size?: number }) {
       <Match when={props.program === "claude"}>
         <ClaudeIcon size={props.size} />
       </Match>
-      <Match when={props.program === "gemini"}>
-        <GeminiIcon size={props.size} />
+      <Match when={props.program === "agy"}>
+        <AntigravityIcon size={props.size} />
       </Match>
       <Match when={props.program === "codex"}>
         <CodexIcon size={props.size} />

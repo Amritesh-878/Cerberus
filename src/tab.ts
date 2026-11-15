@@ -27,8 +27,8 @@ export interface TabOptions {
   signIn?: boolean;
 }
 
-/** Gemini CLI and Codex CLI: plain programs with no Claude account and none of the Claude features. */
-export const OTHER_CLIS = ["gemini", "codex"] as const;
+/** Antigravity CLI and Codex CLI: plain programs with no Claude account and none of the Claude features. */
+export const OTHER_CLIS = ["agy", "codex"] as const;
 
 export function isOtherCli(program: string): boolean {
   return (OTHER_CLIS as readonly string[]).includes(program);

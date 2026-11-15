@@ -42,25 +42,22 @@ test("an installed program opens a tab under its account", () => {
   });
 });
 
-test.each(["gemini", "codex"])(
-  "a %s tab never takes the chosen account",
-  (id) => {
-    const tab = tabFor(
-      { ...GIT_BASH, id, label: id, program: String.raw`C:\npm\x.cmd` },
-      {
-        account: { id: 2, name: "work", configDir: String.raw`C:\h\.c` },
-        cwd: String.raw`C:\code`,
-      },
-    );
+test.each(["agy", "codex"])("a %s tab never takes the chosen account", (id) => {
+  const tab = tabFor(
+    { ...GIT_BASH, id, label: id, program: String.raw`C:\npm\x.cmd` },
+    {
+      account: { id: 2, name: "work", configDir: String.raw`C:\h\.c` },
+      cwd: String.raw`C:\code`,
+    },
+  );
 
-    expect(tab?.spec.account).toBeNull();
-    expect(tab?.account).toBeNull();
-    expect(tab?.spec.cwd).toBe(String.raw`C:\code`);
-  },
-);
+  expect(tab?.spec.account).toBeNull();
+  expect(tab?.account).toBeNull();
+  expect(tab?.spec.cwd).toBe(String.raw`C:\code`);
+});
 
-test("gemini and codex tabs take the CLI keys, an ended chat the shell's", () => {
-  expect(tabKind("gemini", false)).toBe("cli");
+test("agy and codex tabs take the CLI keys, an ended chat the shell's", () => {
+  expect(tabKind("agy", false)).toBe("cli");
   expect(tabKind("codex", true)).toBe("cli");
   expect(tabKind("claude", false)).toBe("claude");
   expect(tabKind("claude", true)).toBe("shell");

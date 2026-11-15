@@ -158,7 +158,7 @@ test("a tab change reads the new tab's cards and polls only the new folder", asy
   expect(calls.filter((c) => c.startsWith("panel_changes"))).toHaveLength(2);
 });
 
-test("a Gemini CLI or Codex CLI tab reads its folder's changes and no Claude skills or connectors", async () => {
+test("a Antigravity CLI or Codex CLI tab reads its folder's changes and no Claude skills or connectors", async () => {
   const { calls } = core();
   const { linkChanged } = feedFor({ ...A, account: null, otherCli: true });
   await flush();

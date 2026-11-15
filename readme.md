@@ -6,7 +6,7 @@ it, and each tab keeps its Claude Code chat, so after a restart or a crash your 
 their chats resume.
 
 Each Claude Code tab runs the official `claude` CLI. Cerberus is built around Claude Code, and can
-also open Gemini CLI and Codex CLI tabs when they are installed; it never signs in to them or reads
+also open Antigravity CLI and Codex CLI tabs when they are installed; it never signs in to them or reads
 their config or history. Built with Claude Code.
 
 ## Install
@@ -144,8 +144,7 @@ Stack: Tauri 2, Rust, Solid + TypeScript with Vite, xterm.js over `portable-pty`
 
 MIT, see `LICENSE`. Skills under `.claude/skills/` keep their own MIT notices in
 `.claude/skills/notice.md`. The bundled zsh-autosuggestions (MIT) is listed with its version and
-licence in `src-tauri/vendor/notice.md`. The Gemini CLI tab icon is the `googlegemini` file from
-[Simple Icons](https://simpleicons.org) 16.36.0 (CC0).
+licence in `src-tauri/vendor/notice.md`.
 
-Claude, Gemini and Codex names and marks belong to Anthropic, Google and OpenAI; Cerberus uses them
-only to show which CLI a tab runs, and is not affiliated with or endorsed by them.
+Claude, Antigravity and Codex names and marks belong to Anthropic, Google and OpenAI; Cerberus uses
+them only to show which CLI a tab runs, and is not affiliated with or endorsed by them.

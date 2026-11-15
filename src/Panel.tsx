@@ -82,7 +82,7 @@ export function Panel(props: {
   overlay?: boolean;
   onClose?: () => void;
 }) {
-  // Gemini CLI and Codex CLI tabs show only their folder, branch and changes.
+  // Antigravity CLI and Codex CLI tabs show only their folder, branch and changes.
   const otherCli = () => isOtherCli(props.tab?.launch.program ?? "");
   const target = (): Target | undefined => {
     const tab = props.tab;

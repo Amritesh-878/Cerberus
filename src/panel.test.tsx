@@ -223,7 +223,7 @@ test("the cards show the shown tab and switch with it", async () => {
   expect(field(last?.args, "tab")).toBe(4);
 });
 
-test("a Gemini CLI tab's panel shows only Environment and Changes, with no account", async () => {
+test("a Antigravity CLI tab's panel shows only Environment and Changes, with no account", async () => {
   const core = panelCore(withPanel({ open: true }));
   const tree: SavedTree = {
     ...TREE,
@@ -233,8 +233,8 @@ test("a Gemini CLI tab's panel shows only Environment and Changes, with no accou
         id: 5,
         projectId: 1,
         parentId: null,
-        title: "gemini",
-        program: "gemini",
+        title: "agy",
+        program: "agy",
         cwd: ALPHA,
         account: null,
       },
@@ -245,7 +245,7 @@ test("a Gemini CLI tab's panel shows only Environment and Changes, with no accou
     ...core.core,
     tree_load: () => ({ tree, notice: null }),
   });
-  await open(root, "gemini");
+  await open(root, "agy");
 
   const titles = [...root.querySelectorAll(".panel .card-title")].map(
     (t) => t.textContent,

@@ -27,7 +27,7 @@ export interface Target {
   account: AccountId | null;
   /** Extra folders, each read like the main one. */
   dirs: readonly string[];
-  /** Gemini CLI or Codex CLI, which read no Claude skills or connectors. */
+  /** Antigravity CLI or Codex CLI, which read no Claude skills or connectors. */
   otherCli?: boolean;
 }
 

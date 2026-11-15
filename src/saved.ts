@@ -87,7 +87,7 @@ function launchOf(
   programs: readonly ProgramChoice[],
 ): Tab {
   const choice = installed(programs, saved.program);
-  // Gemini CLI and Codex CLI never run on an account, whatever an older save says.
+  // Antigravity CLI and Codex CLI never run on an account, whatever an older save says.
   const accountId = isOtherCli(saved.program) ? null : saved.account;
   const account =
     accountId === null
