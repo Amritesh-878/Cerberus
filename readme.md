@@ -1,7 +1,7 @@
 # Cerberus
 
 A terminal for running Claude Code under several accounts at once, each tab on the account you
-pick, on Windows with a macOS preview. Every project is a folder in the sidebar with its tabs under
+pick, on Windows with macOS and Linux previews. Every project is a folder in the sidebar with its tabs under
 it, and each tab keeps its Claude Code chat, so after a restart or a crash your tabs come back and
 their chats resume.
 
@@ -28,6 +28,24 @@ yourself next to `claude`:
 mkdir -p ~/.local/bin
 ln -sf /Applications/Cerberus.app/Contents/MacOS/cerberus-cli ~/.local/bin/cerberus
 ```
+
+**Linux (x86_64, preview):** download the AppImage or the .deb from Releases. Both are built on
+Ubuntu 24.04, so they need its glibc (2.39) or newer. The AppImage:
+
+```sh
+chmod +x Cerberus_<version>_amd64.AppImage
+./Cerberus_<version>_amd64.AppImage
+```
+
+The .deb (Ubuntu 24.04 and later, Debian 13) installs `cerberus` with its helpers in `/usr/bin` and
+adds it to the app menu:
+
+```sh
+sudo apt install ./Cerberus_<version>_amd64.deb
+```
+
+To use `cerberus` in a terminal from the .deb, click **Install `cerberus` command** in **Accounts**.
+An AppImage can't link it, since its files are gone once it closes.
 
 You also need [Claude Code](https://code.claude.com/docs/en/setup). Each release lists its files'
 SHA-256 so you can check a download.
@@ -71,7 +89,7 @@ More detail on each, and how it works: [`docs/guide.md`](docs/guide.md).
 
 ## Keys
 
-| Action | Windows | macOS |
+| Action | Windows and Linux | macOS |
 |---|---|---|
 | Next or previous tab | Ctrl+Tab, Ctrl+Shift+Tab | Cmd+Shift+] / [ (or Ctrl+Tab) |
 | New tab | Ctrl+Shift+T | Cmd+T |
@@ -84,7 +102,7 @@ More detail on each, and how it works: [`docs/guide.md`](docs/guide.md).
 | New line in a Claude Code message | Shift+Enter | Shift+Enter |
 
 They leave Claude Code's own keys alone (Ctrl+T, Ctrl+B, Ctrl+E, Ctrl+C, Ctrl+V, Alt+V, Shift+Tab). Paste an image
-into Claude Code with Alt+V on Windows, or Cmd+V on macOS. In a shell tab, Shift+Enter is Enter.
+into Claude Code with Alt+V on Windows, Ctrl+V on Linux, or Cmd+V on macOS. In a shell tab, Shift+Enter is Enter.
 
 In a terminal on macOS, the editing keys of Terminal.app:
 
@@ -119,6 +137,7 @@ npm ci              # not npm install, which rewrites the lockfile on Windows
 npm run tauri dev   # run it
 npm run tauri build # Windows installer
 npm run tauri build -- --bundles dmg   # macOS .dmg
+npm run tauri build -- --bundles appimage,deb   # Linux AppImage and .deb
 ```
 
 The gate, in order, where only 0 errors, 0 warnings and every test passing counts:
