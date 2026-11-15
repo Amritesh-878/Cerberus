@@ -2711,6 +2711,11 @@ button.card-row:focus-visible,
   position: relative;
 }
 
+/* The written mark and branch may take two lines rather than be cut off beside the counts. */
+.repo-row .row-detail {
+  white-space: normal;
+}
+
 .worktrees {
   display: flex;
   flex-direction: column;

@@ -388,3 +388,40 @@ test("refusals and results read plainly", () => {
     }),
   ).toBe("alpha-dirty: kept, it has uncommitted changes");
 });
+
+test("a written worktree of the same GitHub repo does not list that repo's PRs again", async () => {
+  const core = worktreeCore();
+  const prs = [
+    {
+      number: 14,
+      title: "Invoices",
+      state: "open",
+      key: "example/alpha#14",
+      updated: "u14",
+    },
+  ];
+  const root = await renderApp(() => PROFILES, {
+    ...core.core,
+    panel_prs: () => prs,
+    panel_changes: () => ({
+      ...repo("alpha", "C:/code/alpha", "main"),
+      gh: true,
+    }),
+    panel_written: () => [
+      {
+        folder: WT,
+        changes: {
+          ...repo("alpha-wt", "C:/code/alpha-wt", "feat/wt"),
+          gh: true,
+        },
+      },
+    ],
+  });
+  await open(root, "planner");
+
+  const titles = [...changesCard(root).querySelectorAll(".pr-row")].map(
+    (r) => r.textContent,
+  );
+  expect(titles).toHaveLength(1);
+  expect(titles[0]).toContain("alpha #14");
+});

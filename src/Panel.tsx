@@ -679,6 +679,13 @@ function ChangesBody(props: {
   };
   // Keyed by root, so each poll's fresh objects keep the rows, and an open PR menu, in place.
   const roots = () => [...repos().keys()];
+  // Worktrees of one GitHub repo list the same PRs; each shows once, under the first of them.
+  const listedAbove = (root: string, key: string) => {
+    const earlier = roots().slice(0, roots().indexOf(root));
+    return props.prs.some(
+      (r) => earlier.includes(r.root) && r.prs.some((pr) => pr.key === key),
+    );
+  };
   return (
     <Switch fallback={<Note>Reading…</Note>}>
       <Match when={props.folder === null}>
@@ -740,7 +747,9 @@ function ChangesBody(props: {
                 {(repoPrs) => (
                   <PrList
                     repo={repoPrs()}
-                    isDismissed={props.isDismissed}
+                    isDismissed={(pr) =>
+                      props.isDismissed(pr) || listedAbove(root, pr.key)
+                    }
                     actions={props.actions}
                   />
                 )}
