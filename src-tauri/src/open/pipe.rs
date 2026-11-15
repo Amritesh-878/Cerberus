@@ -279,4 +279,18 @@ mod tests {
             Some((0, "answered".to_owned()))
         );
     }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_socket_and_a_folder_made_for_it_are_the_users_alone() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = crate::accounts::testdir::TestDir::new();
+        let name = dir.path().join("app-data").join("open.sock");
+        let name = name.to_string_lossy();
+        serve(&name, |_| (0, String::new())).unwrap();
+        let mode = |p: &std::path::Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+
+        assert_eq!(mode(&dir.path().join("app-data")), 0o700);
+        assert_eq!(mode(std::path::Path::new(&*name)), 0o600);
+    }
 }

@@ -55,7 +55,7 @@ accounts, **Resume chat** for an ended chat, and **Accounts**, always last.
 Every tab keeps running while another shows. Closing a tab ends its program and anything it
 started, and no other tab's. Closing the window ends every tab's program, but a window started
 from a tab (an editor opened with `code .`) stays open. On Windows a crash or forced kill also
-ends what the app started; on macOS a tab's programs get a hangup when its terminal closes.
+ends what the app started; on macOS and Linux a tab's programs get a hangup when its terminal closes.
 
 Drag the sidebar's right edge to resize it, or double-click the edge to reset it.
 
@@ -550,7 +550,9 @@ prints. The Windows installer adds it as `cerberus.com` in `%LOCALAPPDATA%\Cerbe
 in **Accounts** links it as `~/.local/bin/cerberus`, replacing an older link but never a file of
 your own. If `~/.local/bin` isn't on your login shell's `PATH`, it shows the line to add to your
 shell's startup file; Cerberus never edits that file itself. It refuses while Cerberus runs from
-the disk image. In a dev build the command is `src-tauri/target/debug/cerberus-cli`.
+the disk image. On Linux the .deb puts it in `/usr/bin/cerberus-cli`, and the same button links it
+as `~/.local/bin/cerberus`; it refuses from an AppImage. In a dev build the command is
+`src-tauri/target/debug/cerberus-cli`.
 
 ## Programs and environment
 
@@ -561,6 +563,7 @@ the disk image. In a dev build the command is `src-tauri/target/debug/cerberus-c
 | PowerShell (Windows) | `pwsh` from `PATH`, else Windows PowerShell |
 | Git Bash (Windows) | `bin\bash.exe` under Git's install folder |
 | Shells (macOS) | Your login shell first, then `/bin/zsh`, `/bin/bash` and Homebrew's `fish`, then each other installed shell in `/etc/shells`, each with `-l` |
+| Shells (Linux) | The same list. A shell reached by two paths (`/bin/bash` and `/usr/bin/bash`) is listed once, and `tmux`, `screen`, `rbash` and `nologin` are left out |
 
 A tab under an account other than the default gets `CLAUDE_CONFIG_DIR` set to its folder, so
 `claude` there, or typed in a shell tab, runs on that account. The variables a Claude Code session
@@ -569,7 +572,7 @@ sets for its own shells (`CLAUDECODE`, `CLAUDE_CODE_SESSION_ID` and the like, wi
 `CLAUDE_CODE_USE_BEDROCK`, and a `NO_COLOR` of your own, stay.
 
 Selecting text copies it. Ctrl+V pastes text (Cmd+V on macOS). In Claude Code, Alt+V or Ctrl+V
-pastes an image (Cmd+V or Ctrl+V on macOS).
+pastes an image (Cmd+V or Ctrl+V on macOS, Ctrl+V on Linux).
 
 ## Suggestions in shell tabs
 
@@ -609,16 +612,32 @@ start on macOS.
 - Windows only: the installer, its `PATH` entry and the uninstaller.
 - The macOS build is built and tested in CI, and is in its first hands-on testing.
 
+## Linux notes
+
+The Linux build is a preview: built and tested in CI on Ubuntu, and run on Ubuntu 26.04 under
+WSLg, but not yet on a full desktop.
+
+- Keys are the Windows ones (Ctrl+Shift+T, Ctrl+Shift+W and so on); there is no Mac remapping.
+- Opened from a desktop launcher, an app may get a short `PATH`. As on macOS, Cerberus reads `PATH`
+  from your login shell once at start (bash when `SHELL` is unset).
+- The terminal font is DejaVu Sans Mono, falling back to Ubuntu Mono and Liberation Mono.
+- **Install `cerberus` command** in **Accounts** links `~/.local/bin/cerberus` to the .deb's
+  `/usr/bin/cerberus-cli`. An AppImage can't link it, since its files are gone once it closes.
+- A tab's processes are read from `/proc`. Messages between accounts use a socket in your
+  session's runtime folder (`$XDG_RUNTIME_DIR`), never the shared `/tmp`, and every socket is
+  yours alone (0600).
+- As on macOS, a tab's programs get a hangup when its terminal closes, a crash included.
+
 ## Where data lives
 
-| | Windows | macOS |
-|---|---|---|
-| Accounts and settings (`profiles.json`) | `%APPDATA%\com.cerberus.terminal` | `~/Library/Application Support/com.cerberus.terminal` |
-| Saved tabs (`tree.db`) | same folder | same folder |
-| zsh suggestion files (`shell/zsh`) | same folder | same folder |
-| MCP config for messages between accounts (`mcp.json`) | `%APPDATA%\com.cerberus.terminal` | `~/Library/Application Support/com.cerberus.terminal` |
-| Services (`services.json`) | same folder | same folder |
-| Status line settings for live cards (`live/tab-<id>.json`) | same folder | same folder |
+| | Windows | macOS | Linux |
+|---|---|---|---|
+| Accounts and settings (`profiles.json`) | `%APPDATA%\com.cerberus.terminal` | `~/Library/Application Support/com.cerberus.terminal` | `~/.config/com.cerberus.terminal` |
+| Saved tabs (`tree.db`) | same folder | same folder | same folder |
+| Services (`services.json`) | same folder | same folder | same folder |
+| zsh suggestion files (`shell/zsh`) | same folder | same folder | `~/.local/share/com.cerberus.terminal` |
+| MCP config for messages between accounts (`mcp.json`) | same folder | same folder | `~/.local/share/com.cerberus.terminal` |
+| Status line settings for live cards (`live/tab-<id>.json`) | same folder | same folder | `~/.local/share/com.cerberus.terminal` |
 
 Uninstalling on Windows keeps this folder unless you tick the box to delete the app data. An
 unreadable `profiles.json` is kept as `profiles.json.bad` and the app offers to start fresh.

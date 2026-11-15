@@ -10,7 +10,7 @@ import {
   setStartFolder,
   setSuggestions,
 } from "./accounts";
-import { installCli, type Linked } from "./cli";
+import { installCli, type Linked, linksCli } from "./cli";
 import { PLATFORM } from "./keys";
 import { LiveSetting } from "./LiveSetting";
 import { MessagesSetting } from "./MessagesSetting";
@@ -75,7 +75,7 @@ export function AccountsScreen(props: {
         onProfiles={props.onProfiles}
       />
       <LiveSetting profiles={props.profiles} onProfiles={props.onProfiles} />
-      <Show when={PLATFORM === "mac"}>
+      <Show when={linksCli(PLATFORM)}>
         <h3>Command line</h3>
         <CliInstall />
       </Show>
@@ -280,7 +280,7 @@ function StartFolderSetting(props: {
   );
 }
 
-/** Links the `cerberus` command, since a macOS app can't put itself on `PATH` the way the Windows installer does. */
+/** Links the `cerberus` command, since a macOS or Linux app can't put itself on `PATH` the way the Windows installer does. */
 export function CliInstall() {
   const [linked, setLinked] = createSignal<Linked>();
   const [error, setError] = createSignal<string>();

@@ -38,24 +38,31 @@ pub struct Listener(UnixListener);
 
 impl Listener {
     pub fn bind(name: &str) -> io::Result<Self> {
+        use std::os::unix::fs::DirBuilderExt;
         let path = Path::new(name);
-        if let Some(dir) = path.parent() {
-            std::fs::create_dir_all(dir)?;
+        if let Some(dir) = path.parent().filter(|dir| !dir.exists()) {
+            std::fs::DirBuilder::new()
+                .recursive(true)
+                .mode(0o700)
+                .create(dir)?;
         }
-        match UnixListener::bind(path) {
-            Ok(listener) => Ok(Self(listener)),
-            Err(e) if e.kind() == io::ErrorKind::AddrInUse => Self::reclaim(path, e),
-            Err(e) => Err(e),
-        }
+        let listener = match UnixListener::bind(path) {
+            Ok(listener) => listener,
+            Err(e) if e.kind() == io::ErrorKind::AddrInUse => Self::reclaim(path, e)?,
+            Err(e) => return Err(e),
+        };
+        // Only the user's own `cerberus` may hand the app a folder to open.
+        std::fs::set_permissions(path, std::os::unix::fs::PermissionsExt::from_mode(0o600))?;
+        Ok(Self(listener))
     }
 
     /// Takes over a socket file only when no app answers on it.
-    fn reclaim(path: &Path, in_use: io::Error) -> io::Result<Self> {
+    fn reclaim(path: &Path, in_use: io::Error) -> io::Result<UnixListener> {
         if connect(&path.to_string_lossy())?.is_some() {
             return Err(in_use);
         }
         std::fs::remove_file(path)?;
-        UnixListener::bind(path).map(Self)
+        UnixListener::bind(path)
     }
 
     /// The outer error stops listening; the inner one is an asker that left early.
