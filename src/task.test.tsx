@@ -78,6 +78,9 @@ function taskCore(options: { worktreeFails?: string } = {}) {
       pty_write: (args: unknown) => {
         writes.push(String(field(args, "data")));
       },
+      panel_changes: () => ({ kind: "notRepo" }),
+      panel_connectors: () => ({ servers: [], unreadable: [] }),
+      panel_skills: () => [],
       ...record("task_folder", () => TASKS),
       ...record("task_files", () => FILES),
       task_default_prompt: () => DEFAULT,
