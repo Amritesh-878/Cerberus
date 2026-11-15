@@ -3675,18 +3675,9 @@ button.card-row:focus-visible,
   border-radius: 4px;
 }
 
-.limit-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  justify-content: flex-end;
-  margin-top: 18px;
-}
-
+/* The row takes the dialogs' action styles; its buttons also hold an account dot. */
 .limit-actions button {
   display: inline-flex;
   gap: 6px;
   align-items: center;
-  width: auto;
-  margin-top: 0;
 }

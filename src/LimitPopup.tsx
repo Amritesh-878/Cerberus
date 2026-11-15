@@ -74,7 +74,7 @@ export function LimitPopup(props: {
             stops, and <code>continue</code> is typed for you to send.
           </Show>
         </p>
-        <div class="limit-actions">
+        <div class="limit-actions env-actions">
           <For each={offered()}>
             {(account, index) => (
               <button
