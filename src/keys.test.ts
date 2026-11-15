@@ -321,6 +321,17 @@ describe("Shift+Enter", () => {
   );
 
   test.each<Platform>(["other", "mac"])(
+    "on %s sends Ctrl+J, the documented newline, in a Gemini CLI or Codex CLI tab",
+    (platform) => {
+      expect(terminalAction(shiftEnter, "cli", platform)).toEqual({
+        kind: "send",
+        bytes: "\n",
+      });
+      expect(terminalAction(chord("Enter"), "cli", platform)).toBeUndefined();
+    },
+  );
+
+  test.each<Platform>(["other", "mac"])(
     "on %s stays Enter in a shell",
     (platform) => {
       expect(terminalAction(shiftEnter, "shell", platform)).toBeUndefined();

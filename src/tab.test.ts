@@ -2,7 +2,7 @@ import { expect, test } from "vitest";
 
 import type { Profiles } from "./accounts";
 import type { ProgramChoice } from "./pty";
-import { shellChoice, tabFor } from "./tab";
+import { shellChoice, tabFor, tabKind } from "./tab";
 
 const GIT_BASH = {
   id: "git-bash",
@@ -40,6 +40,31 @@ test("an installed program opens a tab under its account", () => {
     input: null,
     signIn: false,
   });
+});
+
+test.each(["gemini", "codex"])(
+  "a %s tab never takes the chosen account",
+  (id) => {
+    const tab = tabFor(
+      { ...GIT_BASH, id, label: id, program: String.raw`C:\npm\x.cmd` },
+      {
+        account: { id: 2, name: "work", configDir: String.raw`C:\h\.c` },
+        cwd: String.raw`C:\code`,
+      },
+    );
+
+    expect(tab?.spec.account).toBeNull();
+    expect(tab?.account).toBeNull();
+    expect(tab?.spec.cwd).toBe(String.raw`C:\code`);
+  },
+);
+
+test("gemini and codex tabs take the CLI keys, an ended chat the shell's", () => {
+  expect(tabKind("gemini", false)).toBe("cli");
+  expect(tabKind("codex", true)).toBe("cli");
+  expect(tabKind("claude", false)).toBe("claude");
+  expect(tabKind("claude", true)).toBe("shell");
+  expect(tabKind("powershell", false)).toBe("shell");
 });
 
 test("a tab with no account carries its typed input", () => {

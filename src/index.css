@@ -116,6 +116,11 @@ button {
   color: var(--dim);
 }
 
+.icon-gemini,
+.icon-codex {
+  color: var(--text);
+}
+
 .sidebar {
   display: flex;
   flex-direction: column;

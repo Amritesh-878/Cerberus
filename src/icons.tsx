@@ -1,4 +1,4 @@
-import { Show } from "solid-js";
+import { Match, Switch } from "solid-js";
 
 import { type AccountId, accountColor } from "./accounts";
 export function ClaudeIcon(props: { size?: number }) {
@@ -38,16 +38,58 @@ export function ShellIcon(props: { size?: number }) {
   );
 }
 
+// A generic twins mark, not Google's logo.
+export function GeminiIcon(props: { size?: number }) {
+  return (
+    <svg
+      class="icon-gemini"
+      width={props.size ?? 14}
+      height={props.size ?? 14}
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.6"
+      stroke-linecap="round"
+      aria-hidden="true"
+    >
+      <path d="M3 3.2c3 1.3 7 1.3 10 0M3 12.8c3-1.3 7-1.3 10 0M6 4.3v7.4M10 4.3v7.4" />
+    </svg>
+  );
+}
+
+// A generic open book (a codex), not OpenAI's logo.
+export function CodexIcon(props: { size?: number }) {
+  return (
+    <svg
+      class="icon-codex"
+      width={props.size ?? 14}
+      height={props.size ?? 14}
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.5"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M8 4.6C6.6 3.5 4.6 3.1 2.5 3.3v8.8c2.1-.2 4.1.2 5.5 1.3 1.4-1.1 3.4-1.5 5.5-1.3V3.3c-2.1-.2-4.1.2-5.5 1.3Zm0 0v8.8" />
+    </svg>
+  );
+}
+
 export function ProgramIcon(props: { program: string; size?: number }) {
   return (
-    <>
-      <Show
-        when={props.program === "claude"}
-        fallback={<ShellIcon size={props.size} />}
-      >
+    <Switch fallback={<ShellIcon size={props.size} />}>
+      <Match when={props.program === "claude"}>
         <ClaudeIcon size={props.size} />
-      </Show>
-    </>
+      </Match>
+      <Match when={props.program === "gemini"}>
+        <GeminiIcon size={props.size} />
+      </Match>
+      <Match when={props.program === "codex"}>
+        <CodexIcon size={props.size} />
+      </Match>
+    </Switch>
   );
 }
 

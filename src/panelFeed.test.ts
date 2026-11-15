@@ -158,6 +158,19 @@ test("a tab change reads the new tab's cards and polls only the new folder", asy
   expect(calls.filter((c) => c.startsWith("panel_changes"))).toHaveLength(2);
 });
 
+test("a Gemini CLI or Codex CLI tab reads its folder's changes and no Claude skills or connectors", async () => {
+  const { calls } = core();
+  const { linkChanged } = feedFor({ ...A, account: null, otherCli: true });
+  await flush();
+  linkChanged();
+  await flush();
+
+  expect(calls.sort()).toEqual([
+    String.raw`panel_changes C:\a`,
+    String.raw`panel_prs C:\a`,
+  ]);
+});
+
 test("nothing is read once the feed is gone, as when the panel closes", async () => {
   const { calls } = core();
   feedFor(A);
