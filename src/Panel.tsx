@@ -42,6 +42,7 @@ import type { LiveView } from "./live";
 import { ContextCard, UsageCard } from "./LiveCards";
 import { PanelEdge } from "./SidebarEdge";
 import type { Statuses } from "./statuses";
+import { isOtherCli } from "./tab";
 import { folderName, type TabId, type TreeTab } from "./tree";
 import { OutputsCard, TasksCard } from "./WorkCards";
 
@@ -81,6 +82,8 @@ export function Panel(props: {
   overlay?: boolean;
   onClose?: () => void;
 }) {
+  // Antigravity CLI and Codex CLI tabs show only their folder, branch and changes.
+  const otherCli = () => isOtherCli(props.tab?.launch.program ?? "");
   const target = (): Target | undefined => {
     const tab = props.tab;
     if (tab === undefined) return undefined;
@@ -89,6 +92,7 @@ export function Panel(props: {
       folder: tab.launch.spec.cwd,
       account: tab.launch.account?.id ?? null,
       dirs: tab.launch.spec.dirs ?? [],
+      otherCli: otherCli(),
     };
   };
   const feed = createPanelFeed(target, POLL_MS, () => props.links);
@@ -201,7 +205,9 @@ export function Panel(props: {
             <Show
               when={account()}
               fallback={
-                <Row icon={<span class="dot none" />} text="No account" />
+                <Show when={!otherCli()}>
+                  <Row icon={<span class="dot none" />} text="No account" />
+                </Show>
               }
             >
               {(tabAccount) => {
@@ -298,11 +304,13 @@ export function Panel(props: {
               state={props.state}
             />
           </Show>
-          <UsageCard
-            profiles={props.profiles}
-            meters={props.live.meters}
-            state={props.state}
-          />
+          <Show when={!otherCli()}>
+            <UsageCard
+              profiles={props.profiles}
+              meters={props.live.meters}
+              state={props.state}
+            />
+          </Show>
           <Card id="changes" title="Changes" state={props.state}>
             <ChangesBody
               folder={props.tab?.launch.spec.cwd ?? null}
@@ -316,72 +324,76 @@ export function Panel(props: {
               }}
             />
           </Card>
-          <Card
-            id="skills"
-            title="Skills"
-            meta={skills()?.length ? String(skills()?.length) : undefined}
-            state={props.state}
-          >
-            <Show
-              when={skills()}
-              fallback={<Note>{loadedError(feed.skills()) ?? "Reading…"}</Note>}
+          <Show when={!otherCli()}>
+            <Card
+              id="skills"
+              title="Skills"
+              meta={skills()?.length ? String(skills()?.length) : undefined}
+              state={props.state}
             >
-              {(found) => (
-                <For each={found()} fallback={<Note>No skills</Note>}>
-                  {(skill) => (
-                    <SkillRow
-                      skill={skill}
-                      account={account()?.id}
-                      state={props.state}
-                      canType={props.canType}
-                      onType={props.onType}
-                    />
-                  )}
-                </For>
-              )}
-            </Show>
-          </Card>
-          <Card
-            id="connectors"
-            title="Connectors"
-            subtitle="MCP servers this chat loads"
-            meta={
-              connectors()?.servers.length
-                ? `${String(connectors()?.servers.length)} configured`
-                : undefined
-            }
-            state={props.state}
-          >
-            <Show
-              when={connectors()}
-              fallback={
-                <Note>{loadedError(feed.connectors()) ?? "Reading…"}</Note>
-              }
-            >
-              {(found) => (
-                <>
-                  <For
-                    each={found().servers}
-                    fallback={<Note>None configured</Note>}
-                  >
-                    {(server) => (
-                      <Row
-                        icon={<PlugIcon />}
-                        text={server.name}
-                        meta={`${server.kind} · ${connectorScope(server.scope)}`}
+              <Show
+                when={skills()}
+                fallback={
+                  <Note>{loadedError(feed.skills()) ?? "Reading…"}</Note>
+                }
+              >
+                {(found) => (
+                  <For each={found()} fallback={<Note>No skills</Note>}>
+                    {(skill) => (
+                      <SkillRow
+                        skill={skill}
+                        account={account()?.id}
+                        state={props.state}
+                        canType={props.canType}
+                        onType={props.onType}
                       />
                     )}
                   </For>
-                  <For each={found().unreadable}>
-                    {(file) => <Note>Could not read {file}</Note>}
-                  </For>
-                  <p class="card-note faint">
-                    Connectors added on claude.ai are not listed here
-                  </p>
-                </>
-              )}
-            </Show>
-          </Card>
+                )}
+              </Show>
+            </Card>
+            <Card
+              id="connectors"
+              title="Connectors"
+              subtitle="MCP servers this chat loads"
+              meta={
+                connectors()?.servers.length
+                  ? `${String(connectors()?.servers.length)} configured`
+                  : undefined
+              }
+              state={props.state}
+            >
+              <Show
+                when={connectors()}
+                fallback={
+                  <Note>{loadedError(feed.connectors()) ?? "Reading…"}</Note>
+                }
+              >
+                {(found) => (
+                  <>
+                    <For
+                      each={found().servers}
+                      fallback={<Note>None configured</Note>}
+                    >
+                      {(server) => (
+                        <Row
+                          icon={<PlugIcon />}
+                          text={server.name}
+                          meta={`${server.kind} · ${connectorScope(server.scope)}`}
+                        />
+                      )}
+                    </For>
+                    <For each={found().unreadable}>
+                      {(file) => <Note>Could not read {file}</Note>}
+                    </For>
+                    <p class="card-note faint">
+                      Connectors added on claude.ai are not listed here
+                    </p>
+                  </>
+                )}
+              </Show>
+            </Card>
+          </Show>
           <Show when={failed()}>
             {(message) => <p class="panel-error">{message()}</p>}
           </Show>

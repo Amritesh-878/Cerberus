@@ -259,7 +259,9 @@ export function EnvironmentDialog(props: {
           </button>
           <Show when={plan().restart}>
             <p class="env-note">
-              The tab restarts in the new folder and resumes the same chat.
+              {props.tab.launch.program === "claude"
+                ? "The tab restarts in the new folder and resumes the same chat."
+                : "The tab restarts in the new folder."}
             </p>
           </Show>
           <Show when={plan().added.length > 0 && props.chatRunning}>

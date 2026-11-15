@@ -1,4 +1,4 @@
-import { Show } from "solid-js";
+import { Match, Switch } from "solid-js";
 
 import { type AccountId, accountColor } from "./accounts";
 export function ClaudeIcon(props: { size?: number }) {
@@ -38,16 +38,55 @@ export function ShellIcon(props: { size?: number }) {
   );
 }
 
+// Simple Icons 16.37.0 has no Antigravity mark, so Antigravity CLI gets a generic four-point sparkle.
+export function AntigravityIcon(props: { size?: number }) {
+  return (
+    <svg
+      class="icon-agy"
+      width={props.size ?? 14}
+      height={props.size ?? 14}
+      viewBox="0 0 16 16"
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      <path d="M8 1.2C8.5 5.1 10.9 7.5 14.8 8 10.9 8.5 8.5 10.9 8 14.8 7.5 10.9 5.1 8.5 1.2 8 5.1 7.5 7.5 5.1 8 1.2Z" />
+    </svg>
+  );
+}
+
+// Simple Icons 16.37.0 has no OpenAI mark, so Codex CLI gets generic curly braces.
+export function CodexIcon(props: { size?: number }) {
+  return (
+    <svg
+      class="icon-codex"
+      width={props.size ?? 14}
+      height={props.size ?? 14}
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.6"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M5.5 2.5c-1.4 0-2 .6-2 1.9v1.8c0 .9-.5 1.5-1.5 1.8 1 .3 1.5.9 1.5 1.8v1.8c0 1.3.6 1.9 2 1.9M10.5 2.5c1.4 0 2 .6 2 1.9v1.8c0 .9.5 1.5 1.5 1.8-1 .3-1.5.9-1.5 1.8v1.8c0 1.3-.6 1.9-2 1.9" />
+    </svg>
+  );
+}
+
 export function ProgramIcon(props: { program: string; size?: number }) {
   return (
-    <>
-      <Show
-        when={props.program === "claude"}
-        fallback={<ShellIcon size={props.size} />}
-      >
+    <Switch fallback={<ShellIcon size={props.size} />}>
+      <Match when={props.program === "claude"}>
         <ClaudeIcon size={props.size} />
-      </Show>
-    </>
+      </Match>
+      <Match when={props.program === "agy"}>
+        <AntigravityIcon size={props.size} />
+      </Match>
+      <Match when={props.program === "codex"}>
+        <CodexIcon size={props.size} />
+      </Match>
+    </Switch>
   );
 }
 

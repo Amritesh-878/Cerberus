@@ -153,19 +153,23 @@ const MAC_TERMINAL_KEYS: readonly (readonly [
   ["Cmd+A", { kind: "selectAll" }, "Select all"],
 ];
 
-export type TabKind = "claude" | "shell";
+/** `cli`: Antigravity CLI or Codex CLI. */
+export type TabKind = "claude" | "cli" | "shell";
 
 const NEWLINE_KEY = "Shift+Enter";
 // Claude Code reads this CSI u form as a newline, while xterm's plain Enter would send the message.
 const CLAUDE_NEWLINE: TerminalAction = { kind: "send", bytes: "\x1b[13;2u" };
+// Antigravity CLI and Codex CLI both document Ctrl+J as a newline; their Shift+Enter depends on the terminal.
+const CLI_NEWLINE: TerminalAction = { kind: "send", bytes: "\n" };
 
-/** Shift+Enter makes a newline in Claude Code; otherwise only macOS remaps keys. */
+/** Shift+Enter makes a newline in Claude Code, Antigravity CLI and Codex CLI; otherwise only macOS remaps keys. */
 export function terminalAction(
   chord: KeyChord,
   kind: TabKind,
   platform: Platform = PLATFORM,
 ): TerminalAction | undefined {
   if (kind === "claude" && matches(chord, NEWLINE_KEY)) return CLAUDE_NEWLINE;
+  if (kind === "cli" && matches(chord, NEWLINE_KEY)) return CLI_NEWLINE;
   if (platform !== "mac") return undefined;
   return MAC_TERMINAL_KEYS.find(([keys]) => matches(chord, keys))?.[1];
 }

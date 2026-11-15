@@ -1,4 +1,5 @@
 import type { Account, AccountId, Profiles } from "./accounts";
+import type { TabKind } from "./keys";
 import type { ProgramChoice, SpawnSpec } from "./pty";
 
 export interface TabAccount {
@@ -26,12 +27,25 @@ export interface TabOptions {
   signIn?: boolean;
 }
 
+/** Antigravity CLI and Codex CLI: plain programs with no Claude account and none of the Claude features. */
+export const OTHER_CLIS = ["agy", "codex"] as const;
+
+export function isOtherCli(program: string): boolean {
+  return (OTHER_CLIS as readonly string[]).includes(program);
+}
+
+/** How the terminal treats keys: an ended Claude tab runs a shell. */
+export function tabKind(program: string, ended: boolean): TabKind {
+  if (isOtherCli(program)) return "cli";
+  return program === "claude" && !ended ? "claude" : "shell";
+}
+
 export function tabFor(
   choice: ProgramChoice,
   options: TabOptions,
 ): Tab | undefined {
   if (choice.program === null) return undefined;
-  const account = options.account;
+  const account = isOtherCli(choice.id) ? null : options.account;
   return {
     program: choice.id,
     label: choice.label,
