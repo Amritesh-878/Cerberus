@@ -248,6 +248,16 @@ mod tests {
         );
         assert!(work.has_output(&native(r"C:\work\readme.md").to_string_lossy()));
         assert!(!work.has_output(&native(r"C:\work\other.md").to_string_lossy()));
+        let slashed = |p: &str| native(p).to_string_lossy().replace('\\', "/");
+        let paths: Vec<String> = work.paths().iter().map(|p| p.replace('\\', "/")).collect();
+        assert_eq!(
+            paths,
+            [
+                slashed(r"C:\work\src\app.ts"),
+                slashed(r"C:\elsewhere\notes.txt"),
+                slashed(r"C:\work\readme.md"),
+            ]
+        );
     }
 
     #[test]

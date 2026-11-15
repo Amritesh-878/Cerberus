@@ -15,6 +15,7 @@ import {
   panelConnectors,
   panelPrs,
   panelSkills,
+  panelWritten,
   type PrRow,
   type Skill,
 } from "./panelData";
@@ -34,6 +35,8 @@ export interface FolderChanges {
   folder: string;
   changes: Changes | undefined;
   error: string | undefined;
+  /** A repo the chat wrote into, shown for this session only. */
+  written?: boolean;
 }
 
 /** A repo's PRs, read through the first of its folders. */
@@ -145,27 +148,35 @@ export function createPanelFeed(
   };
   const readRepos = (
     key: string,
+    tab: number,
     paths: readonly string[],
     live: () => boolean,
   ): Promise<unknown> =>
     folders
       .load(key, () =>
-        Promise.all(
-          paths.map((folder) =>
+        Promise.all([
+          ...paths.map((folder) =>
             panelChanges(folder).then(
-              (changes): FolderChanges => ({
-                folder,
-                changes,
-                error: undefined,
-              }),
-              (error: unknown): FolderChanges => ({
-                folder,
-                changes: undefined,
-                error: String(error),
-              }),
+              (changes): FolderChanges[] => [
+                { folder, changes, error: undefined },
+              ],
+              (error: unknown): FolderChanges[] => [
+                { folder, changes: undefined, error: String(error) },
+              ],
             ),
           ),
-        ),
+          // After the tab's own folders, so a repo the tab already has keeps its own row.
+          panelWritten(tab).then(
+            (written): FolderChanges[] =>
+              written.map((w) => ({
+                folder: w.folder,
+                changes: w.changes,
+                error: undefined,
+                written: true,
+              })),
+            (): FolderChanges[] => [],
+          ),
+        ]).then((all) => all.flat()),
       )
       .then((found) =>
         live() && found !== undefined ? readPrs(key, found) : undefined,
@@ -181,7 +192,7 @@ export function createPanelFeed(
       let reading = false;
       const read = () => {
         reading = true;
-        void readRepos(key, paths, () => live).finally(() => {
+        void readRepos(key, t.tab, paths, () => live).finally(() => {
           reading = false;
         });
       };

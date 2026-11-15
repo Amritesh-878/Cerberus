@@ -76,7 +76,7 @@ import { followOpenRequests } from "./open";
 import { Panel } from "./Panel";
 import { CREATE_PR } from "./panelData";
 import { createPanelState } from "./panelPrefs";
-import { listPrograms } from "./pty";
+import { listPrograms, type ProgramChoice } from "./pty";
 import {
   fromSaved,
   loadTree,
@@ -114,6 +114,7 @@ import {
   addTab,
   closeTab,
   emptyTree,
+  folderName,
   moveToAccount,
   neighbour,
   planners,
@@ -879,23 +880,49 @@ export function App() {
     });
   });
 
-  // Typed into a new shell beside the tab, never run: the user reads it and presses Enter.
-  const createPr = (folder: string) => {
+  // A new tab in `folder` under the shown tab, on its account; only from a project tab.
+  const openBeside = (
+    choose: (programs: ProgramChoice[]) => ProgramChoice | undefined,
+    folder: string,
+    title: string,
+    input?: string,
+  ) => {
     const from = shownTab();
     const current = profiles();
-    const shell = current && shellChoice(current, programList() ?? []);
-    if (from?.projectId == null || !current || !shell) return;
+    const program = choose(programList() ?? []);
+    if (from?.projectId == null || !current || !program) return;
     const account =
       current.accounts.find((a) => a.id === from.launch.account?.id) ?? null;
-    const tab = tabFor(shell, { account, cwd: folder, input: CREATE_PR });
+    const tab = tabFor(program, { account, cwd: folder, input });
     if (!tab) return;
     const place = {
       projectId: from.projectId,
       parentId: from.parentId ?? from.id,
     };
     const [next, id] = addTab(tree(), place, tab);
-    setTree(renameTab(next, id, "Create PR"));
+    setTree(renameTab(next, id, title));
     select(id);
+  };
+
+  const shellOf = (programs: ProgramChoice[]) => {
+    const current = profiles();
+    return current && shellChoice(current, programs);
+  };
+
+  // Typed into a new shell beside the tab, never run: the user reads it and presses Enter.
+  const createPr = (folder: string) => {
+    openBeside(shellOf, folder, "Create PR", CREATE_PR);
+  };
+
+  // A worktree's own tab, named after its folder.
+  const openTabIn = (folder: string, kind: "shell" | "claude") => {
+    openBeside(
+      kind === "shell"
+        ? shellOf
+        : (programs) => programs.find((p) => p.id === "claude"),
+      folder,
+      folderName(folder),
+    );
   };
 
   // Each open pane's way to type into its program, for the panel's prefills.
@@ -936,6 +963,23 @@ export function App() {
       }
     },
     setAlert,
+  };
+
+  // Add to the tab: saved through Edit environment's own path, which types `/add-dir` into a running chat.
+  const addFolder = (folder: string) => {
+    const id = shown();
+    const tab = id === undefined ? undefined : tabById(id);
+    if (id === undefined || !tab || applying().has(id)) return;
+    const dirs = tab.launch.spec.dirs ?? [];
+    if (tab.launch.spec.cwd === folder || dirs.includes(folder)) return;
+    saveEnvironment(id, {
+      title: tab.title,
+      cwd: tab.launch.spec.cwd,
+      dirs: [...dirs, folder],
+      env: [],
+    }).catch((error: unknown) => {
+      setAlert(id, `Could not add the folder: ${String(error)}`);
+    });
   };
 
   const startFresh = () => {
@@ -1610,6 +1654,9 @@ export function App() {
                 state={panel}
                 canType={chatShown() !== undefined}
                 onCreatePr={createPr}
+                onOpenTab={openTabIn}
+                onAddFolder={addFolder}
+                tabTitle={(id) => tabById(id)?.title}
                 onType={typeIntoChat}
                 links={messaging.snapshot()}
                 live={live()}

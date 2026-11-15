@@ -114,6 +114,8 @@ export async function renderApp(
           return { folded: false, services: [] };
         case "live_view":
           return { tabs: [], meters: [], warnings: [] };
+        case "panel_written":
+          return [];
         case "account_status":
           return { state: "loggedIn", summary: "user@example.com · Pro" };
         case "plugin:window|is_focused":
