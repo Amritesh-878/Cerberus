@@ -12,11 +12,11 @@ const SET_ASIDE: &str = "cerberus-old";
 pub enum CarryError {
     #[error("the chat's file is gone from the account it started on")]
     Missing,
-    #[error("the other account has this chat open right now, so nothing was copied")]
+    #[error("the other account has this chat open. Nothing was copied")]
     OpenOnTarget,
-    #[error("another tab or window has this chat open, so it stays where it is")]
+    #[error("another tab or window has this chat open. It stays where it is")]
     OpenElsewhere,
-    #[error("the new folder's path is too long to carry the chat to")]
+    #[error("the new folder's path is too long to move the chat to")]
     LongFolder,
     #[error("could not copy the chat: {0}")]
     Io(#[from] io::Error),

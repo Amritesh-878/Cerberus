@@ -3720,7 +3720,14 @@ button.card-row:focus-visible,
   color: var(--dim);
 }
 
-.limit-text code {
+.limit-fine {
+  margin: 12px 0 0;
+  font-size: 11px;
+  color: var(--dim);
+}
+
+.limit-text code,
+.limit-fine code {
   padding: 0 4px;
   font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
   color: var(--text);

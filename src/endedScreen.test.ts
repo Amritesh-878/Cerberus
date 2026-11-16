@@ -2,7 +2,7 @@ import { expect, test } from "vitest";
 
 import { endedScreen } from "./endedScreen";
 
-const NOTE = "\x1b[2m[the chat ended; this tab is now a shell]\x1b[0m\r\n";
+const NOTE = "\x1b[2m[chat ended; this tab is a shell]\x1b[0m\r\n";
 
 test("the last frame goes, and the resume line and the note stay at the top", () => {
   const frame = [

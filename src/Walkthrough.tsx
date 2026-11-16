@@ -263,9 +263,8 @@ function InstallStep(props: {
               </button>
             </p>
             <p class="hint">
-              Cerberus types the command for you. Press Enter to run it, then
-              close the tab. If Claude Code still shows as missing, restart
-              Cerberus.
+              The command is typed for you to run. Close the tab after. Still
+              missing? Restart Cerberus.
             </p>
           </>
         }

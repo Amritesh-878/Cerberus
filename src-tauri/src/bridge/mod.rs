@@ -50,10 +50,10 @@ pub enum BridgeError {
     #[error("{0}")]
     NotTyped(String),
     #[error(
-        "the planner tab's chat isn't linked to messages between accounts; check they are on in Settings and its chat has started"
+        "the planner can't get messages. Turn on Messages between accounts in Accounts, and open its chat"
     )]
     NotLinked,
-    #[error("the planner tab is on the same account, so the message is typed in instead")]
+    #[error("the planner is on the same account")]
     SameAccount,
 }
 

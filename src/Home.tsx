@@ -27,9 +27,7 @@ export function Home(props: {
       </Show>
       <Show when={props.treeError}>
         {(error) => (
-          <p class="error">
-            {error()}. Tabs opened in this window will not be saved.
-          </p>
+          <p class="error">{error()}. Tabs opened now won't be saved.</p>
         )}
       </Show>
       <Show when={props.gaps[0]}>

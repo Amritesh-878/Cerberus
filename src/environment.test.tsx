@@ -158,6 +158,21 @@ test("adding a folder saves it and types /add-dir into the running chat, never E
     dirs: [PLANS],
   });
   expect(env.writes).toEqual([`\x1b[200~/add-dir ${PLANS}\x1b[201~`]);
+});
+
+test("adding two folders says the first is typed for you to send and the rest wait for a restart", async () => {
+  const env = envCore([PLANS, BETA]);
+  const root = await renderApp(() => PROFILES, env.core);
+  await editEnvironment(root, "planner");
+
+  click(dialog(), "Add folder…");
+  await settle();
+  click(dialog(), "Add folder…");
+  await settle();
+
+  expect(dialog().textContent).toContain(
+    "/add-dir is typed for the first folder, for you to send. The rest apply on the next start.",
+  );
   expect(env.calls.map((c) => c.cmd)).not.toContain("tab_move_folder");
   // No restart: the chat keeps running in the one pane it had.
   expect(env.pty.spawned).toHaveLength(1);
@@ -192,9 +207,7 @@ test("a new main folder restarts the tab there after the core carries the chat",
 
   click(dialog(), "Change…");
   await settle();
-  expect(dialog().textContent).toContain(
-    "restarts in the new folder and resumes the same chat",
-  );
+  expect(dialog().textContent).toContain("restarts there and resumes the chat");
   click(dialog(), "Save");
   await settle();
   await settle();
@@ -249,7 +262,7 @@ test("a shell tab just restarts in the new folder and types nothing", async () =
   click(dialog(), "Add folder…");
   await settle();
   expect(dialog().textContent).not.toContain("/add-dir");
-  expect(dialog().textContent).toContain("restarts in the new folder.");
+  expect(dialog().textContent).toContain("restarts there.");
   expect(dialog().textContent).not.toContain("resumes");
   click(dialog(), "Save");
   await settle();

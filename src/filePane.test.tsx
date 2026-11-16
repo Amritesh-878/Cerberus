@@ -369,7 +369,7 @@ test("a large or binary file says so and offers only VS Code", async () => {
   const pane = await openFile(app.root, "app.ts");
   await vi.waitFor(() => {
     expect(pane.querySelector(".file-message")?.textContent).toContain(
-      "This file is 3.0 MB, over the 2 MB the pane shows.",
+      "Too big to show: 3.0 MB, over 2 MB.",
     );
   });
   expect(pane.querySelector<HTMLElement>(".file-code")?.hidden).toBe(true);

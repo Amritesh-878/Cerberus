@@ -492,7 +492,7 @@ test("shift-click or Shift+Enter types the skill into the chat without Enter, an
     "\x1b[200~/notes\x1b[201~",
   ]);
   expect(skillRow(root, "verify").title).toContain(
-    "Shift-click or Shift+Enter types /verify into the chat, for you to send",
+    "Shift-click or Shift+Enter types /verify for you to send",
   );
   expect(skillRow(root, "verify").title).toContain("Used 9 times");
 });
@@ -578,9 +578,7 @@ test("plugin and claude.ai skills are marked, and Connectors names Cerberus's ow
   expect(connectors).toContain("cerberusstdio · Cerberus");
   expect(connectors).toContain("tools:browserstdio · plugin");
   expect(connectors).toContain("2 configured");
-  expect(connectors).toContain(
-    "Connectors added on claude.ai are not listed here",
-  );
+  expect(connectors).toContain("Connectors from claude.ai aren't listed");
 });
 
 test("a bridge report re-reads the shown tab's connectors, so cerberus comes and goes with its link", async () => {

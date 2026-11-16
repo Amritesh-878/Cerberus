@@ -31,7 +31,7 @@ opens its folder picker, and whether alerts and shell suggestions are on.
   first colour no other account shows; an account from before colours keeps the one it had.
 - **Removing an account** only forgets it; its folder stays on disk. When saved tabs use it,
   Cerberus names them and asks first. On yes, their programs close and the tabs stay in the
-  sidebar, dimmed, with **Continue on `<account>`…** to carry each chat to another account.
+  sidebar, dimmed, with **Move to `<account>`…** to move each chat to another account.
   The last account can't be removed.
 
 ## Projects and tabs
@@ -43,7 +43,7 @@ its own or under a planner, then **Claude Code** (Enter) or **Shell** (or **Anti
 project's folder. Ctrl+Shift+T (Cmd+T on macOS) opens the box beside the current project's **+**.
 
 The account pill at the top right shows the shown tab's account and its sign-in. Clicking it
-opens the same menu as right-clicking the tab: **Continue on `<account>`…** for the other
+opens the same menu as right-clicking the tab: **Move to `<account>`…** for the other
 accounts, **Resume chat** for an ended chat, and **Accounts**, always last.
 
 - A **planner** is a Claude Code tab at the top of a project.
@@ -374,8 +374,8 @@ Context card says the chat can't report.
 
 **Warn when an account passes N% of its 5-hour limit** (Accounts, under Claude tabs; 85% by
 default) shows a banner over the chat and, with desktop alerts on, a notification: "work is at 87%,
-resets 6:40pm". It comes once per account per 5-hour window. The banner lists **Continue on
-<account>** for each signed-in account below the line; a click opens the usual Continue on confirm
+resets 6:40 pm". It comes once per account per 5-hour window. The banner lists **Move to
+<account>** for each signed-in account below the line; a click opens the usual move confirm
 for the tab that crossed it, and nothing moves until you confirm. **Dismiss** hides it until the
 next window.
 
@@ -462,17 +462,17 @@ logged or kept: it lives in memory while the dialog is open and is dropped when 
 
 ## Moving a chat to another account
 
-Right-click a Claude Code tab and pick **Continue on `<account>`…** to carry its chat to another
+Right-click a Claude Code tab and pick **Move to `<account>`…** to move its chat to another
 of your accounts, for example to keep work and personal chats apart. If the chat is running,
 Cerberus asks before closing it, and the row says "Moving to `<account>`…" until it lands. Closing
 it also ends what the chat left running, such as its background shells, as Claude Code does on a
-normal exit; only processes started by that chat are ended. The limit banner's **Continue on** runs
+normal exit; only processes started by that chat are ended. The limit banner's **Move to** runs
 the same steps.
 
-On a tab whose chat ended (now a shell), the item reads **Continue the ended chat on
+On a tab whose chat ended (now a shell), the item reads **Move the ended chat to
 `<account>`…**: it moves that tab's ended chat, which is the last `claude` you ran in its shell if
 that chat was saved, and asks first since the move closes the shell. While a `claude` you typed
-in the shell runs, the tab offers **Continue on `<account>`…** for that chat, as any running chat.
+in the shell runs, the tab offers **Move to `<account>`…** for that chat, as any running chat.
 
 Cerberus copies the chat's file, and its folder of subagent chats, into the other account's
 folder under a temporary name, renaming it once complete, then reopens the tab there with
@@ -486,12 +486,13 @@ them.
 ### When a chat hits its limit
 
 When a chat hits its usage limit, from Claude Code's limit message or its 5-hour meter at 100%, a
-popup says so, once per chat per limit window, with a desktop notification when the tab isn't
-shown. It offers **Continue on `<account>`** for each signed-in account below the warning line,
-the first one as the default, and **Not now**, which leaves the tab as it is. Continue runs the
-same move as above, without a second confirm (the popup's click is it). Once the moved chat is
+popup says so ("Work is out until 7:18 am"), once per chat per limit window, with a desktop
+notification when the tab isn't shown. Under "Move planner to:" it has one button per signed-in
+account below the warning line, the first one as the default, and **Not now**, which leaves the tab
+as it is. An account's button runs the same move as above, without a second confirm (the popup's
+click is it). Once the moved chat is
 ready, `continue` is typed into it for you to send, so Claude carries on with the request that hit
-the limit. The limit banner's **Continue on** types it too; a move from the tab's menu doesn't.
+the limit. The limit banner's **Move to** types it too; a move from the tab's menu doesn't.
 
 Cerberus never switches accounts by itself: using several accounts to get around usage limits
 automatically is against Anthropic's Usage Policy, so every move waits for your click.

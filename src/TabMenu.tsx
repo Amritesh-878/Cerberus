@@ -44,9 +44,7 @@ const ITEMS = '[role="menuitem"]:not(:disabled)';
 
 /** An ended tab moves only its own saved chat, never one started by hand in its shell, and says so. */
 export function continueLabel(ended: boolean, account: string): string {
-  return ended
-    ? `Continue the ended chat on ${account}…`
-    : `Continue on ${account}…`;
+  return ended ? `Move the ended chat to ${account}…` : `Move to ${account}…`;
 }
 
 /** Up, Down, Home and End walk the enabled items, wrapping at the ends as a native menu does. */
@@ -306,12 +304,11 @@ export function TabMenu(props: {
             >
               <p>
                 {props.ended
-                  ? `Close this tab's shell and continue the ended chat on ${account().name}?`
-                  : `Close this chat and continue it on ${account().name}?`}
+                  ? `Close the shell and move the chat to ${account().name}?`
+                  : `Move this chat to ${account().name}?`}
               </p>
               <p class="menu-confirm-note">
-                Anything it left running, such as a dev server, is stopped too.
-                Use a service to keep one running.
+                Stops anything it started. A service keeps a server running.
               </p>
               <div class="confirm-actions">
                 <button
@@ -322,7 +319,7 @@ export function TabMenu(props: {
                     props.onContinue(account());
                   }}
                 >
-                  Continue
+                  Move
                 </button>
                 <button
                   type="button"

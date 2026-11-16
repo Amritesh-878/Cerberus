@@ -578,7 +578,7 @@ test("removing a project with tabs asks first, and Cancel keeps it", async () =>
   click(root, "Remove alpha");
   await settle();
   expect(root.querySelector(".confirm")?.textContent).toContain(
-    "Close 2 tabs and remove alpha? The folder stays on disk.",
+    "Close 2 tabs and remove alpha? The folder stays.",
   );
   click(root, "Cancel");
   await settle();

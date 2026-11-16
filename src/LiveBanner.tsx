@@ -53,7 +53,7 @@ export function LiveBanner(props: {
                 when={offered(warning).length > 0}
                 fallback={
                   <span class="faint">
-                    No other signed-in account is below{" "}
+                    No other signed-in account is under{" "}
                     {percentText(props.profiles.warnAt)}
                   </span>
                 }
@@ -62,7 +62,7 @@ export function LiveBanner(props: {
                   {(account) => (
                     <button
                       type="button"
-                      title={`Move ${title()} to ${account.name}; you confirm first`}
+                      title={`Move ${title()} to ${account.name}. You confirm first.`}
                       onClick={(event) => {
                         props.onContinue(
                           warning.tab,
@@ -71,7 +71,7 @@ export function LiveBanner(props: {
                         );
                       }}
                     >
-                      Continue on {account.name}
+                      Move to {account.name}
                     </button>
                   )}
                 </For>

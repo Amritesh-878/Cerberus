@@ -49,8 +49,8 @@ function bodyOf(alert: Alert, locale: string | undefined): string {
       return "Waiting on you";
     case "limited":
       return alert.resetsAt === null
-        ? "Hit its limit"
-        : `Hit its limit, resets ${resetText(alert.resetsAt, locale)}`;
+        ? "Out of usage"
+        : `Out until ${resetText(alert.resetsAt, locale)}`;
     case "ended":
       return "The chat ended";
   }

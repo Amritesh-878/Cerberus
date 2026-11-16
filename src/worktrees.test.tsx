@@ -314,7 +314,7 @@ test("Remove on a dirty or in-use worktree says why and asks the core for nothin
   expect(changesCard(root).textContent).toContain(
     "alpha-dirty can't be removed: it has uncommitted changes.",
   );
-  click(changesCard(root), "OK");
+  click(changesCard(root), "Close");
   await settle();
   click(worktreeRow(root, "alpha-used"), "More for alpha-used");
   await settle();

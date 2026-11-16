@@ -57,15 +57,14 @@ const LABELS: Record<MessagesNote, string> = {
   off: "messages off",
 };
 
-const TYPED_IN =
-  "Approved messages are typed into this tab's input for you to send";
+const TYPED_IN = "Approved messages are typed in for you to send";
 
 const TITLES: Record<NoteWhy | "off" | "unknown", string> = {
-  platform: `${TYPED_IN}. Delivering them straight to the chat is checked on Windows only so far.`,
-  noInbox: `${TYPED_IN}, since this tab's Claude Code reported no inbox of its own.`,
-  version: `${TYPED_IN}, since this tab's Claude Code is older than 2.1.317 or uses an inbox format Cerberus doesn't know. Updating Claude Code and reopening the tab usually fixes it.`,
-  unknown: `${TYPED_IN}, since its Claude Code can't take them directly.`,
-  off: "This tab's message helper didn't start or has ended, so it can't send or receive messages between accounts.",
+  platform: `${TYPED_IN}. Direct delivery works on Windows only for now.`,
+  noInbox: `${TYPED_IN}. This Claude Code has no inbox.`,
+  version: `${TYPED_IN}. Cerberus doesn't know this Claude Code's inbox (2.1.317 or later works). Update it and reopen the tab.`,
+  unknown: `${TYPED_IN}. This Claude Code can't take them directly.`,
+  off: "The message helper isn't running, so this tab can't message other accounts.",
 };
 
 /** The note's label and the tooltip that says why, in plain words. */

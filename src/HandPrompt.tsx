@@ -39,13 +39,12 @@ export function HandPrompt(props: {
           when={asking()}
           fallback={
             <p>
-              This chat was started by typing <code>claude</code> in the shell,
-              so it can't send or receive messages between accounts. Reopen it
-              as a Claude tab to turn messages on; it resumes where it is.
+              Started with <code>claude</code> in a shell, it can't message
+              other accounts. Reopen it as a Claude tab; the chat carries on.
             </p>
           }
         >
-          <p>Claude is working. Stop it and reopen the chat as a Claude tab?</p>
+          <p>Claude is working. Stop it and reopen?</p>
         </Show>
         <div class="env-actions">
           <button

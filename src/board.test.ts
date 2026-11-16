@@ -115,7 +115,7 @@ test("a started tab keeps running when you move away and is dropped once closed"
 test("a reset time reads like a clock", () => {
   const at = new Date(2026, 9, 29, 5, 50).getTime() / 1000;
 
-  expect(resetText(at, "en-US")).toBe("5:50am");
+  expect(resetText(at, "en-US")).toBe("5:50 am");
 });
 
 test("a stopped tab's state is forgotten", () => {

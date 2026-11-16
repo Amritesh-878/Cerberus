@@ -155,9 +155,9 @@ test("a message whose sending chat is gone says so, then the next shows", async 
   await settle();
 
   expect(root.querySelector(".approval")?.textContent).toContain(
-    "The sending chat is gone, so its message was dropped.",
+    "The sending chat closed. Its message was dropped.",
   );
-  click(root, "OK");
+  click(root, "Close");
   await settle();
   expect(textBox(root).value).toBe("next");
   expect(decisions).toEqual([]);
@@ -237,9 +237,9 @@ test("a typed-in message says it waits for enter until dismissed, then the next 
   await settle();
 
   expect(root.querySelector(".approval")?.textContent).toContain(
-    "It's in the input box of work · beta / coder. Press Enter there to send it.",
+    "Typed into work · beta / coder. Press Enter there to send.",
   );
-  click(root, "OK");
+  click(root, "Close");
   await settle();
   expect(textBox(root).value).toBe("next");
 });
@@ -272,7 +272,7 @@ test("an inbox message that hasn't shown is typed in only when asked", async () 
   expect(approved).toEqual([[3, 6]]);
   expect(typed).toEqual([]);
   expect(root.querySelector(".approval")?.textContent).toContain(
-    "It went to the inbox of work · beta / coder, but that tab hasn't shown it yet.",
+    "In work · beta / coder's inbox but not shown yet.",
   );
   click(root, "Type it in instead");
   await settle();
@@ -280,9 +280,9 @@ test("an inbox message that hasn't shown is typed in only when asked", async () 
   expect(typed).toEqual([1]);
   const said = root.querySelector(".approval")?.textContent;
   expect(said).toContain(
-    "It's in the input box of work · beta / coder. Press Enter there to send it.",
+    "Typed into work · beta / coder. Press Enter there to send.",
   );
-  expect(said).toContain("If the first copy shows up there too");
+  expect(said).toContain("If the first copy arrives too");
 });
 
 test("closing an unshown message's notice drops its kept text", async () => {
@@ -295,7 +295,7 @@ test("closing an unshown message's notice drops its kept text", async () => {
 
   click(root, "Approve");
   await settle();
-  click(root, "OK");
+  click(root, "Close");
   await settle();
 
   expect(dropped).toEqual([1]);

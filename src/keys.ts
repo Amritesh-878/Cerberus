@@ -225,10 +225,10 @@ const SHEET_ROWS: readonly (readonly [Shortcut, string])[] = [
   ["newTab", "New tab"],
   ["closeTab", "Close tab"],
   ["nextWaiting", "Next chat waiting on you"],
-  ["panel", "Show or hide the right panel"],
+  ["panel", "Right panel"],
   ["findChat", "Search tabs and chats"],
-  ["sidebar", "Collapse or expand the sidebar"],
-  ["shortcuts", "Show or hide this sheet"],
+  ["sidebar", "Sidebar"],
+  ["shortcuts", "This list"],
 ];
 
 /** Every key Cerberus answers to, alternates included, read from the tables the handlers use. */

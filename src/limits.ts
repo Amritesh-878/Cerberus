@@ -38,15 +38,15 @@ export function signedInOffers(
     );
 }
 
-/** "work is limited until 6:40pm." */
+/** "Work is out until 6:40 pm", the popup's title. */
 export function limitText(
   account: string,
   resetsAt: number | null,
   locale?: string,
 ): string {
   return resetsAt === null
-    ? `${account} has hit its limit.`
-    : `${account} is limited until ${resetText(resetsAt, locale)}.`;
+    ? `${account} is out`
+    : `${account} is out until ${resetText(resetsAt, locale)}`;
 }
 
 /** Whether a told window and a new hit's are one: equal times, or an open-ended clock window and a time still ahead. */

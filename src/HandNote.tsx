@@ -22,9 +22,7 @@ export function HandNote(props: { working: boolean; onReopen: () => void }) {
           </>
         }
       >
-        <span>
-          Claude is working. Stop it and reopen the chat as a Claude tab?
-        </span>
+        <span>Claude is working. Stop it and reopen?</span>
         <span class="hand-actions">
           <button
             type="button"

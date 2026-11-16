@@ -64,9 +64,7 @@ pub enum AccountsError {
     NoSuchDir(String),
     #[error("no account {0}")]
     NoAccount(AccountId),
-    #[error(
-        "{0} is the only account, and Cerberus needs one. Add another account before removing it."
-    )]
+    #[error("{0} is the only account. Add another before removing it.")]
     LastAccount(String),
     #[error("not a shell Cerberus knows: {0}")]
     UnknownShell(String),

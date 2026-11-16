@@ -131,6 +131,6 @@ export function startedTabs(
 export function resetText(resetsAt: number, locale?: string): string {
   return new Date(resetsAt * 1000)
     .toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit" })
-    .replace(/\s/g, "")
+    .replace(/\s+/g, " ")
     .toLowerCase();
 }

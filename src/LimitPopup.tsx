@@ -49,7 +49,9 @@ export function LimitPopup(props: {
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="limit-title"
-        aria-describedby="limit-text"
+        aria-describedby={
+          offered().length > 0 ? "limit-text limit-fine" : "limit-text"
+        }
         tabIndex={-1}
         ref={(el) => {
           sheet = el;
@@ -61,17 +63,15 @@ export function LimitPopup(props: {
               id={props.hit.account}
               color={savedColor(props.profiles, props.hit.account)}
             />
-            {props.title} hit its limit
+            {limitText(name(), props.hit.resetsAt)}
           </h2>
         </div>
         <p id="limit-text" class="limit-text">
-          {limitText(name(), props.hit.resetsAt)}{" "}
           <Show
             when={offered().length > 0}
-            fallback={`No other signed-in account is below ${percentText(props.profiles.warnAt)}.`}
+            fallback={`No other signed-in account is under ${percentText(props.profiles.warnAt)}.`}
           >
-            Continue this chat on another account? Anything it left running
-            stops, and <code>continue</code> is typed for you to send.
+            Move {props.title} to:
           </Show>
         </p>
         <div class="limit-actions env-actions">
@@ -81,12 +81,13 @@ export function LimitPopup(props: {
               <button
                 type="button"
                 class="secondary"
+                aria-label={`Move to ${account.name}`}
                 onClick={() => {
                   props.onContinue(account);
                 }}
               >
                 <AccountDot id={account.id} color={account.color} />
-                Continue on {account.name}
+                {account.name}
               </button>
             )}
           </For>
@@ -100,6 +101,12 @@ export function LimitPopup(props: {
             Not now
           </button>
         </div>
+        <Show when={offered().length > 0}>
+          <p id="limit-fine" class="limit-fine">
+            Stops anything it started. Types <code>continue</code> for you to
+            send.
+          </p>
+        </Show>
       </div>
     </div>
   );

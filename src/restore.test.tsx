@@ -263,9 +263,7 @@ test("a limit shows a clock with its reset time, and an exit dims the row", asyn
   await settle();
   const mark = row(root, "site").querySelector(".mark.limited");
   expect(mark?.textContent).toBe(resetText(resetsAt));
-  expect(mark?.getAttribute("title")).toBe(
-    `Usage limit, resets ${resetText(resetsAt)}`,
-  );
+  expect(mark?.getAttribute("title")).toBe(`Out until ${resetText(resetsAt)}`);
 
   emit(restore.pty.spawned, 0, { exitCode: 0 });
   await settle();
@@ -283,7 +281,7 @@ test("a tab whose saved chat is gone says it started a new one", async () => {
   await open(root, "planner");
 
   expect(root.querySelector(".terminal-notice")?.textContent).toBe(
-    "The saved chat is gone, so this is a new one.",
+    "The saved chat is gone. This is a new one.",
   );
 });
 

@@ -258,8 +258,8 @@ export function ServiceForm(props: {
           <span>Restart if it stops</span>
         </label>
         <p class="env-note">
-          It runs hidden in its own terminal and stops when Cerberus closes. The
-          command is kept in Cerberus's data folder.
+          Runs hidden and stops when Cerberus closes. The command is saved with
+          Cerberus's settings.
         </p>
         <Show when={error()}>
           {(message) => (

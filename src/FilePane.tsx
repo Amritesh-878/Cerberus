@@ -102,13 +102,13 @@ export function refusal(read: FileView): string | undefined {
     case "text":
       return undefined;
     case "tooBig":
-      return `This file is ${(read.size / (1024 * 1024)).toFixed(1)} MB, over the 2 MB the pane shows.`;
+      return `Too big to show: ${(read.size / (1024 * 1024)).toFixed(1)} MB, over 2 MB.`;
     case "binary":
-      return "This file is binary, so the pane can't show it.";
+      return "A binary file, so it can't be shown.";
     case "gone":
-      return "This file is gone from disk.";
+      return "The file is gone.";
     case "private":
-      return "This is Claude Code's login token or prompt history, which Cerberus never reads.";
+      return "Claude Code's login token or prompt history. Cerberus never reads these.";
   }
 }
 

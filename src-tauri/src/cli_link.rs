@@ -13,18 +13,14 @@ pub enum LinkError {
     #[error("the `cerberus` command is installed this way only on macOS and Linux")]
     Unsupported,
     #[error(
-        "Cerberus is running from a disk image or a temporary copy; move it to Applications and open it from there first, so the link keeps working"
+        "Cerberus is running from a disk image. Move it to Applications, open it from there, and try again"
     )]
     NotInstalled,
-    #[error(
-        "Cerberus is running from an AppImage, whose files are gone once it closes; install the .deb to get the `cerberus` command"
-    )]
+    #[error("an AppImage can't link the `cerberus` command. Install the .deb for it")]
     AppImage,
     #[error("`{COMMAND}` is missing beside the app; reinstall Cerberus")]
     NoCommand,
-    #[error(
-        "~/{LINK_DIR}/{LINK_NAME} already exists and is not a link; move it away, then try again"
-    )]
+    #[error("~/{LINK_DIR}/{LINK_NAME} exists and isn't a link. Move it away and try again")]
     Taken,
     #[error("could not find your home folder")]
     NoHome,

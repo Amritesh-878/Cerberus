@@ -208,9 +208,8 @@ export function WorktreeList(props: {
               fallback={
                 <>
                   <p>
-                    Remove {list().length === 1 ? "this worktree" : "these"}{" "}
-                    with <code>git worktree remove</code>? A branch is deleted
-                    here only if it is merged; nothing changes on GitHub.
+                    Remove {list().length === 1 ? "this worktree" : "these"}? A
+                    branch is deleted only if merged. GitHub is untouched.
                   </p>
                   <ul>
                     <For each={list()}>
@@ -265,7 +264,7 @@ export function WorktreeList(props: {
                         setAsking(undefined);
                       }}
                     >
-                      OK
+                      Close
                     </button>
                   </div>
                 </>

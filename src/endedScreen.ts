@@ -1,4 +1,4 @@
-const NOTE = "\x1b[2m[the chat ended; this tab is now a shell]\x1b[0m";
+const NOTE = "\x1b[2m[chat ended; this tab is a shell]\x1b[0m";
 // Clears the screen in place, so the chat's last frame goes and earlier scrollback stays.
 const CLEAR = "\x1b[H\x1b[2J";
 

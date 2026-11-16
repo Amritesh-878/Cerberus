@@ -211,9 +211,7 @@ export function Panel(props: {
       <div class="panel-cards">
         <Show
           when={props.tab}
-          fallback={
-            <p class="panel-empty">Open a tab to see its details here.</p>
-          }
+          fallback={<p class="panel-empty">Open a tab to see its details.</p>}
         >
           <Card
             id="environment"
@@ -315,7 +313,7 @@ export function Panel(props: {
               <button
                 type="button"
                 class="card-row action"
-                title="Open a coder tab for a task file, its prompt typed in"
+                title="Opens a coder tab with the task's prompt typed in"
                 onClick={() => {
                   props.onStartTask?.();
                 }}
@@ -441,7 +439,7 @@ export function Panel(props: {
                       {(file) => <Note>Could not read {file}</Note>}
                     </For>
                     <p class="card-note faint">
-                      Connectors added on claude.ai are not listed here
+                      Connectors from claude.ai aren't listed
                     </p>
                   </>
                 )}
@@ -476,7 +474,7 @@ function skillTitle(skill: Skill, canType: boolean): string {
       ? `Used ${String(skill.uses)} time${skill.uses === 1 ? "" : "s"}`
       : null,
     canType
-      ? `Shift-click or Shift+Enter types ${command} into the chat, for you to send`
+      ? `Shift-click or Shift+Enter types ${command} for you to send`
       : `Shift-click types ${command} in Claude Code tabs`,
   ];
   return lines.filter((line) => line !== null).join("\n");
@@ -584,8 +582,7 @@ function RepoRow(props: {
     if (props.written && add) {
       all.push({
         label: "Add to the tab",
-        title:
-          "Saves it as one of this tab's folders, as Edit environment does",
+        title: "Adds it to this tab's folders",
         pick: add,
       });
     }
@@ -620,7 +617,7 @@ function RepoRow(props: {
           disabled={!props.repo.gh || props.repo.branch === null}
           title={
             props.repo.gh
-              ? "Opens a shell with gh pr create typed, for you to send"
+              ? "Opens a shell with gh pr create typed for you to run"
               : "Install the GitHub CLI (gh) to create a PR from here"
           }
           onClick={() => {
@@ -634,7 +631,7 @@ function RepoRow(props: {
             type="button"
             class="row-button icon"
             aria-label="Open in VS Code"
-            title="Open in VS Code, whose Source Control view shows the diff"
+            title="Open in VS Code to see the diff"
             onClick={() => {
               props.onOpenVsCode(props.folder);
             }}
