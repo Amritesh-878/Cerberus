@@ -1,13 +1,29 @@
 # Cerberus
 
-A terminal for running Claude Code under several accounts at once, each tab on the account you
-pick, on Windows with macOS and Linux previews. Every project is a folder in the sidebar with its tabs under
-it, and each tab keeps its Claude Code chat, so after a restart or a crash your tabs come back and
-their chats resume.
+A desktop terminal for running Claude Code under several of your accounts side by side. Chats on
+different accounts can message each other, but each message waits for your approval, and every chat
+comes back after a restart or a crash. It runs on Windows, with macOS and Linux previews, and can also
+open Antigravity CLI and Codex CLI tabs when they are installed.
 
-Each Claude Code tab runs the official `claude` CLI. Cerberus is built around Claude Code, and can
-also open Antigravity CLI and Codex CLI tabs when they are installed; it never signs in to them or reads
-their config or history. Built with Claude Code.
+![Cerberus with three projects, a planner and its coder tab side by side, and the right panel](docs/images/cerberus.png)
+
+## Highlights
+
+- **Several accounts at once**, each tab on the one you pick; when one runs low, **Move to** another in one click, never automatically.
+- **Messages between accounts**: a chat can message a chat on another account once you approve it.
+- **Find a chat** across every account and folder, by title, folder or what was said.
+- **Live cards**: context, each account's usage, the files a chat wrote, and a file pane with a diff.
+- **Services** keep tunnels and dev servers running without a tab.
+- **Planner and coder tabs**: **Start a task** opens a coder tab, in a new worktree if you like, and its handoff goes back to the planner.
+
+## What Cerberus reads
+
+- Cerberus has no server and no telemetry. Its only network use is your own `gh`, run for the PR list ([right panel](docs/guide.md#the-right-panel)).
+- From Claude Code's status line and hooks it keeps only named fields, such as context, usage and written file paths ([live cards](docs/guide.md#live-cards)).
+- Transcripts are read in memory only: a limit's reset time ([board](docs/guide.md#the-session-board-and-alerts)) and Find a chat while it is open ([search](docs/guide.md#finding-a-tab-or-a-chat)).
+- `history.jsonl` and `.credentials.json` are never read ([file pane](docs/guide.md#the-file-pane)).
+- Your settings files are only read, never written ([live cards](docs/guide.md#live-cards)).
+- Moving a chat copies its transcript, and its subagent chats, to the other account's folder and changes nothing else; the copy never reads them ([move](docs/guide.md#moving-a-chat-to-another-account)).
 
 ## Install
 
@@ -51,50 +67,36 @@ sudo apt install ./Cerberus_<version>_amd64.deb
 
 To use `cerberus` in a terminal from the .deb, click **Install `cerberus` command** in **Accounts**.
 It links `~/.local/bin/cerberus`, which must come before `/usr/bin` on your `PATH` (Ubuntu's
-`~/.profile` puts it first), since `/usr/bin/cerberus` is the app itself; Cerberus says so if it
+`~/.profile` puts it first), since `/usr/bin/cerberus` is the app itself. Cerberus says so if it
 doesn't, and `cerberus-cli` always works. An AppImage can't link it, since its files are gone once
 it closes.
 
 You also need [Claude Code](https://code.claude.com/docs/en/setup). Each release lists its files'
 SHA-256 so you can check a download.
 
-## What it does
+## Everything else
 
 - **Projects and tabs.** A project is a folder. Under it sit Claude Code and shell tabs, with
-  coder sub-tabs under a planner. Rename with a double-click or F2, search by title.
+  coder tabs under a planner. Rename with a double-click or F2, search by title.
 - **Chats survive restarts and crashes.** The sidebar comes back as it was, and opening a saved
   Claude Code tab resumes its chat. Nothing starts until you open a tab.
-- **Accounts.** Each tab runs under one of your Claude Code accounts, each with its own sign-in
-  and chats. A first-run walkthrough finds the accounts you already use.
-- **A board of every chat.** Each row shows whether its chat is working, waiting on you, or paused
+- **Accounts.** Each account keeps its own sign-in and chats. A first-run walkthrough finds the
+  accounts you already use.
+- **A board of every chat.** Each row shows whether its chat is working, waiting on you, or out
   until a usage reset. A desktop notification tells you when a chat in another tab needs you.
 - **A shell when a chat ends.** After `/exit` the tab becomes a shell in the same folder.
   **Resume chat** in its menu brings the chat back. Type `claude` in a shell tab and the tab follows
   that chat as a Claude Code tab until it exits.
-- **Move a chat to another of your accounts**, from the tab's right-click menu.
 - **Two tabs side by side.** Drag a tab from the sidebar onto the right half of the chat; drag the
   line between them to resize.
-- **A right panel for the tab on screen**: its account, folders and branch, each repo's changes
-  and every PR (open, draft, merged; ready a draft from its menu) with **Create PR** and **Open in
-  VS Code**, repos the chat wrote into, each repo's worktrees with stale ones removed on request
-  (never forced, merged branches only, nothing pushed), an **Edit environment** dialog for the tab's name, extra folders (`--add-dir`), main
-  folder and variables, its skills (most used first, starred ones
-  on top, shift-click to type one in; plugin and claude.ai skills included) and the MCP servers
-  its `claude` would load, plugin servers included.
-- **Messages between accounts.** A chat can message a chat on another of your accounts. Each
-  message waits in a popup for you to approve, edit or reject, and both chats then show side by side.
-- **Services.** Tunnels and dev servers that keep running without a tab, at the foot of the
-  sidebar: restarted when they stop, started with Cerberus if you like, with their address one
-  click away.
-- **Live cards.** The shown chat's context use with a **Compact** button that types `/compact` for
-  you, the files it wrote (a click shows one beside the chat, with a diff against git), its
-  background shells and subagents, each account's 5-hour and 7-day use, and a warning near the
-  limit that offers to continue the chat on another account, once you confirm.
-- **One search** for your open tabs and every account's chats, by title, folder or what was said; a
-  chat opens in its own folder on its own account.
-- **`cerberus open`** jumps to a tab from any terminal (below).
+- **A right panel** for the tab on screen: its account, folders and branch, each repo's changes
+  and PRs (with **Create PR** and **Open in VS Code**), its worktrees with stale ones removed on
+  request, **Edit environment** for the tab's name, folders and variables, and the skills and MCP
+  servers its `claude` loads.
+- **Antigravity CLI and Codex CLI tabs** run those programs as they are; Cerberus never signs in to
+  them or reads their config or history.
 
-More detail on each, and how it works: [`docs/guide.md`](docs/guide.md).
+More on each, and how it works: [`docs/guide.md`](docs/guide.md).
 
 ## Keys
 
@@ -107,11 +109,13 @@ More detail on each, and how it works: [`docs/guide.md`](docs/guide.md).
 | Right panel | Ctrl+Shift+B | Cmd+Shift+B |
 | Search tabs and chats | Ctrl+Shift+F | Cmd+Shift+F |
 | Collapse or expand the sidebar | Ctrl+Shift+E | Cmd+Shift+E |
+| Keyboard shortcuts | Ctrl+Shift+/ | Cmd+/ |
 | Rename | F2 | F2 |
 | New line in a Claude Code message | Shift+Enter | Shift+Enter |
 
-They leave Claude Code's own keys alone (Ctrl+T, Ctrl+B, Ctrl+E, Ctrl+C, Ctrl+V, Alt+V, Shift+Tab). Paste an image
-into Claude Code with Alt+V on Windows, Ctrl+V on Linux, or Cmd+V on macOS. In a shell tab, Shift+Enter is Enter.
+They leave Claude Code's own keys alone (Ctrl+T, Ctrl+B, Ctrl+E, Ctrl+C, Ctrl+V, Alt+V, Shift+Tab).
+Paste an image into Claude Code with Alt+V on Windows, Ctrl+V on Linux, or Cmd+V on macOS. In a
+shell tab, Shift+Enter is Enter.
 
 In a terminal on macOS, the editing keys of Terminal.app:
 
