@@ -533,6 +533,59 @@ fn the_same_account_is_refused_and_pointed_at_send_message() {
 }
 
 #[test]
+fn a_message_cerberus_offers_waits_for_approval_like_a_chats() {
+    let world = World::new("2.1.316");
+
+    let id = world
+        .bridge
+        .offer(1, 2, "TASK-026 handoff is ready".to_owned(), WAIT)
+        .unwrap();
+
+    let pending = world.bridge.snapshot().pending;
+    assert_eq!(pending.len(), 1);
+    assert_eq!((pending[0].id, pending[0].from, pending[0].to), (id, 1, 2));
+    assert_eq!(pending[0].text, "TASK-026 handoff is ready");
+    let typed: Typed = Arc::default();
+    let into = Arc::clone(&typed);
+    let decided = world.bridge.decide(
+        id,
+        Decision::Approve {
+            text: "TASK-026 handoff is ready".to_owned(),
+        },
+        move |pty, bytes| {
+            lock(&into).push((pty, bytes.to_vec()));
+            Ok(())
+        },
+    );
+    assert_eq!(decided.unwrap(), Decided::Prefilled { from: 1, to: 2 });
+    assert_eq!(
+        lock(&typed).clone(),
+        [(
+            102,
+            prefill(&body("TASK-026 handoff is ready")).into_bytes()
+        )]
+    );
+}
+
+#[test]
+fn an_offer_to_the_same_account_or_an_unlinked_tab_is_refused() {
+    let world = World::new("2.1.317");
+
+    let same = world.bridge.offer(1, 3, "hi".to_owned(), WAIT);
+    let unlinked = world
+        .bridge
+        .offer(1, 9, "hi".to_owned(), Duration::from_millis(50));
+    let empty = world.bridge.offer(1, 2, "  ".to_owned(), WAIT);
+    let from_closed = world.bridge.offer(9, 2, "hi".to_owned(), WAIT);
+
+    assert!(matches!(same, Err(super::BridgeError::SameAccount)));
+    assert!(matches!(from_closed, Err(super::BridgeError::Gone)));
+    assert!(matches!(unlinked, Err(super::BridgeError::NotLinked)));
+    assert!(matches!(empty, Err(super::BridgeError::Empty)));
+    assert!(world.bridge.snapshot().pending.is_empty());
+}
+
+#[test]
 fn list_tabs_shows_only_other_accounts() {
     let mut world = World::new("2.1.317");
 

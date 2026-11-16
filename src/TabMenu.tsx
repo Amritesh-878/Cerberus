@@ -84,6 +84,8 @@ export function TabMenu(props: {
   ended: boolean;
   onContinue: (account: Account) => void;
   onResume: () => void;
+  /** Set for a coder tab under a planner: send its handoff, or choose the file first. */
+  handoff?: { label: string; run: () => void };
   /** Set for a Claude tab in a project, which can open a task's coder tab under its planner. */
   onStartTask?: () => void;
   /** Last in the menu, so a signed-out account can be signed in from there. */
@@ -224,8 +226,33 @@ export function TabMenu(props: {
                   </button>
                 )}
               </For>
+              <Show when={props.handoff}>
+                {(handoff) => (
+                  <>
+                    <Show when={props.targets.length > 0 || props.ended}>
+                      <div class="menu-sep" role="separator" />
+                    </Show>
+                    <button
+                      type="button"
+                      class="menu-item"
+                      role="menuitem"
+                      onClick={() => {
+                        handoff().run();
+                      }}
+                    >
+                      <span class="menu-text">{handoff().label}</span>
+                    </button>
+                  </>
+                )}
+              </Show>
               <Show when={props.onStartTask}>
-                <Show when={props.targets.length > 0 || props.ended}>
+                <Show
+                  when={
+                    props.targets.length > 0 ||
+                    props.ended ||
+                    props.handoff !== undefined
+                  }
+                >
                   <div class="menu-sep" role="separator" />
                 </Show>
                 <button
@@ -244,6 +271,7 @@ export function TabMenu(props: {
                   when={
                     props.targets.length > 0 ||
                     props.ended ||
+                    props.handoff !== undefined ||
                     props.onStartTask !== undefined
                   }
                 >

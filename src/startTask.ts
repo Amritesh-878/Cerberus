@@ -7,6 +7,7 @@ import { tabFor } from "./tab";
 import {
   addTab,
   isPlanner,
+  setHandoff,
   type ProjectId,
   type ProjectTasks,
   renameTab,
@@ -28,6 +29,8 @@ export interface TaskPlan {
   prompt: string;
   cwd: string;
   dirs: string[];
+  taskId: string;
+  handoffFile: string;
 }
 
 export interface WorktreeDefaults {
@@ -130,13 +133,14 @@ export function withProjectTasks(
   };
 }
 
-/** The coder tab under `planner`, named for the task, in the plan's folder with the project folder added. */
+/** The coder tab under `planner`, named for the task, in the plan's folder with the project folder added; it watches for its handoff from `now`. */
 export function addCoderTab(
   tree: Tree,
   planner: TreeTab,
   claude: ProgramChoice,
   account: Account | null,
   plan: TaskPlan,
+  now = Date.now(),
 ): [Tree, TabId] | undefined {
   const launch = tabFor(claude, { account, cwd: plan.cwd });
   if (!launch) return undefined;
@@ -146,7 +150,13 @@ export function addCoderTab(
     { projectId: planner.projectId, parentId: planner.id },
     withDirs,
   );
-  return [renameTab(added, id, plan.title), id];
+  const handoff = {
+    taskId: plan.taskId,
+    file: plan.handoffFile,
+    since: now,
+    state: "working" as const,
+  };
+  return [setHandoff(renameTab(added, id, plan.title), id, handoff), id];
 }
 
 export interface TaskDeps {

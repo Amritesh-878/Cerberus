@@ -281,6 +281,16 @@ pub async fn panel_prs(app: AppHandle, folder: PathBuf) -> Result<Vec<PrRow>, Pa
     .await
 }
 
+/// The link of the PR made from the folder's branch, through the same once-a-minute list as the Changes card.
+pub fn branch_pr(prs: &PrCache, folder: &Path) -> Option<String> {
+    let folder = self::folder(folder).ok()?;
+    let (git, gh) = (git()?, Finder::from_env().find("gh")?);
+    let head = git.head(folder)?;
+    let branch = head.branch?;
+    let found = prs.get(&head.root, Instant::now(), || gh::list(&gh, folder));
+    gh::for_branch(&found, &branch).map(|pr| pr.url.clone())
+}
+
 fn pr_url(prs: &PrCache, folder: &Path, number: u64) -> Result<String, PanelError> {
     prs.url(&repo_root(folder)?, number).ok_or(PanelError::NoPr)
 }
@@ -445,6 +455,7 @@ mod tests {
             cwd: Some(r"C:\code\app".into()),
             account: None,
             dirs: vec![r"C:\code\plans".into()],
+            handoff: None,
         };
         let written = || vec![PathBuf::from("C:/code/app-worktree")];
 

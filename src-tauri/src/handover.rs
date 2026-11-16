@@ -382,6 +382,7 @@ mod tests {
                     cwd: Some(CWD.to_owned()),
                     account: Some(0),
                     dirs: Vec::new(),
+                    handoff: None,
                 }],
                 next_id: 3,
             })

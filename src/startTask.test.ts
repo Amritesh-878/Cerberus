@@ -41,6 +41,8 @@ const PLAN = {
   prompt: "Read AGENTS.md, then the task.",
   cwd: String.raw`C:\code-task-025`,
   dirs: [String.raw`C:\code`],
+  taskId: "TASK-025",
+  handoffFile: String.raw`C:\plans\completed\task-025.md`,
 };
 
 test("a task's coder goes under the planner, whether started from it or from a coder under it", () => {
@@ -62,6 +64,7 @@ test("the coder tab is a sub-tab named for the task, in the plan's folder with t
     CLAUDE,
     SAVED.accounts[1] ?? null,
     PLAN,
+    1_800_000_000_000,
   );
 
   if (!added) throw new Error("no tab added");
@@ -76,6 +79,12 @@ test("the coder tab is a sub-tab named for the task, in the plan's folder with t
   expect(coder?.launch.spec.dirs).toEqual([String.raw`C:\code`]);
   expect(coder?.launch.spec.account).toBe(1);
   expect(coder?.launch.input).toBeNull();
+  expect(coder?.handoff).toEqual({
+    taskId: "TASK-025",
+    file: String.raw`C:\plans\completed\task-025.md`,
+    since: 1_800_000_000_000,
+    state: "working",
+  });
 });
 
 test("the account is the project's last, while it exists, then the tab's own, then the default", () => {

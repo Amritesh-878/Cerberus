@@ -27,6 +27,19 @@ export interface TreeTab {
   parentId: TabId | null;
   title: string;
   launch: Tab;
+  /** A coder tab's task and handoff file, set by Start a task or a first Send handoff. */
+  handoff?: TabHandoff;
+}
+
+export type HandoffState = "working" | "ready" | "sent";
+
+export interface TabHandoff {
+  /** `TASK-026`. */
+  taskId: string;
+  file: string;
+  /** Milliseconds since the epoch when the task opened; an older file is an earlier run's. */
+  since: number;
+  state: HandoffState;
 }
 
 export interface Tree {
@@ -157,6 +170,13 @@ export function moveToAccount(
         t.title === defaultTitle(t.launch) ? defaultTitle(launch) : t.title;
       return { ...t, title, launch };
     }),
+  };
+}
+
+export function setHandoff(tree: Tree, id: TabId, handoff: TabHandoff): Tree {
+  return {
+    ...tree,
+    tabs: tree.tabs.map((t) => (t.id === id ? { ...t, handoff } : t)),
   };
 }
 

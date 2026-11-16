@@ -246,6 +246,15 @@ pub fn rows(prs: &[Pr]) -> Vec<PrRow> {
     prs.iter().filter_map(PrRow::from).collect()
 }
 
+/// The PR made from `branch` in this repo: an open one first, else the newest; a fork's same-named branch is not it.
+pub fn for_branch<'a>(prs: &'a [Pr], branch: &str) -> Option<&'a Pr> {
+    let mut mine = prs
+        .iter()
+        .filter(|pr| !pr.is_cross_repository && pr.head_ref_name == branch);
+    let newest = mine.clone().max_by_key(|pr| pr.number);
+    mine.find(|pr| pr.state == "OPEN").or(newest)
+}
+
 #[cfg(test)]
 mod tests {
     use std::cell::Cell;
@@ -264,6 +273,26 @@ mod tests {
             head_ref_oid: String::new(),
             is_cross_repository: false,
         }
+    }
+
+    #[test]
+    fn a_branchs_pr_is_its_open_one_else_its_newest_and_never_a_forks() {
+        let on = |number, state: &str, branch: &str, fork: bool| Pr {
+            head_ref_name: branch.to_owned(),
+            is_cross_repository: fork,
+            ..pr(number, state, false)
+        };
+        let prs = [
+            on(9, "OPEN", "feat/x", true),
+            on(7, "MERGED", "feat/x", false),
+            on(5, "OPEN", "feat/x", false),
+            on(4, "CLOSED", "feat/y", false),
+            on(3, "MERGED", "feat/y", false),
+        ];
+
+        assert_eq!(for_branch(&prs, "feat/x").map(|p| p.number), Some(5));
+        assert_eq!(for_branch(&prs, "feat/y").map(|p| p.number), Some(4));
+        assert_eq!(for_branch(&prs, "main").map(|p| p.number), None);
     }
 
     #[test]

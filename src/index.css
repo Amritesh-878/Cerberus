@@ -729,6 +729,59 @@ button {
   margin-left: 22px;
 }
 
+/* A coder tab's task and how far its handoff has got; a button while one is ready to send. */
+.handoff-line {
+  display: block;
+  width: calc(100% - 16px);
+  margin: -4px 8px 4px;
+  padding: 2px 0;
+  font-size: 11px;
+  color: var(--dim);
+  text-align: left;
+  overflow-wrap: anywhere;
+  background: none;
+  border: 0;
+}
+
+/* Lined up under the sub-tab's title, past its icon. */
+.handoff-line.sub {
+  width: calc(100% - 65px);
+  margin-left: 57px;
+}
+
+.handoff-line.ready {
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.handoff-line.ready:hover,
+.handoff-line.ready:focus-visible {
+  text-decoration: underline;
+}
+
+.handoff-ready {
+  height: 24px;
+  padding: 0 10px;
+  font-size: 12px;
+  color: var(--accent);
+  white-space: nowrap;
+  cursor: pointer;
+  background: none;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+}
+
+.handoff-ready:hover {
+  background: var(--hover);
+}
+
+/* A phone-width bar keeps room for the tab's title; the row below still says ready. */
+@media (width <= 720px) {
+  .handoff-ready-state {
+    display: none;
+  }
+}
+
 .pane-note {
   margin: auto;
   color: var(--dim);

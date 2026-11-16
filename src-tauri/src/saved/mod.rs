@@ -103,6 +103,29 @@ pub struct SavedTab {
     /// Folders beside `cwd` that a Claude Code chat is started with, as `--add-dir`.
     #[serde(default)]
     pub dirs: Vec<String>,
+    /// The task a coder tab opened by Start a task is doing, and where its handoff goes.
+    #[serde(default)]
+    pub handoff: Option<TabHandoff>,
+}
+
+/// A coder tab's task: its handoff file and how far it has got.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TabHandoff {
+    /// `TASK-026`, shown on the tab's row and in the message.
+    pub task_id: String,
+    pub file: String,
+    /// Milliseconds since the epoch when the task opened; a file older than that is from an earlier run.
+    pub since: u64,
+    pub state: HandoffState,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum HandoffState {
+    Working,
+    Ready,
+    Sent,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -591,6 +614,7 @@ pub(crate) mod tests {
             cwd: Some(r"C:\work\app".to_owned()),
             account: Some(2),
             dirs: Vec::new(),
+            handoff: None,
         }
     }
 
