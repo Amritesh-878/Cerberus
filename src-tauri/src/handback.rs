@@ -43,9 +43,11 @@ pub fn same_file(a: &Path, b: &Path) -> bool {
 }
 
 fn modified_since(file: &Path, since_ms: u64) -> bool {
+    // A folder at the path is not a handoff, whenever it changed.
     fs::metadata(file)
-        .and_then(|m| m.modified())
         .ok()
+        .filter(fs::Metadata::is_file)
+        .and_then(|m| m.modified().ok())
         .and_then(|at| at.duration_since(UNIX_EPOCH).ok())
         .is_some_and(|at| at.as_millis() >= u128::from(since_ms))
 }
@@ -197,6 +199,15 @@ mod tests {
         assert!(is_written(&[], &file, written_at - 60_000));
         assert!(!is_written(&[], &file, written_at + 60_000));
         assert!(!is_written(&[], &dir.path().join("missing.md"), 0));
+    }
+
+    #[test]
+    fn a_folder_at_the_handoff_path_is_not_a_handoff() {
+        let dir = TestDir::new();
+        let folder = dir.path().join("task-026.md");
+        fs::create_dir_all(&folder).unwrap();
+
+        assert!(!is_written(&[], &folder, 0));
     }
 
     #[test]

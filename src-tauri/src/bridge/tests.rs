@@ -576,8 +576,10 @@ fn an_offer_to_the_same_account_or_an_unlinked_tab_is_refused() {
         .bridge
         .offer(1, 9, "hi".to_owned(), Duration::from_millis(50));
     let empty = world.bridge.offer(1, 2, "  ".to_owned(), WAIT);
+    let from_closed = world.bridge.offer(9, 2, "hi".to_owned(), WAIT);
 
     assert!(matches!(same, Err(super::BridgeError::SameAccount)));
+    assert!(matches!(from_closed, Err(super::BridgeError::Gone)));
     assert!(matches!(unlinked, Err(super::BridgeError::NotLinked)));
     assert!(matches!(empty, Err(super::BridgeError::Empty)));
     assert!(world.bridge.snapshot().pending.is_empty());

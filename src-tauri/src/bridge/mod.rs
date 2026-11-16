@@ -508,7 +508,11 @@ impl Bridge {
                 let mut state = core.state();
                 if let Some(target) = state.by_tab(to) {
                     let home = target.home.clone();
-                    if state.by_tab(from).is_some_and(|sender| sender.home == home) {
+                    // Checked as it queues, so the popup never holds a message from a tab that has closed.
+                    let Some(sender) = state.by_tab(from) else {
+                        return Err(BridgeError::Gone);
+                    };
+                    if sender.home == home {
                         return Err(BridgeError::SameAccount);
                     }
                     state.next_offer += 1;

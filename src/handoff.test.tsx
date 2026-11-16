@@ -81,6 +81,8 @@ function handoffCore(
     written?: boolean[];
     offerFails?: string;
     pick?: string | null;
+    /** Holds the message until it resolves, as a slow `gh` would. */
+    holdMessage?: Promise<void>;
   } = {},
 ) {
   const pty = ptyCore();
@@ -115,7 +117,8 @@ function handoffCore(
       ...record("handoff_written", () =>
         written.length > 1 ? written.shift() : written[0],
       ),
-      ...record("handoff_message", (args) => {
+      ...record("handoff_message", async (args) => {
+        await options.holdMessage;
         const taskId = field(args, "taskId") as string | null;
         const id = taskId ?? "TASK-027";
         const file = String(field(args, "file"));
@@ -318,4 +321,33 @@ test("a coder tab started by hand sends a handoff it chooses, starting at the ne
     file: picked,
     state: "sent",
   });
+});
+
+test("a planner that closes while the line is made gets nothing, and the handoff stays ready", async () => {
+  let release: () => void = () => undefined;
+  const env = handoffCore({
+    written: [true],
+    holdMessage: new Promise<void>((resolve) => {
+      release = resolve;
+    }),
+  });
+  const root = await renderApp(() => SAVED, env.core);
+  await open(root, "TASK-026 · Handoff back");
+  click(root, "Handoff ready · Send to planner");
+  await settle();
+
+  click(root, "Close planner");
+  await settle();
+  release();
+  await settle();
+  await settle();
+
+  expect(env.pty.spawned).toHaveLength(1);
+  expect(env.writes).toEqual([]);
+  expect(env.called("handoff_offer")).toEqual([]);
+  expect(savedHandoff(env)?.state).toBe("ready");
+  expect(line(root)).toBe("TASK-026 · handoff ready");
+  expect(document.querySelector("[role='alertdialog']")?.textContent).toContain(
+    "The planner tab closed before the handoff was sent",
+  );
 });

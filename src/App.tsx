@@ -1132,12 +1132,23 @@ export function App() {
     const known = tab.handoff?.file === file ? tab.handoff : undefined;
     handoffMessage(tab.launch.spec.cwd ?? "", file, known?.taskId ?? null)
       .then(async (message) => {
+        // Read again: the planner may have closed, or the coder moved, while the core looked for the PR.
+        const coder = tabById(id);
+        if (!coder) return;
+        const target =
+          coder.parentId === planner.id ? tabById(planner.id) : undefined;
+        if (!target) {
+          setHandoffFailed(
+            "The planner tab closed before the handoff was sent",
+          );
+          return;
+        }
         select(id);
-        split.open(id, planner.id);
-        if (tab.launch.account?.id === planner.launch.account?.id) {
-          typeForPlanner(planner.id, message.text);
+        split.open(id, target.id);
+        if (coder.launch.account?.id === target.launch.account?.id) {
+          typeForPlanner(target.id, message.text);
         } else {
-          await handoffOffer(id, planner.id, message.text);
+          await handoffOffer(id, target.id, message.text);
         }
         if (tabById(id)) {
           setTree(
