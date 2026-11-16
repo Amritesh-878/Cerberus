@@ -191,7 +191,7 @@ test("every delivered message opens or keeps its split, nothing else changes it,
   await arrive(3, 3, 6);
   click(root, "Approve");
   await settle();
-  click(root, "OK");
+  click(root, "Close");
   await gone();
   expect(splitOf(root)).toBe("none");
 
@@ -209,7 +209,7 @@ test("every delivered message opens or keeps its split, nothing else changes it,
   await settle();
   click(root, "Approve edited");
   await settle();
-  click(root, "OK");
+  click(root, "Close");
   await gone();
   expect(splitOf(root)).toBe("LR--");
 
@@ -260,7 +260,7 @@ test("a tab's note says when messages are prefill only or off", async () => {
     "messages: prefill only",
   );
   expect(root.querySelector(".messages-note")?.getAttribute("title")).toContain(
-    "older than 2.1.317 or uses an inbox format",
+    "Cerberus doesn't know this Claude Code's inbox",
   );
   await open(root, "planner");
   expect(root.querySelector(".messages-note")).toBeNull();
@@ -310,7 +310,7 @@ test("the popup says so when the chat that sent its message is gone", async () =
   await settle();
 
   expect(root.querySelector(".approval")?.textContent).toContain(
-    "The sending chat is gone",
+    "The sending chat closed",
   );
   expect(app.decided).toEqual([]);
 });
@@ -320,9 +320,9 @@ test("each prefill-only reason gets its own plain tooltip", () => {
     (why) => noteText({ tab: 1, note: "prefillOnly", why }).title,
   );
 
-  expect(titles[0]).toContain("checked on Windows only");
-  expect(titles[1]).toContain("no inbox of its own");
-  expect(titles[2]).toContain("Updating Claude Code and reopening the tab");
+  expect(titles[0]).toContain("works on Windows only");
+  expect(titles[1]).toContain("has no inbox");
+  expect(titles[2]).toContain("Update it and reopen the tab");
   expect(titles[3]).toContain("can't take them directly");
   expect(noteText({ tab: 1, note: "off" }).label).toBe("messages off");
 });

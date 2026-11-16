@@ -147,7 +147,7 @@ export function Sidebar(props: {
             type="button"
             class="search search-open"
             aria-label="Search tabs and chats"
-            title="Search open tabs and every account's chats (Ctrl+Shift+F)"
+            title="Search tabs and chats (Ctrl+Shift+F)"
             onClick={() => {
               props.onSearch?.();
             }}
@@ -402,7 +402,7 @@ function TabRow(props: {
               type="button"
               class="tab-select"
               aria-current={props.active ? "page" : undefined}
-              title="Double-click or F2 to rename; drag onto the chat to show side by side"
+              title="F2 to rename. Drag onto the chat to split."
               onPointerDown={drag.onPointerDown}
               onPointerMove={(event) => {
                 drag.onPointerMove(event, props.drag());
@@ -492,7 +492,7 @@ function TabRow(props: {
                 type="button"
                 class="handoff-line ready"
                 classList={{ sub: props.row.sub }}
-                title="Tell the planner tab where the handoff is"
+                title="Tells the planner where the handoff is"
                 onClick={() => {
                   send()();
                 }}
@@ -515,10 +515,8 @@ function TabRow(props: {
               props.onShortcut(account(), { x: box.left, y: box.bottom + 4 });
             }}
           >
-            {resets() === undefined
-              ? "Limited"
-              : `Limited until ${resets() ?? ""}`}
-            {" · continue on "}
+            {resets() === undefined ? "Out" : `Out until ${resets() ?? ""}`}
+            {" · move to "}
             {account().name}
           </button>
         )}
@@ -556,9 +554,7 @@ function StateMark(props: { mark: Mark | undefined }) {
             <span
               class="mark limited"
               title={
-                at() === undefined
-                  ? "Usage limit reached"
-                  : `Usage limit, resets ${at() ?? ""}`
+                at() === undefined ? "Out of usage" : `Out until ${at() ?? ""}`
               }
             >
               <ClockIcon />
@@ -681,8 +677,7 @@ function ProjectHeader(props: {
         {(project) => (
           <div class="confirm" role="alert">
             <p>
-              Close {tabs()} and remove {project().name}? The folder stays on
-              disk.
+              Close {tabs()} and remove {project().name}? The folder stays.
             </p>
             <div class="confirm-actions">
               <button

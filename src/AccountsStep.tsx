@@ -109,8 +109,7 @@ export function AccountsStep(props: {
     <section>
       <Show when={props.profiles.accounts.length === 0}>
         <p class="accounts-empty">
-          No accounts yet. Import one found on this computer, or add a new one
-          below.
+          No accounts yet. Import one below or add a new one.
         </p>
       </Show>
       <ul class="accounts">
@@ -205,7 +204,7 @@ export function AccountsStep(props: {
                   </button>
                   <button
                     type="button"
-                    title="Cerberus forgets this account. Its folder stays on disk."
+                    title="Forgets the account. Its folder stays."
                     onClick={() => {
                       remove(account, false);
                     }}
@@ -224,8 +223,8 @@ export function AccountsStep(props: {
                       {account.name}: {ask().tabs.join(", ")}.
                     </p>
                     <p class="hint">
-                      Removing it closes their programs. The tabs stay, so each
-                      chat can continue on another account. Nothing is deleted.
+                      Removing it stops them. The tabs stay, ready to move to
+                      another account. Nothing is deleted.
                     </p>
                     <span class="row-confirm-actions">
                       <button
@@ -349,8 +348,7 @@ export function AccountsStep(props: {
         )}
       </Show>
       <p class="hint">
-        Add opens Claude Code to sign this account in. Close the tab once you're
-        signed in.
+        Add opens Claude Code to sign in. Close the tab when done.
       </p>
       <Show when={error()}>
         <p class="error">{error()}</p>

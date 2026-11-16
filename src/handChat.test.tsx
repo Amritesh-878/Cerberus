@@ -165,7 +165,7 @@ test("when it exits with a chat to resume, the tab is a shell whose ended chat i
   await openMenu(root, "shell");
   expect(menuItems(root)).toEqual([
     "Resume chat",
-    "Continue the ended chat on personal…",
+    "Move the ended chat to personal…",
     "Accounts",
   ]);
   expect(app.pty.spawned).toHaveLength(1);
@@ -272,9 +272,7 @@ test("a working chat asks before it is stopped to reopen", async () => {
 
   click(bar(), "Reopen as Claude tab");
   await settle();
-  expect(bar().textContent).toContain(
-    "Claude is working. Stop it and reopen the chat as a Claude tab?",
-  );
+  expect(bar().textContent).toContain("Claude is working. Stop it and reopen?");
   click(bar(), "Cancel");
   await settle();
   expect(app.pty.killed).toEqual([]);
@@ -362,10 +360,10 @@ test("Continue on an ended tab after three resumes that found nothing moves the 
   await openMenu(root, "planner");
   click(
     root.querySelector(".tab-menu") ?? root,
-    "Continue the ended chat on personal…",
+    "Move the ended chat to personal…",
   );
   await settle();
-  click(root.querySelector(".menu-confirm") ?? root, "Continue");
+  click(root.querySelector(".menu-confirm") ?? root, "Move");
   await settle();
 
   expect(root.querySelector(".menu-confirm")).toBeNull();
@@ -388,9 +386,7 @@ test("a chat started by hand asks once, over its tab, to reopen as a Claude tab"
   await settle();
 
   const prompt = () => document.querySelector<HTMLElement>(".hand-prompt");
-  expect(prompt()?.textContent).toContain(
-    "can't send or receive messages between accounts",
-  );
+  expect(prompt()?.textContent).toContain("can't message other accounts");
   expect(document.activeElement?.textContent).toBe("Reopen as Claude tab");
   click(prompt() ?? root, "Not now");
   await settle();

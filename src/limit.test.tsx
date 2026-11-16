@@ -92,12 +92,12 @@ test("a chat hitting its limit gets one popup per window, offering only accounts
   expect(
     field(env.calls.find((c) => c.cmd === "live_offers")?.args, "account"),
   ).toBe(1);
-  expect(popup()?.textContent).toContain("planner hit its limit");
-  expect(popup()?.textContent).toContain("work is limited until");
+  expect(popup()?.textContent).toContain("work is out until");
+  expect(popup()?.textContent).toContain("Move planner to:");
   const buttons = [...(popup()?.querySelectorAll("button") ?? [])].map((b) =>
     b.textContent.trim(),
   );
-  expect(buttons).toEqual(["Continue on personal", "Not now"]);
+  expect(buttons).toEqual(["personal", "Not now"]);
   expect(
     [...(popup()?.querySelectorAll("button") ?? [])].every((b) =>
       b.classList.contains("secondary"),
@@ -120,7 +120,7 @@ test("Continue moves the chat, and continue is typed as a paste only once the ne
   await open(root, "planner");
   await hitLimit(env);
 
-  click(popup() ?? root, "Continue on personal");
+  click(popup() ?? root, "Move to personal");
   await settle();
   await settle();
 
@@ -147,9 +147,7 @@ test("no account below the line offers no move, only Not now", async () => {
 
   await hitLimit(env);
 
-  expect(popup()?.textContent).toContain(
-    "No other signed-in account is below 85%",
-  );
+  expect(popup()?.textContent).toContain("No other account is under 85%");
   const buttons = [...(popup()?.querySelectorAll("button") ?? [])].map((b) =>
     b.textContent.trim(),
   );
@@ -163,9 +161,9 @@ test("a Continue on from the tab's menu types nothing after the move", async () 
 
   root.querySelector<HTMLButtonElement>(".account-pill")?.click();
   await settle();
-  click(root.querySelector(".tab-menu") ?? root, "Continue on personal…");
+  click(root.querySelector(".tab-menu") ?? root, "Move to personal…");
   await settle();
-  click(root.querySelector(".menu-confirm") ?? root, "Continue");
+  click(root.querySelector(".menu-confirm") ?? root, "Move");
   await settle();
   await settle();
   const restarted = env.pty.spawned.length - 1;
@@ -187,9 +185,9 @@ test("a move from the low-limit banner types continue too, once its confirm is c
   });
   await settle();
 
-  click(root.querySelector(".live-warning") ?? root, "Continue on personal");
+  click(root.querySelector(".live-warning") ?? root, "Move to personal");
   await settle();
-  click(root.querySelector(".menu-confirm") ?? root, "Continue");
+  click(root.querySelector(".menu-confirm") ?? root, "Move");
   await settle();
   await settle();
   emit(env.pty.spawned, env.pty.spawned.length - 1, { state: "idle" });
@@ -211,7 +209,7 @@ test("a meter's 5-hour window at 100% opens the popup for the tab that reported 
 
   await emitEvent("live", full);
   await settle();
-  expect(popup()?.textContent).toContain("work is limited until");
+  expect(popup()?.textContent).toContain("Move planner to:");
   click(popup() ?? root, "Not now");
   await settle();
   await emitEvent("live", {
@@ -273,7 +271,7 @@ test("a later live view refreshes the shown popup's offers without opening anoth
   };
   await emitEvent("live", { tabs: [], meters: [], warnings: [warning] });
   await settle();
-  expect(popup()?.textContent).toContain("Continue on personal");
+  expect(popup()?.textContent).toContain("personal");
 
   await emitEvent("live", {
     tabs: [],
@@ -283,8 +281,8 @@ test("a later live view refreshes the shown popup's offers without opening anoth
   await settle();
 
   expect(document.querySelectorAll(".limit-popup")).toHaveLength(1);
-  expect(popup()?.textContent).not.toContain("Continue on personal");
-  expect(popup()?.textContent).toContain("No other signed-in account");
+  expect(popup()?.textContent).not.toContain("Move to personal");
+  expect(popup()?.textContent).toContain("No other account");
 });
 
 test("the popup waits while another dialog is open, so Escape closes only that one", async () => {

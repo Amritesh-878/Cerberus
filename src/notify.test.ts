@@ -56,11 +56,11 @@ test("a limit gives its reset time when it is known", () => {
   const at = new Date(2026, 10, 2, 18, 40).getTime() / 1000;
 
   expect(toastFor({ kind: "limited", resetsAt: null }, tree, tab)?.body).toBe(
-    "Hit its limit",
+    "Out of usage",
   );
   expect(
     toastFor({ kind: "limited", resetsAt: at }, tree, tab, "en-US")?.body,
-  ).toBe("Hit its limit, resets 6:40pm");
+  ).toBe("Out until 6:40 pm");
 });
 
 test("a tab that is gone gives no notification", () => {

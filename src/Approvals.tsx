@@ -38,7 +38,7 @@ function TabLine(props: { label: string; name: TabName }) {
 }
 
 function waitsForEnter(where: string): string {
-  return `It's in the input box of ${where}. Press Enter there to send it.`;
+  return `Typed into ${where}. Press Enter there to send.`;
 }
 
 /** The first waiting message, to approve, edit or reject; nothing approves by itself, and Escape is the terminal's. */
@@ -75,7 +75,7 @@ export function Approvals(props: {
           props.senderGone.includes(shown)
         ) {
           setNotice({
-            text: "The sending chat is gone, so its message was dropped.",
+            text: "The sending chat closed. Its message was dropped.",
           });
         }
       },
@@ -105,7 +105,7 @@ export function Approvals(props: {
             setNotice({ text: waitsForEnter(where) });
           } else if (decided.how === "unconfirmed") {
             setNotice({
-              text: `It went to the inbox of ${where}, but that tab hasn't shown it yet. It may still arrive.`,
+              text: `In ${where}'s inbox but not shown yet. It may still arrive.`,
               typeIn: {
                 id: decided.id,
                 where,
@@ -143,7 +143,7 @@ export function Approvals(props: {
           // Typed in counts as delivered, so it brings the split back if it was closed meanwhile.
           props.onApproved(target.from, target.to);
           setNotice({
-            text: `${waitsForEnter(where)} If the first copy shows up there too, clear the input box instead.`,
+            text: `${waitsForEnter(where)} If the first copy arrives too, clear the input box.`,
           });
         },
         (e: unknown) => {
@@ -185,7 +185,7 @@ export function Approvals(props: {
               />
               <Show when={edited()}>
                 <p class="approval-edited">
-                  Edited. The sender is told what you changed it to.
+                  Edited. The sender sees your version.
                 </p>
               </Show>
               <Show when={error()}>
@@ -256,7 +256,7 @@ export function Approvals(props: {
                 }
               }}
             >
-              OK
+              Close
             </button>
           </div>
         </section>

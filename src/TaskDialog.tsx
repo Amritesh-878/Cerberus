@@ -363,8 +363,7 @@ export function TaskDialog(props: {
               />
             </label>
             <p class="env-note">
-              The chat also gets {folderName(props.project.folder)} as an added
-              folder.
+              {folderName(props.project.folder)} is added to the chat too.
             </p>
           </Show>
         </section>
@@ -392,8 +391,7 @@ export function TaskDialog(props: {
         </details>
 
         <p class="env-note">
-          The prompt is typed into the new chat once it is ready, and sent only
-          when you press Enter.
+          Typed into the chat when it's ready. You send it.
         </p>
         <Show when={error()}>
           {(message) => (

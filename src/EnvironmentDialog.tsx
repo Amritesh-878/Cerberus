@@ -260,15 +260,15 @@ export function EnvironmentDialog(props: {
           <Show when={plan().restart}>
             <p class="env-note">
               {props.tab.launch.program === "claude"
-                ? "The tab restarts in the new folder and resumes the same chat."
-                : "The tab restarts in the new folder."}
+                ? "The tab restarts there and resumes the chat."
+                : "The tab restarts there."}
             </p>
           </Show>
           <Show when={plan().added.length > 0 && props.chatRunning}>
             <p class="env-note">
               {plan().added.length === 1
                 ? "/add-dir is typed into the chat for you to send."
-                : "/add-dir is typed into the chat for the first folder; the rest apply on the next start."}
+                : "/add-dir is typed for the first folder. The rest apply on the next start."}
             </p>
           </Show>
           <Show when={plan().removed.length > 0}>
@@ -320,8 +320,8 @@ export function EnvironmentDialog(props: {
             </button>
           </div>
           <p class="env-note">
-            Set when the tab starts. Stored in plain text in Cerberus's tabs
-            file, so keep keys in your own secret store.
+            Set when the tab starts. Saved in plain text, so keep secrets
+            elsewhere.
           </p>
         </section>
         <Show when={error()}>
@@ -349,7 +349,7 @@ export function EnvironmentDialog(props: {
             }
           >
             <span class="env-confirm" role="alert">
-              The chat is working. Restart it in the new folder now?
+              The chat is working. Restart it in the new folder?
             </span>
             <button
               type="button"

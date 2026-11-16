@@ -348,6 +348,6 @@ test("a planner that closes while the line is made gets nothing, and the handoff
   expect(savedHandoff(env)?.state).toBe("ready");
   expect(line(root)).toBe("TASK-026 · handoff ready");
   expect(document.querySelector("[role='alertdialog']")?.textContent).toContain(
-    "The planner tab closed before the handoff was sent",
+    "The planner tab closed",
   );
 });

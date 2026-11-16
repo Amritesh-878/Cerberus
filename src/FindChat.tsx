@@ -182,7 +182,7 @@ export function FindChat(props: {
             <SearchIcon />
             <input
               type="search"
-              placeholder="Tabs, or words from a chat, or its id"
+              placeholder="Tab name, words from a chat, or a chat id"
               aria-label="Search tabs and chats"
               value={query()}
               onInput={(event) => {
@@ -213,7 +213,7 @@ export function FindChat(props: {
             <div class="find-gone" role="alert">
               <p title={chat().folder ?? undefined}>
                 Its folder, {folderName(chat().folder ?? "") || "unknown"}, is
-                gone. Choose a folder to continue the chat there.
+                gone. Choose a folder to resume it in.
               </p>
               <div class="find-gone-actions">
                 <button
@@ -351,7 +351,7 @@ export function FindChat(props: {
                 ? "No chats yet"
                 : "No chats match"
               : shownChats().length === 0
-                ? "Every chat found is open in a tab above"
+                ? "Every chat found is open above"
                 : `${String(shownChats().length)} of ${String(done())} chats`}
           </Show>
         </p>

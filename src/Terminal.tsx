@@ -32,7 +32,7 @@ const PTY_RESIZE_SETTLE_MS = 120;
 const RESUMING_NOTICE_MS = 20_000;
 const MISSING_NOTICE_MS = 10_000;
 const RESUMING = "Resuming chat…";
-const MISSING = "The saved chat is gone, so this is a new one.";
+const MISSING = "The saved chat is gone. This is a new one.";
 const ENDED = "The chat ended. Resume chat is in the tab's menu.";
 
 /** The rows on screen as text, top to bottom. */

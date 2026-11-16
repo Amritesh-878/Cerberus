@@ -112,8 +112,8 @@ test("a Claude tab's menu offers the other accounts, and a signed-out one cannot
   await openMenu(root, "Claude Code · work");
 
   expect(menuItems(root)).toEqual([
-    "Continue on personal…",
-    "Continue on spare…signed out (off)",
+    "Move to personal…",
+    "Move to spare…signed out (off)",
     "Accounts",
   ]);
 });
@@ -131,7 +131,7 @@ test("a tab that is not running moves at once and resumes on the new account", a
   const root = await renderApp(() => SAVED, app.core);
 
   await openMenu(root, "Claude Code · work");
-  click(root.querySelector(".tab-menu") ?? root, "Continue on personal…");
+  click(root.querySelector(".tab-menu") ?? root, "Move to personal…");
   await settle();
 
   expect(app.continued).toEqual([{ tab: 2, account: 0 }]);
@@ -147,10 +147,10 @@ test("a running chat asks first, and Cancel leaves it alone", async () => {
   await open(root, "Claude Code · work");
 
   await openMenu(root, "Claude Code · work");
-  click(root.querySelector(".tab-menu") ?? root, "Continue on personal…");
+  click(root.querySelector(".tab-menu") ?? root, "Move to personal…");
   await settle();
   expect(root.querySelector(".menu-confirm")?.textContent).toContain(
-    "Close this chat and continue it on personal?",
+    "Move this chat to personal?",
   );
   // The move ends what the chat left running, so the confirm says so before it happens.
   expect(
@@ -158,9 +158,7 @@ test("a running chat asks first, and Cancel leaves it alone", async () => {
       .querySelector(".menu-confirm-note")
       ?.textContent.replace(/\s+/g, " ")
       .trim(),
-  ).toBe(
-    "Anything it left running, such as a dev server, is stopped too. Use a service to keep one running.",
-  );
+  ).toBe("Stops anything it started. A service keeps a server running.");
   click(root.querySelector(".menu-confirm") ?? root, "Cancel");
   await settle();
 
@@ -174,9 +172,9 @@ test("confirming stops the chat, moves it and starts it again on the new account
   await open(root, "Claude Code · work");
 
   await openMenu(root, "Claude Code · work");
-  click(root.querySelector(".tab-menu") ?? root, "Continue on personal…");
+  click(root.querySelector(".tab-menu") ?? root, "Move to personal…");
   await settle();
-  click(root.querySelector(".menu-confirm") ?? root, "Continue");
+  click(root.querySelector(".menu-confirm") ?? root, "Move");
   await settle();
 
   expect(app.pty.killed).toEqual([1]);
@@ -189,15 +187,15 @@ test("a refused move keeps the tab on its account, still resumable, and says why
   const root = await renderApp(() => SAVED, app.core);
 
   await openMenu(root, "Claude Code · work");
-  click(root.querySelector(".tab-menu") ?? root, "Continue on personal…");
+  click(root.querySelector(".tab-menu") ?? root, "Move to personal…");
   await settle();
 
   const popup = document.querySelector<HTMLElement>(".notice-popup");
-  expect(popup?.textContent).toContain("Could not continue on personal");
+  expect(popup?.textContent).toContain("Couldn't move to personal");
   expect(popup?.textContent).toContain(
-    "Error: the other account already has this chat. The chat stays on its account.",
+    "Error: the other account already has this chat. The chat stays where it was.",
   );
-  click(popup ?? root, "OK");
+  click(popup ?? root, "Close");
   await settle();
   expect(document.querySelector(".notice-popup")).toBeNull();
   expect(activeTitle(root)).toBe("Claude Code · work");
@@ -226,11 +224,11 @@ test("a limited tab offers the move on its row", async () => {
 
   const shortcut = root.querySelector<HTMLButtonElement>(".limit-continue");
   expect(shortcut?.textContent).toBe(
-    `Limited until ${resetText(resetsAt)} · continue on personal`,
+    `Out until ${resetText(resetsAt)} · move to personal`,
   );
   shortcut?.click();
   await settle();
-  click(root.querySelector(".menu-confirm") ?? root, "Continue");
+  click(root.querySelector(".menu-confirm") ?? root, "Move");
   await settle();
 
   expect(app.continued).toEqual([{ tab: 2, account: 0 }]);
@@ -248,11 +246,11 @@ test("while a move is under way the tab's menu offers no move, so it moves once"
   });
 
   await openMenu(root, "Claude Code · work");
-  click(root.querySelector(".tab-menu") ?? root, "Continue on personal…");
+  click(root.querySelector(".tab-menu") ?? root, "Move to personal…");
   await settle();
   await openMenu(root, "Claude Code · work");
-  expect(menuItems(root)).toEqual(["Continue on personal… (off)", "Accounts"]);
-  click(root.querySelector(".tab-menu") ?? root, "Continue on personal…");
+  expect(menuItems(root)).toEqual(["Move to personal… (off)", "Accounts"]);
+  click(root.querySelector(".tab-menu") ?? root, "Move to personal…");
   await settle();
 
   expect(app.continued).toHaveLength(1);
@@ -276,9 +274,9 @@ test("a moving chat says where it is going on its row and in its pane until it r
   await open(root, "Claude Code · work");
 
   await openMenu(root, "Claude Code · work");
-  click(root.querySelector(".tab-menu") ?? root, "Continue on personal…");
+  click(root.querySelector(".tab-menu") ?? root, "Move to personal…");
   await settle();
-  click(root.querySelector(".menu-confirm") ?? root, "Continue");
+  click(root.querySelector(".menu-confirm") ?? root, "Move");
   await settle();
 
   expect(root.querySelector(".moving-line")?.textContent).toBe(
@@ -319,10 +317,10 @@ test.each([
   await openMenu(root, "Claude Code · work");
   click(
     root.querySelector(".tab-menu") ?? root,
-    "Continue the ended chat on personal…",
+    "Move the ended chat to personal…",
   );
   await settle();
-  click(root.querySelector(".menu-confirm") ?? root, "Continue");
+  click(root.querySelector(".menu-confirm") ?? root, "Move");
   await settle();
 
   expect(showsShell(root)).toBe(stillEnded);
@@ -338,19 +336,19 @@ test("an ended tab offers only its own saved chat, and asks first since its shel
   await openMenu(root, "Claude Code · work");
   expect(menuItems(root)).toEqual([
     "Resume chat",
-    "Continue the ended chat on personal…",
+    "Move the ended chat to personal…",
     "Accounts",
   ]);
   click(
     root.querySelector(".tab-menu") ?? root,
-    "Continue the ended chat on personal…",
+    "Move the ended chat to personal…",
   );
   await settle();
   expect(root.querySelector(".menu-confirm")?.textContent).toContain(
-    "Close this tab's shell and continue the ended chat on personal?",
+    "Close the shell and move the chat to personal?",
   );
   // The picked item is gone, so the keyboard lands on Continue.
-  expect(document.activeElement?.textContent).toBe("Continue");
+  expect(document.activeElement?.textContent).toBe("Move");
   click(root.querySelector(".menu-confirm") ?? root, "Cancel");
   await settle();
 
@@ -372,7 +370,7 @@ test("the account pill names the tab's account and offers the others, then Accou
     "workuser@example.com · Pro",
   );
   expect(menuItems(root)).toEqual([
-    "Continue on personal…",
+    "Move to personal…",
     "Start a task…",
     "Accounts",
   ]);
@@ -451,7 +449,7 @@ test("removing an account with tabs asks first, then closes their programs and k
   ).toEqual(["Claude Code · work", "shell"]);
   await open(root, "Claude Code · work");
   expect(root.querySelector(".removed-note")?.textContent).toContain(
-    "work was removed, so this tab's program closed. Its chat is saved.",
+    "work was removed. The chat is saved.",
   );
   expect(fake.app.pty.spawned).toHaveLength(1);
 });
@@ -536,13 +534,13 @@ test("a confirm from the account pill moves the tab it was opened for, even afte
   const root = await renderApp(() => SAVED, app.core);
   await open(root, "shell");
   await openPill(root);
-  click(root.querySelector(".tab-menu") ?? root, "Continue on personal…");
+  click(root.querySelector(".tab-menu") ?? root, "Move to personal…");
   await settle();
   expect(root.querySelector(".menu-confirm")).not.toBeNull();
 
   press("Tab", { ctrlKey: true, shiftKey: true });
   await settle();
-  click(root.querySelector(".menu-confirm") ?? root, "Continue");
+  click(root.querySelector(".menu-confirm") ?? root, "Move");
   await settle();
 
   expect(app.continued).toEqual([{ tab: 2, account: 0 }]);
@@ -560,7 +558,7 @@ test("a shell left on a removed account restarts on another, with no chat to mov
 
   await open(root, "shell");
   expect(root.querySelector(".removed-note")?.textContent).toContain(
-    "work was removed, so this shell closed.",
+    "work was removed. The shell closed.",
   );
   click(root.querySelector(".removed-note") ?? root, "Restart on personal");
   await settle();
@@ -585,5 +583,5 @@ test("an ended chat on a removed account offers no Resume chat, only a move", as
 
   await openMenu(root, "Claude Code · work");
 
-  expect(menuItems(root)).toEqual(["Continue on personal…", "Accounts"]);
+  expect(menuItems(root)).toEqual(["Move to personal…", "Accounts"]);
 });

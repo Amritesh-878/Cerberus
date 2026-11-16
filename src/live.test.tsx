@@ -132,7 +132,7 @@ test("the context card shows the shown chat's use, and Compact types /compact wi
   await open(root, "planner");
 
   expect(card(root, "Context").textContent).toContain(
-    "Restart the chat to see its context here",
+    "Restart the chat to show context",
   );
   await emitEvent("live", {
     ...VIEW,
@@ -242,14 +242,14 @@ test("a warning offers Continue on, which only opens the usual confirm, and Dism
 
   const banner = root.querySelector<HTMLElement>(".live-warning");
   expect(banner?.textContent).toContain("work is at 87%, resets ");
-  click(banner ?? root, "Continue on personal");
+  click(banner ?? root, "Move to personal");
   await settle();
 
   expect(root.querySelector(".menu-confirm")?.textContent).toContain(
-    "Close this chat and continue it on personal?",
+    "Move this chat to personal?",
   );
   expect(live.calls.filter((c) => c.cmd === "continue_on_account")).toEqual([]);
-  click(root.querySelector(".menu-confirm") ?? root, "Continue");
+  click(root.querySelector(".menu-confirm") ?? root, "Move");
   await settle();
   expect(live.calls.find((c) => c.cmd === "continue_on_account")?.args).toEqual(
     { tab: 3, account: 0 },
@@ -272,10 +272,8 @@ test("a warning with no signed-in account below the line offers no move", async 
   await settle();
 
   const banner = root.querySelector<HTMLElement>(".live-warning");
-  expect(banner?.textContent).toContain(
-    "No other signed-in account is below 85%",
-  );
-  expect(() => button(banner ?? root, "Continue on personal")).toThrow();
+  expect(banner?.textContent).toContain("No other account is under 85%");
+  expect(() => button(banner ?? root, "Move to personal")).toThrow();
 });
 
 test("the core's warning event sends one desktop notification naming the account", async () => {
@@ -414,7 +412,7 @@ test("the warning text, elapsed time and a window past its reset", () => {
   expect(elapsedText(3_840_000)).toBe("1h 04m");
 
   expect(warningText("work", { used: 86.6, resetsAt: 0 }, "en-US")).toMatch(
-    /^work is at 87%, resets \d{1,2}:\d{2}(am|pm)$/,
+    /^work is at 87%, resets \d{1,2}:\d{2} (am|pm)$/,
   );
   expect(windowState({ used: 50, resetsAt: 100 }, 99)).toEqual({
     kind: "known",

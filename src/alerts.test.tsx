@@ -153,7 +153,7 @@ test("a usage limit shows one notification with its reset time", async () => {
   expect(desktop.sent).toEqual([
     {
       title: "planner · alpha",
-      body: `Hit its limit, resets ${resetText(resetsAt)}`,
+      body: `Out until ${resetText(resetsAt)}`,
       extra: { tab: 3 },
     },
   ]);

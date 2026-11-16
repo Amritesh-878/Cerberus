@@ -55,7 +55,7 @@ export function OutputsCard(props: {
       >
         <Show
           when={props.live}
-          fallback={<Note>Restart the chat to see its files here</Note>}
+          fallback={<Note>Restart the chat to list its files</Note>}
         >
           {(live) => (
             <For
@@ -143,7 +143,7 @@ export function TasksCard(props: {
       >
         <Show
           when={props.live}
-          fallback={<Note>Restart the chat to see its tasks here</Note>}
+          fallback={<Note>Restart the chat to list its tasks</Note>}
         >
           <For each={rows()} fallback={<Note>None yet</Note>}>
             {(task) => (
@@ -154,7 +154,7 @@ export function TasksCard(props: {
                 disabled={!props.canType}
                 title={
                   props.canType
-                    ? "Types /tasks into the chat; press Enter there to see its output"
+                    ? "Types /tasks for you to send"
                     : "Open the running chat to see its tasks"
                 }
                 onClick={() => {

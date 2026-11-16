@@ -1138,9 +1138,7 @@ export function App() {
         const target =
           coder.parentId === planner.id ? tabById(planner.id) : undefined;
         if (!target) {
-          setHandoffFailed(
-            "The planner tab closed before the handoff was sent",
-          );
+          setHandoffFailed("The planner tab closed");
           return;
         }
         select(id);
@@ -1265,10 +1263,8 @@ export function App() {
           <h1>Cerberus</h1>
           <p class="error">{loadError()}</p>
           <p>
-            Start fresh to set up your accounts again. The old file is kept
-            beside the new one as <code>profiles.json.bad</code>, or{" "}
-            <code>.bad2</code>, <code>.bad3</code> and so on when that name is
-            taken.
+            Start fresh to set up your accounts again. The old file is kept as{" "}
+            <code>profiles.json.bad</code>.
           </p>
           <button type="button" onClick={startFresh}>
             Start fresh
@@ -1474,7 +1470,7 @@ export function App() {
                     <button
                       type="button"
                       class="handoff-ready"
-                      title="Tell the planner tab where the handoff is; you send it there"
+                      title="Tells the planner where the handoff is. You send it."
                       onClick={() => {
                         const file = tabById(id())?.handoff?.file;
                         if (file !== undefined) sendHandoff(id(), file);
@@ -1529,7 +1525,7 @@ export function App() {
                     class="icon-button"
                     aria-label="Right panel"
                     aria-pressed={panel.open()}
-                    title="Show or hide the right panel"
+                    title="Right panel"
                     onClick={() => {
                       panel.toggle();
                     }}
@@ -1542,8 +1538,8 @@ export function App() {
                 {(tab) => (
                   <div class="sign-in-bar">
                     <span>
-                      Signing in {tab().launch.account?.name}. Close this tab
-                      when you're done.
+                      Signing in to {tab().launch.account?.name}. Close this tab
+                      when done.
                     </span>
                     <button
                       type="button"
@@ -1637,7 +1633,7 @@ export function App() {
                       type="button"
                       class="secondary icon-only"
                       aria-label="Swap sides"
-                      title="Swap the left and right tabs"
+                      title="Swap sides"
                       onClick={() => {
                         split.swap();
                       }}
@@ -1696,7 +1692,7 @@ export function App() {
                                         <div class="pane-note removed-note">
                                           <p>
                                             {tab().launch.account?.name} was
-                                            removed, so this shell closed.
+                                            removed. The shell closed.
                                           </p>
                                           <div class="removed-actions">
                                             <For each={loaded().accounts}>
@@ -1719,8 +1715,7 @@ export function App() {
                                       <div class="pane-note removed-note">
                                         <p>
                                           {tab().launch.account?.name} was
-                                          removed, so this tab's program closed.
-                                          Its chat is saved.
+                                          removed. The chat is saved.
                                         </p>
                                         <button
                                           type="button"
@@ -1737,7 +1732,7 @@ export function App() {
                                             });
                                           }}
                                         >
-                                          Continue on another account…
+                                          Move to another account…
                                         </button>
                                       </div>
                                     </Show>
@@ -2072,8 +2067,8 @@ export function App() {
             <Show when={moveFailed()}>
               {(failed) => (
                 <NoticePopup
-                  title={`Could not continue on ${failed().account}`}
-                  message={`${failed().reason}. The chat stays on its account.`}
+                  title={`Couldn't move to ${failed().account}`}
+                  message={`${failed().reason}. The chat stays where it was.`}
                   onClose={() => {
                     setMoveFailed(undefined);
                   }}

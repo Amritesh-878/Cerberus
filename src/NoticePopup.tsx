@@ -59,7 +59,7 @@ export function NoticePopup(props: {
               props.onClose();
             }}
           >
-            OK
+            Close
           </button>
         </div>
       </div>

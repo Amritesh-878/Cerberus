@@ -76,9 +76,9 @@ export function ContextCard(props: {
   const why = () => {
     if (!props.liveOn) return "Live cards are off in Accounts";
     const live = props.live;
-    if (!live) return "Restart the chat to see its context here";
+    if (!live) return "Restart the chat to show context";
     if (live.keptTheirs) {
-      return "Your own status line runs in PowerShell, so this chat can't report here";
+      return "Your status line runs in PowerShell, so this chat can't report";
     }
     return context() === null
       ? "Shows after the chat's first reply"
@@ -119,7 +119,7 @@ export function ContextCard(props: {
           disabled={!props.canType}
           title={
             props.canType
-              ? "Types /compact into the chat; press Enter there to send it"
+              ? "Types /compact for you to send"
               : "Open the running chat to compact it"
           }
           onClick={() => {

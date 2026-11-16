@@ -20,8 +20,7 @@ export const STEP_HEADINGS: Record<Step, string> = {
 
 export const STEP_LEADS: Record<Step, string> = {
   install: "Every Claude Code tab runs the official claude program.",
-  accounts:
-    "Each account keeps its own sign-in, settings and chats, so tabs on different accounts never mix.",
+  accounts: "Each account has its own sign-in, settings and chats.",
   defaults: "New tabs start on this account. You can pick another per tab.",
 };
 
