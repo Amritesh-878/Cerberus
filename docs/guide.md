@@ -156,6 +156,36 @@ Read AGENTS.md, then {task_file}, and do that task. Work in {folder} on branch {
 | `{handoff_file}` | `completed/<task id>.md` beside the task folder (`plans/completed/task-025.md`) |
 | `{planner_tab}` | The planner tab's name |
 
+### Sending a handoff back
+
+A coder tab opened by Start a task knows its task and handoff file, and its sidebar row shows
+`TASK-025 · working`. When its chat reports writing that file, or the file was written since the
+task opened (checked when the chat goes idle and when Cerberus starts), the row and the tab's bar
+show **Handoff ready**. A desktop notification says so when the tab isn't on screen.
+
+**Send to planner** (the bar, the row, or the tab's menu) puts the planner tab beside the coder and
+tells it where the handoff is:
+
+```text
+TASK-025 handoff is ready: <handoff file>. PR: <link>
+```
+
+The PR is the one made from the coder's branch, found the same way as the Changes card's list; with
+none, the line ends after the file. Cerberus never reads the handoff into the message: the planner
+reads the file itself.
+
+- **Planner on the same account**: the line is typed into the planner's input, or once its chat is
+  ready if it wasn't running. Edit it there and send it yourself.
+- **Planner on another account**: the line waits in the approval popup of
+  [Messages between accounts](#messages-between-accounts), where you can edit it, approve it or
+  reject it. Those messages need to be on in Settings.
+
+The row then shows `TASK-025 · handoff sent`, and the menu offers **Send to planner again**.
+
+A coder tab you opened by hand, under a planner, has **Send handoff…** in its menu instead. It asks
+for the file, starting at the newest Markdown file the chat wrote, and takes the task id from the
+file's name (`task-026.md` is `TASK-026`).
+
 ## Restarts and resuming
 
 Projects and tabs are saved as you change them, in `tree.db` in the app's data folder. After a

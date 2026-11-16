@@ -535,6 +535,8 @@ export function App() {
   const [runs, setRuns] = createSignal<ReadonlyMap<TabId, number>>(new Map());
   const runOf = (id: TabId) => runs().get(id) ?? 1;
   const setRun = (id: TabId, run: number) => {
+    // A new run is a new chat, which has drawn nothing yet.
+    lastState.delete(id);
     setRuns((all) => new Map(all).set(id, run));
   };
   const [alerts, setAlerts] = createSignal<ReadonlyMap<TabId, string>>(
@@ -776,6 +778,7 @@ export function App() {
     prefills.forget(id);
     limits.forget(id);
     limitAsks.delete(id);
+    lastState.delete(id);
     setLimitShown(limits.first());
     if (active() === id) {
       setActive(after);
@@ -1111,10 +1114,13 @@ export function App() {
     }),
   );
   const [handoffFailed, setHandoffFailed] = createSignal<string>();
-  // Typed in for the user to send; a planner not running yet gets it once its chat is ready.
+  // Each chat's last reported state, so text goes in now only to a chat that has drawn its input box.
+  const lastState = new Map<TabId, LiveState["state"]>();
+  // Typed in for the user to send; a planner not started or not ready yet gets it once its chat is idle.
   const typeForPlanner = (planner: TabId, text: string) => {
     const typer = typers.get(planner);
-    if (typer && isRunning(planner)) typer(text);
+    const up = lastState.has(planner) && !ended().has(planner);
+    if (typer && up) typer(text);
     else prefills.set(planner, text);
   };
   /** Tells the parent planner where the handoff is: typed in on its own account, the approval popup on another. */
@@ -1750,6 +1756,7 @@ export function App() {
                               onState={(state) => {
                                 prefills.reported(id, state, typers.get(id));
                                 limitReported(id, state);
+                                lastState.set(id, state.state);
                                 if (state.state === "idle") checkHandoff(id);
                                 notify(id, state);
                                 setBoard((b) =>
