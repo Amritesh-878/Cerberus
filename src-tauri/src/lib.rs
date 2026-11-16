@@ -5,6 +5,7 @@ mod cards;
 mod cli_link;
 mod commands;
 mod findchat;
+mod handback;
 mod handover;
 mod job;
 mod live;
@@ -160,6 +161,9 @@ pub fn run() {
             commands::continue_on_account,
             commands::install_cli,
             panel::panel_changes,
+            handback::handoff_message,
+            handback::handoff_offer,
+            handback::handoff_written,
             tasks::task_branches,
             tasks::task_default_prompt,
             tasks::task_files,

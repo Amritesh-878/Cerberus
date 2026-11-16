@@ -28,7 +28,7 @@ fn unlocked_uri(path: &Path) -> String {
 }
 
 // Forward only: a merged step is never edited, and each one runs once, in order.
-const MIGRATIONS: [&str; 4] = [
+const MIGRATIONS: [&str; 5] = [
     "
     CREATE TABLE projects (
         id INTEGER PRIMARY KEY,
@@ -61,13 +61,16 @@ const MIGRATIONS: [&str; 4] = [
 ",
     // A project's Start a task settings, as JSON.
     "ALTER TABLE projects ADD COLUMN tasks TEXT NOT NULL DEFAULT '{}';",
+    // A coder tab's task and handoff, as JSON; `null` for every other tab.
+    "ALTER TABLE tabs ADD COLUMN handoff TEXT NOT NULL DEFAULT 'null';",
 ];
 
 /// A JSON column; a broken one makes the file corrupt, so it is set aside rather than half read.
 fn json_column<T: serde::de::DeserializeOwned>(text: &str) -> Result<T, TreeError> {
     serde_json::from_str(text).map_err(|_| {
         TreeError::Invalid(
-            "a tab's folders or variables, or a project's task settings, cannot be read".to_owned(),
+            "a tab's folders, variables or handoff, or a project's task settings, cannot be read"
+                .to_owned(),
         )
     })
 }
@@ -150,6 +153,7 @@ impl Db {
             "'[]', '[]'"
         };
         let tasks_column = if version >= 4 { "tasks" } else { "'{}'" };
+        let handoff_column = if version >= 5 { "handoff" } else { "'null'" };
         let projects = self
             .0
             .prepare(&format!(
@@ -181,7 +185,7 @@ impl Db {
         let rows = self
             .0
             .prepare(&format!(
-                "SELECT id, project_id, parent_id, title, program, cwd, account_id, session_id, {ended_column}, {extra_columns}
+                "SELECT id, project_id, parent_id, title, program, cwd, account_id, session_id, {ended_column}, {extra_columns}, {handoff_column}
                  FROM tabs ORDER BY sort"
             ))?
             .query_map([], |row| {
@@ -194,13 +198,14 @@ impl Db {
                     cwd: row.get(5)?,
                     account: row.get(6)?,
                     dirs: Vec::new(),
+                    handoff: None,
                 };
-                let extras: (String, String) = (row.get(9)?, row.get(10)?);
+                let extras: (String, String, String) = (row.get(9)?, row.get(10)?, row.get(11)?);
                 Ok((tab, row.get::<_, Option<String>>(7)?, row.get::<_, bool>(8)?, extras))
             })?
             .collect::<Result<Vec<_>, _>>()?;
         let mut tabs = Vec::with_capacity(rows.len());
-        for (mut tab, session, has_ended, (dirs, vars)) in rows {
+        for (mut tab, session, has_ended, (dirs, vars, handoff)) in rows {
             if let Some(session) = session {
                 sessions.insert(tab.id, session);
             }
@@ -208,6 +213,7 @@ impl Db {
                 ended.insert(tab.id);
             }
             tab.dirs = json_column(&dirs)?;
+            tab.handoff = json_column(&handoff)?;
             let vars = env::kept(json_column::<Vec<EnvVar>>(&vars)?);
             if !vars.is_empty() {
                 env.insert(tab.id, vars);
@@ -249,14 +255,15 @@ impl Db {
                 insert.execute(params![p.id, p.name, p.folder, sort, tasks])?;
             }
             let mut insert = tx.prepare(
-                "INSERT INTO tabs (id, project_id, parent_id, title, program, cwd, account_id, session_id, ended, sort, dirs, env)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                "INSERT INTO tabs (id, project_id, parent_id, title, program, cwd, account_id, session_id, ended, sort, dirs, env, handoff)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
             )?;
             for (sort, t) in (0_i64..).zip(&snapshot.tree.tabs) {
                 let vars = snapshot.env.get(&t.id).map_or(&[][..], Vec::as_slice);
                 let as_json = |e: serde_json::Error| TreeError::Invalid(e.to_string());
                 let dirs = serde_json::to_string(&t.dirs).map_err(as_json)?;
                 let vars = serde_json::to_string(vars).map_err(as_json)?;
+                let handoff = serde_json::to_string(&t.handoff).map_err(as_json)?;
                 insert.execute(params![
                     t.id,
                     t.project_id,
@@ -269,7 +276,8 @@ impl Db {
                     snapshot.ended.contains(&t.id),
                     sort,
                     dirs,
-                    vars
+                    vars,
+                    handoff
                 ])?;
             }
         }
@@ -294,6 +302,7 @@ mod tests {
     use crate::accounts::testdir::TestDir;
     use crate::saved::Saved;
     use crate::saved::tests::{SESSION, two_projects};
+    use crate::saved::{HandoffState, TabHandoff};
 
     #[test]
     fn a_tree_survives_a_round_trip_in_order() {
@@ -374,6 +383,56 @@ mod tests {
         db.write(&snapshot).unwrap();
 
         assert_eq!(db.load().unwrap(), snapshot);
+    }
+
+    #[test]
+    fn a_coder_tabs_handoff_survives_a_round_trip() {
+        let mut db = Db::in_memory().unwrap();
+        let mut tree = two_projects();
+        tree.tabs[0].handoff = Some(TabHandoff {
+            task_id: "TASK-026".to_owned(),
+            file: "C:/plans/completed/task-026.md".to_owned(),
+            since: 1_800_000_000_000,
+            state: HandoffState::Ready,
+        });
+        let snapshot = Snapshot {
+            tree,
+            sessions: HashMap::new(),
+            ended: HashSet::new(),
+            env: HashMap::new(),
+        };
+
+        db.write(&snapshot).unwrap();
+
+        assert_eq!(db.load().unwrap(), snapshot);
+    }
+
+    #[test]
+    fn a_file_from_before_handoffs_loads_its_tabs_with_none() {
+        let dir = TestDir::new();
+        let path = dir.path().join("tree.db");
+        {
+            let first = Connection::open(&path).unwrap();
+            for step in &MIGRATIONS[..4] {
+                first.execute_batch(step).unwrap();
+            }
+            first
+                .execute_batch(
+                    "INSERT INTO projects VALUES (1, 'app', 'C:/work/app', 0, '{}');
+                     INSERT INTO tabs (id, project_id, parent_id, title, program, cwd, account_id, session_id, sort)
+                     VALUES (2, 1, NULL, 'planner', 'claude', 'C:/work/app', NULL, NULL, 0);
+                     INSERT INTO meta VALUES ('next_id', 3);",
+                )
+                .unwrap();
+            first.pragma_update(None, "user_version", 4).unwrap();
+        }
+
+        let read = Db::read_unlocked(&path).unwrap();
+        let migrated = Db::open(&path).unwrap().load().unwrap();
+
+        assert_eq!(read.tabs[0].handoff, None);
+        assert_eq!(migrated.tree.tabs[0].handoff, None);
+        assert_eq!(migrated.tree.tabs[0].title, "planner");
     }
 
     #[test]

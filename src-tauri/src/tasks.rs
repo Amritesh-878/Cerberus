@@ -146,6 +146,9 @@ pub struct Plan {
     pub cwd: String,
     /// The project folder, added to a chat that runs in a worktree.
     pub dirs: Vec<String>,
+    /// `TASK-025`, which the coder tab keeps with its handoff file.
+    pub task_id: String,
+    pub handoff_file: String,
 }
 
 /// What a coder tab for the task opens with; `branch` is the project folder's current one when there is no worktree.
@@ -180,13 +183,15 @@ pub fn plan(request: &PlanRequest, heading: Option<&str>, branch: Option<&str>) 
     );
     let title = match heading.and_then(|h| short_heading(&id, h)) {
         Some(h) => format!("{id} · {h}"),
-        None => id,
+        None => id.clone(),
     };
     Plan {
         title,
         prompt,
         cwd: folder,
         dirs,
+        task_id: id,
+        handoff_file: shown(&handoff),
     }
 }
 
@@ -555,6 +560,8 @@ mod tests {
         assert_eq!(plan.cwd, "/p/code-task-025");
         assert_eq!(plan.dirs, ["/p/code"]);
         let handoff = Path::new("/p/plans").join("completed").join("task-025.md");
+        assert_eq!(plan.task_id, "TASK-025");
+        assert_eq!(PathBuf::from(&plan.handoff_file), handoff);
         assert_eq!(
             plan.prompt,
             format!(

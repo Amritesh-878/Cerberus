@@ -17,7 +17,7 @@ use std::ffi::OsString;
 use std::io;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::SyncSender;
+use std::sync::mpsc::{self, SyncSender};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -49,6 +49,12 @@ pub enum BridgeError {
     Empty,
     #[error("{0}")]
     NotTyped(String),
+    #[error(
+        "the planner tab's chat isn't linked to messages between accounts; check they are on in Settings and its chat has started"
+    )]
+    NotLinked,
+    #[error("the planner tab is on the same account, so the message is typed in instead")]
+    SameAccount,
 }
 
 impl Serialize for BridgeError {
@@ -229,6 +235,8 @@ struct State {
     /// Messages written to an inbox that did not show, kept so the user can type one in instead.
     unseen: HashMap<u64, (TabId, String)>,
     sender_gone: VecDeque<u64>,
+    /// Numbers the messages Cerberus itself queued, which no helper call names.
+    next_offer: u64,
 }
 
 impl State {
@@ -474,6 +482,48 @@ impl Bridge {
             .as_ref()
             .map(|core| core.state().snapshot())
             .unwrap_or_default()
+    }
+
+    /// Queues a message the user wrote in Cerberus for the usual popup, as if `from`'s chat had sent it.
+    /// Waits up to `wait` for a target chat that is still starting; its waiter is told nothing, as no chat asked.
+    pub fn offer(
+        &self,
+        from: TabId,
+        to: TabId,
+        text: String,
+        wait: Duration,
+    ) -> Result<u64, BridgeError> {
+        let Some(core) = &self.0 else {
+            return Err(BridgeError::NotLinked);
+        };
+        if text.trim().is_empty() {
+            return Err(BridgeError::Empty);
+        }
+        if text.len() > MOST_MESSAGE {
+            return Err(BridgeError::TooLong(text.len()));
+        }
+        let until = Instant::now() + wait;
+        let id = loop {
+            {
+                let mut state = core.state();
+                if let Some(target) = state.by_tab(to) {
+                    let home = target.home.clone();
+                    if state.by_tab(from).is_some_and(|sender| sender.home == home) {
+                        return Err(BridgeError::SameAccount);
+                    }
+                    state.next_offer += 1;
+                    let call = format!("cerberus:{}", state.next_offer);
+                    let (waiter, _nobody) = mpsc::sync_channel(1);
+                    break state.queue.push(from, to, call, text, waiter);
+                }
+            }
+            if Instant::now() >= until {
+                return Err(BridgeError::NotLinked);
+            }
+            thread::sleep(Duration::from_millis(100));
+        };
+        core.changed();
+        Ok(id)
     }
 
     /// Acts on the user's choice; blocks while an approved message is delivered, ~10 s at most.
