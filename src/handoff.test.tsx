@@ -163,7 +163,7 @@ test("writing the handoff marks the coder tab ready, with a notification while i
   expect(field(env.called("handoff_written").at(-1)?.args, "file")).toBe(
     HANDOFF,
   );
-  expect(line(root)).toBe("TASK-026 · handoff ready · send to planner");
+  expect(line(root)).toBe("TASK-026 · handoff ready · Send");
   expect(savedHandoff(env)?.state).toBe("ready");
   expect(desktop.sent).toContainEqual({
     title: "TASK-026 · Handoff back · alpha",
@@ -179,7 +179,7 @@ test("a handoff written while Cerberus was closed is found when the tabs load", 
   await settle();
 
   expect(env.pty.spawned).toEqual([]);
-  expect(line(root)).toBe("TASK-026 · handoff ready · send to planner");
+  expect(line(root)).toBe("TASK-026 · handoff ready · Send");
 });
 
 test("on the same account the line is typed into the planner, never sent, and the planner shows beside it", async () => {
@@ -259,7 +259,7 @@ test("a refused offer says why and leaves the handoff ready", async () => {
   expect(
     document.querySelector(".notice-popup, [role='alertdialog']")?.textContent,
   ).toContain("the planner tab's chat isn't linked");
-  expect(line(root)).toBe("TASK-026 · handoff ready · send to planner");
+  expect(line(root)).toBe("TASK-026 · handoff ready · Send");
 });
 
 test("a coder tab started by hand sends a handoff it chooses, starting at the newest Markdown it wrote", async () => {

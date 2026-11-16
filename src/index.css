@@ -743,9 +743,10 @@ button {
   border: 0;
 }
 
+/* Lined up under the sub-tab's title, past its icon. */
 .handoff-line.sub {
-  width: calc(100% - 30px);
-  margin-left: 22px;
+  width: calc(100% - 65px);
+  margin-left: 57px;
 }
 
 .handoff-line.ready {
@@ -772,6 +773,13 @@ button {
 
 .handoff-ready:hover {
   background: var(--hover);
+}
+
+/* A phone-width bar keeps room for the tab's title; the row below still says ready. */
+@media (width <= 720px) {
+  .handoff-ready-state {
+    display: none;
+  }
 }
 
 .pane-note {

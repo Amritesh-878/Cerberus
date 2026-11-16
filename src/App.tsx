@@ -1469,7 +1469,8 @@ export function App() {
                         if (file !== undefined) sendHandoff(id(), file);
                       }}
                     >
-                      Handoff ready · Send to planner
+                      <span class="handoff-ready-state">Handoff ready · </span>
+                      Send to planner
                     </button>
                   )}
                 </Show>

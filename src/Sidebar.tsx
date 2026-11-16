@@ -498,7 +498,7 @@ function TabRow(props: {
                 }}
               >
                 {handoffLine(handoff())}
-                {" · send to planner"}
+                {" · Send"}
               </button>
             )}
           </Show>
