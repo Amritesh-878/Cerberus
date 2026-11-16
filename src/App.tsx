@@ -55,6 +55,13 @@ import {
 import { FindChat } from "./FindChat";
 import { EnvironmentDialog } from "./EnvironmentDialog";
 import { createHandChats } from "./handChat";
+import {
+  handoffMessage,
+  handoffOffer,
+  handoffWritten,
+  newestMarkdown,
+  pickHandoff,
+} from "./handoff";
 import { HandNote } from "./HandNote";
 import { HandPrompt } from "./HandPrompt";
 import { Home } from "./Home";
@@ -128,6 +135,7 @@ import {
   renameProject,
   renameTab,
   setFolders,
+  setHandoff,
   stepTab,
   tabOrder,
   type TabId,
@@ -1010,6 +1018,7 @@ export function App() {
       editing() !== undefined ||
       startingTask() !== undefined ||
       moveFailed() !== undefined ||
+      handoffFailed() !== undefined ||
       finding() ||
       serviceForm() !== undefined ||
       sheet() ||
@@ -1033,6 +1042,156 @@ export function App() {
   const typeIntoChat = (text: string) => {
     const id = chatShown();
     if (id !== undefined) typers.get(id)?.(text);
+  };
+
+  // A coder tab's handoff: checked when its chat writes or goes idle, never by reading the file's content.
+  const handoffAsking = new Set<TabId>();
+  const handoffAgain = new Set<TabId>();
+  const handoffNotice = (id: TabId) => {
+    const tab = tabById(id);
+    if (!tab || shown() === id || !alertsSetting.on()) return;
+    const project = tree().projects.find((p) => p.id === tab.projectId)?.name;
+    sendWarning(
+      {
+        title: project === undefined ? tab.title : `${tab.title} · ${project}`,
+        body: "Handoff ready",
+      },
+      id,
+    );
+  };
+  const checkHandoff = (id: TabId) => {
+    const handoff = tabById(id)?.handoff;
+    if (handoff?.state !== "working") return;
+    // One ask at a time per tab; a trigger meanwhile asks once more after it.
+    if (handoffAsking.has(id)) {
+      handoffAgain.add(id);
+      return;
+    }
+    handoffAsking.add(id);
+    const settled = () => {
+      handoffAsking.delete(id);
+      if (handoffAgain.delete(id)) checkHandoff(id);
+    };
+    handoffWritten(id, handoff.file, handoff.since).then(
+      (written) => {
+        const now = tabById(id)?.handoff;
+        if (written && now?.state === "working" && now.file === handoff.file) {
+          setTree(setHandoff(tree(), id, { ...now, state: "ready" }));
+          handoffNotice(id);
+        }
+        settled();
+      },
+      (error: unknown) => {
+        console.error("could not check the handoff file:", error);
+        settled();
+      },
+    );
+  };
+  // Each tab's newest written file seen, so a live update that wrote nothing new asks nothing.
+  const outputSeen = new Map<TabId, string>();
+  createEffect(
+    on(
+      () => live().tabs,
+      (tabs) => {
+        for (const t of tabs) {
+          const newest = t.outputs[0];
+          if (!newest) continue;
+          const mark = `${newest.path}|${String(newest.at)}`;
+          if (outputSeen.get(t.tab) === mark) continue;
+          outputSeen.set(t.tab, mark);
+          checkHandoff(t.tab);
+        }
+      },
+    ),
+  );
+  // A handoff written while Cerberus was closed is found once the saved tabs are in.
+  createEffect(
+    on(restored, (done) => {
+      if (done) for (const t of untrack(tree).tabs) checkHandoff(t.id);
+    }),
+  );
+  const [handoffFailed, setHandoffFailed] = createSignal<string>();
+  // Typed in for the user to send; a planner not running yet gets it once its chat is ready.
+  const typeForPlanner = (planner: TabId, text: string) => {
+    const typer = typers.get(planner);
+    if (typer && isRunning(planner)) typer(text);
+    else prefills.set(planner, text);
+  };
+  /** Tells the parent planner where the handoff is: typed in on its own account, the approval popup on another. */
+  const sendHandoff = (id: TabId, file: string) => {
+    const tab = tabById(id);
+    const parentId = tab?.parentId ?? null;
+    const planner = parentId === null ? undefined : tabById(parentId);
+    if (!tab || !planner) return;
+    const known = tab.handoff?.file === file ? tab.handoff : undefined;
+    handoffMessage(tab.launch.spec.cwd ?? "", file, known?.taskId ?? null)
+      .then(async (message) => {
+        select(id);
+        split.open(id, planner.id);
+        if (tab.launch.account?.id === planner.launch.account?.id) {
+          typeForPlanner(planner.id, message.text);
+        } else {
+          await handoffOffer(id, planner.id, message.text);
+        }
+        if (tabById(id)) {
+          setTree(
+            setHandoff(tree(), id, {
+              taskId: message.taskId,
+              file,
+              since: known?.since ?? Date.now(),
+              state: "sent",
+            }),
+          );
+        }
+      })
+      .catch((error: unknown) => {
+        setHandoffFailed(String(error));
+      });
+  };
+  // A tab started by hand names its handoff here, starting at the newest Markdown its chat wrote.
+  const chooseHandoff = (id: TabId) => {
+    const tab = tabById(id);
+    const outputs = live().tabs.find((t) => t.tab === id)?.outputs ?? [];
+    const from =
+      newestMarkdown(outputs) ??
+      tab?.handoff?.file ??
+      tab?.launch.spec.cwd ??
+      undefined;
+    pickHandoff(from).then(
+      (file) => {
+        if (file !== null) sendHandoff(id, file);
+      },
+      (error: unknown) => {
+        setHandoffFailed(String(error));
+      },
+    );
+  };
+  /** What a coder tab's menu offers: its ready handoff, or a file to choose. */
+  const handoffAction = (
+    id: TabId,
+  ): { label: string; run: () => void } | undefined => {
+    const tab = tabById(id);
+    const parentId = tab?.parentId ?? null;
+    const parent = parentId === null ? undefined : tabById(parentId);
+    if (tab?.launch.program !== "claude" || !parent) return undefined;
+    const handoff = tab.handoff;
+    if (handoff && handoff.state !== "working") {
+      return {
+        label:
+          handoff.state === "sent"
+            ? "Send to planner again"
+            : "Send to planner",
+        run: () => {
+          sendHandoff(id, handoff.file);
+        },
+      };
+    }
+    return {
+      label: "Send handoff…",
+      run: () => {
+        chooseHandoff(id);
+      },
+    };
   };
 
   // The tab whose Edit environment dialog is open, and the tabs whose change is still being applied.
@@ -1137,6 +1296,7 @@ export function App() {
               ended={(id) => ended().has(id)}
               removed={onRemoved}
               onContinue={continueOn}
+              handoffAction={handoffAction}
               onResume={resume}
               onSelect={select}
               onClose={close}
@@ -1282,6 +1442,29 @@ export function App() {
                     <span class="save-error" role="status" title={error()}>
                       Alerts setting not saved
                     </span>
+                  )}
+                </Show>
+                <Show
+                  when={(() => {
+                    const id = shown();
+                    return id !== undefined &&
+                      tabById(id)?.handoff?.state === "ready"
+                      ? id
+                      : undefined;
+                  })()}
+                >
+                  {(id) => (
+                    <button
+                      type="button"
+                      class="handoff-ready"
+                      title="Tell the planner tab where the handoff is; you send it there"
+                      onClick={() => {
+                        const file = tabById(id())?.handoff?.file;
+                        if (file !== undefined) sendHandoff(id(), file);
+                      }}
+                    >
+                      Handoff ready · Send to planner
+                    </button>
                   )}
                 </Show>
                 <Show when={messaging.note(shown())}>
@@ -1567,6 +1750,7 @@ export function App() {
                               onState={(state) => {
                                 prefills.reported(id, state, typers.get(id));
                                 limitReported(id, state);
+                                if (state.state === "idle") checkHandoff(id);
                                 notify(id, state);
                                 setBoard((b) =>
                                   reported(b, id, state, shown()),
@@ -1855,6 +2039,17 @@ export function App() {
                 />
               )}
             </Show>
+            <Show when={handoffFailed()}>
+              {(reason) => (
+                <NoticePopup
+                  title="Could not send the handoff"
+                  message={`${reason()}.`}
+                  onClose={() => {
+                    setHandoffFailed(undefined);
+                  }}
+                />
+              )}
+            </Show>
             <Show when={moveFailed()}>
               {(failed) => (
                 <NoticePopup
@@ -1968,6 +2163,7 @@ export function App() {
                     setPillMenu(undefined);
                     resume(id);
                   }}
+                  handoff={handoffAction(tab().id)}
                   onStartTask={
                     canStartTask(tab().id)
                       ? () => {

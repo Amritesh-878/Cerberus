@@ -33,6 +33,7 @@ import {
   SearchIcon,
   SidebarIcon,
 } from "./icons";
+import { handoffLine } from "./handoff";
 import { RENAME_KEY } from "./keys";
 import type { Statuses } from "./statuses";
 import { menuAccount, type MenuPlace, TabMenu } from "./TabMenu";
@@ -65,6 +66,8 @@ export function Sidebar(props: {
   /** The tab's account was removed, so it runs nothing until its chat moves. */
   removed: (id: TabId) => boolean;
   onContinue: (id: TabId, account: Account) => void;
+  /** A coder tab's menu item for its handoff, when it has a planner to send it to. */
+  handoffAction?: (id: TabId) => { label: string; run: () => void } | undefined;
   onResume: (id: TabId) => void;
   onSelect: (id: TabId) => void;
   onClose: (id: TabId) => void;
@@ -218,6 +221,7 @@ export function Sidebar(props: {
                       ended={props.ended(row.tab.id)}
                       removed={props.removed(row.tab.id)}
                       movingTo={props.movingTo(row.tab.id)}
+                      onSendHandoff={props.handoffAction?.(row.tab.id)?.run}
                       shortcut={
                         props.movingTo(row.tab.id) !== undefined
                           ? undefined
@@ -231,7 +235,8 @@ export function Sidebar(props: {
                       onMenu={(at) => {
                         if (
                           targetsOf(row.tab).length > 0 ||
-                          resumable(row.tab.id)
+                          resumable(row.tab.id) ||
+                          props.handoffAction?.(row.tab.id) !== undefined
                         )
                           setMenu({ tab: row.tab, at });
                       }}
@@ -281,6 +286,18 @@ export function Sidebar(props: {
               setMenu(undefined);
               props.onContinue(id, account);
             }}
+            handoff={(() => {
+              const action = props.handoffAction?.(open().tab.id);
+              return (
+                action && {
+                  label: action.label,
+                  run: () => {
+                    setMenu(undefined);
+                    action.run();
+                  },
+                }
+              );
+            })()}
             onAccounts={() => {
               setMenu(undefined);
               props.onAccounts();
@@ -329,6 +346,8 @@ function TabRow(props: {
   ended: boolean;
   removed: boolean;
   movingTo: string | undefined;
+  /** Sends the ready handoff; the row's task line becomes a button while one is ready. */
+  onSendHandoff: (() => void) | undefined;
   shortcut: Account | undefined;
   renaming: boolean;
   drag: () => TabDragEvents | undefined;
@@ -450,6 +469,39 @@ function TabRow(props: {
           <p class="moving-line" classList={{ sub: props.row.sub }}>
             Moving to {to()}…
           </p>
+        )}
+      </Show>
+      <Show when={props.movingTo === undefined && tab().handoff}>
+        {(handoff) => (
+          <Show
+            when={handoff().state === "ready" && props.onSendHandoff}
+            fallback={
+              <p
+                class="handoff-line"
+                classList={{
+                  sub: props.row.sub,
+                  sent: handoff().state === "sent",
+                }}
+              >
+                {handoffLine(handoff())}
+              </p>
+            }
+          >
+            {(send) => (
+              <button
+                type="button"
+                class="handoff-line ready"
+                classList={{ sub: props.row.sub }}
+                title="Tell the planner tab where the handoff is"
+                onClick={() => {
+                  send()();
+                }}
+              >
+                {handoffLine(handoff())}
+                {" · send to planner"}
+              </button>
+            )}
+          </Show>
         )}
       </Show>
       <Show when={props.shortcut}>

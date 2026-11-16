@@ -122,6 +122,8 @@ function taskCore(
           prompt: `${template ?? DEFAULT} [${worktree?.[1] ?? "main"}]`,
           cwd: worktree?.[0] ?? CODE,
           dirs: worktree ? [CODE] : [],
+          taskId: "TASK-025",
+          handoffFile: String.raw`C:\p\plans\completed\task-025.md`,
         };
       }),
     },

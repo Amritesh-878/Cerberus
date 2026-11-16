@@ -4,7 +4,14 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { AccountId, Profiles } from "./accounts";
 import type { ProgramChoice } from "./pty";
 import { installed, isOtherCli, type Tab } from "./tab";
-import type { Project, ProjectId, TabId, Tree, TreeTab } from "./tree";
+import type {
+  Project,
+  ProjectId,
+  TabHandoff,
+  TabId,
+  Tree,
+  TreeTab,
+} from "./tree";
 
 export interface SavedTab {
   id: TabId;
@@ -16,6 +23,8 @@ export interface SavedTab {
   account: AccountId | null;
   /** Folders beside `cwd`, passed to Claude Code as `--add-dir` on each start; the core always sends it. */
   dirs?: string[];
+  /** Only a coder tab's; the core reads a missing one as none. */
+  handoff?: TabHandoff | null;
 }
 
 export interface SavedTree {
@@ -74,6 +83,7 @@ export function toSaved(tree: Tree): SavedTree {
             cwd: tab.launch.spec.cwd,
             account: tab.launch.account?.id ?? null,
             dirs: tab.launch.spec.dirs ?? [],
+            ...(tab.handoff ? { handoff: tab.handoff } : {}),
           },
         ],
   );
@@ -127,6 +137,7 @@ export function fromSaved(
     parentId: tab.parentId,
     title: tab.title,
     launch: launchOf(tab, profiles, programs),
+    ...(tab.handoff ? { handoff: tab.handoff } : {}),
   }));
   return { projects: saved.projects, tabs, nextId: saved.nextId };
 }

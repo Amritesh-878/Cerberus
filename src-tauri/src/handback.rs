@@ -4,6 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, UNIX_EPOCH};
 
+use serde::Serialize;
 use tauri::{AppHandle, Manager};
 
 use crate::blocking::blocking;
@@ -67,6 +68,14 @@ pub async fn handoff_written(app: AppHandle, tab: TabId, file: PathBuf, since: u
     blocking(move || is_written(&app.state::<Live>().written(tab), &file, since)).await
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Message {
+    /// The given id, or one read from the file's name for a tab started by hand.
+    pub task_id: String,
+    pub text: String,
+}
+
 /// The message for the planner, with the PR of the coder's branch when `gh` knows one.
 #[tauri::command]
 pub async fn handoff_message(
@@ -74,11 +83,12 @@ pub async fn handoff_message(
     folder: PathBuf,
     file: PathBuf,
     task_id: Option<String>,
-) -> String {
+) -> Message {
     blocking(move || {
-        let id = task_id.unwrap_or_else(|| crate::tasks::task_id(&file));
+        let task_id = task_id.unwrap_or_else(|| crate::tasks::task_id(&file));
         let pr = branch_pr(&app.state::<PrCache>(), &folder);
-        message(&id, &file.to_string_lossy(), pr.as_deref())
+        let text = message(&task_id, &file.to_string_lossy(), pr.as_deref());
+        Message { task_id, text }
     })
     .await
 }
