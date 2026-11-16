@@ -23,6 +23,7 @@ open Antigravity CLI and Codex CLI tabs when they are installed.
 - Transcripts are read in memory only: a limit's reset time ([board](docs/guide.md#the-session-board-and-alerts)) and Find a chat while it is open ([search](docs/guide.md#finding-a-tab-or-a-chat)).
 - `history.jsonl` and `.credentials.json` are never read ([file pane](docs/guide.md#the-file-pane)).
 - Your settings files are only read, never written ([live cards](docs/guide.md#live-cards)).
+- Moving a chat copies its transcript, and its subagent chats, to the other account's folder and changes nothing else; the copy never reads them ([move](docs/guide.md#moving-a-chat-to-another-account)).
 
 ## Install
 
