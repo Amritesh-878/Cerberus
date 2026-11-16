@@ -53,7 +53,7 @@ export function LiveBanner(props: {
                 when={offered(warning).length > 0}
                 fallback={
                   <span class="faint">
-                    No other account is under{" "}
+                    No other signed-in account is under{" "}
                     {percentText(props.profiles.warnAt)}
                   </span>
                 }

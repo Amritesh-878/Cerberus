@@ -158,6 +158,21 @@ test("adding a folder saves it and types /add-dir into the running chat, never E
     dirs: [PLANS],
   });
   expect(env.writes).toEqual([`\x1b[200~/add-dir ${PLANS}\x1b[201~`]);
+});
+
+test("adding two folders says the first is typed for you to send and the rest wait for a restart", async () => {
+  const env = envCore([PLANS, BETA]);
+  const root = await renderApp(() => PROFILES, env.core);
+  await editEnvironment(root, "planner");
+
+  click(dialog(), "Add folder…");
+  await settle();
+  click(dialog(), "Add folder…");
+  await settle();
+
+  expect(dialog().textContent).toContain(
+    "/add-dir is typed for the first folder, for you to send. The rest apply on the next start.",
+  );
   expect(env.calls.map((c) => c.cmd)).not.toContain("tab_move_folder");
   // No restart: the chat keeps running in the one pane it had.
   expect(env.pty.spawned).toHaveLength(1);

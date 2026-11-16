@@ -98,6 +98,13 @@ test("a chat hitting its limit gets one popup per window, offering only accounts
     b.textContent.trim(),
   );
   expect(buttons).toEqual(["personal", "Not now"]);
+  // The stopping warning is read with the question, since the first button moves at once.
+  const described = (popup()?.getAttribute("aria-describedby") ?? "")
+    .split(" ")
+    .map((id) => document.getElementById(id)?.textContent ?? "")
+    .join(" ");
+  expect(described).toContain("Move planner to:");
+  expect(described).toContain("Stops anything it started.");
   expect(
     [...(popup()?.querySelectorAll("button") ?? [])].every((b) =>
       b.classList.contains("secondary"),
@@ -147,7 +154,9 @@ test("no account below the line offers no move, only Not now", async () => {
 
   await hitLimit(env);
 
-  expect(popup()?.textContent).toContain("No other account is under 85%");
+  expect(popup()?.textContent).toContain(
+    "No other signed-in account is under 85%",
+  );
   const buttons = [...(popup()?.querySelectorAll("button") ?? [])].map((b) =>
     b.textContent.trim(),
   );
@@ -282,7 +291,7 @@ test("a later live view refreshes the shown popup's offers without opening anoth
 
   expect(document.querySelectorAll(".limit-popup")).toHaveLength(1);
   expect(popup()?.textContent).not.toContain("Move to personal");
-  expect(popup()?.textContent).toContain("No other account");
+  expect(popup()?.textContent).toContain("No other signed-in account");
 });
 
 test("the popup waits while another dialog is open, so Escape closes only that one", async () => {

@@ -49,7 +49,9 @@ export function LimitPopup(props: {
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="limit-title"
-        aria-describedby="limit-text"
+        aria-describedby={
+          offered().length > 0 ? "limit-text limit-fine" : "limit-text"
+        }
         tabIndex={-1}
         ref={(el) => {
           sheet = el;
@@ -67,7 +69,7 @@ export function LimitPopup(props: {
         <p id="limit-text" class="limit-text">
           <Show
             when={offered().length > 0}
-            fallback={`No other account is under ${percentText(props.profiles.warnAt)}.`}
+            fallback={`No other signed-in account is under ${percentText(props.profiles.warnAt)}.`}
           >
             Move {props.title} to:
           </Show>
@@ -100,7 +102,7 @@ export function LimitPopup(props: {
           </button>
         </div>
         <Show when={offered().length > 0}>
-          <p class="limit-fine">
+          <p id="limit-fine" class="limit-fine">
             Stops anything it started. Types <code>continue</code> for you to
             send.
           </p>

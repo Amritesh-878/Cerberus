@@ -268,7 +268,7 @@ export function EnvironmentDialog(props: {
             <p class="env-note">
               {plan().added.length === 1
                 ? "/add-dir is typed into the chat for you to send."
-                : "/add-dir is typed for the first folder. The rest apply on the next start."}
+                : "/add-dir is typed for the first folder, for you to send. The rest apply on the next start."}
             </p>
           </Show>
           <Show when={plan().removed.length > 0}>

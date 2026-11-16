@@ -272,7 +272,9 @@ test("a warning with no signed-in account below the line offers no move", async 
   await settle();
 
   const banner = root.querySelector<HTMLElement>(".live-warning");
-  expect(banner?.textContent).toContain("No other account is under 85%");
+  expect(banner?.textContent).toContain(
+    "No other signed-in account is under 85%",
+  );
   expect(() => button(banner ?? root, "Move to personal")).toThrow();
 });
 
