@@ -58,6 +58,7 @@ test.each(["agy", "codex"])("a %s tab never takes the chosen account", (id) => {
 
 test("agy and codex tabs take the CLI keys, an ended chat the shell's", () => {
   expect(tabKind("agy", false)).toBe("cli");
+  expect(tabKind("agy", true)).toBe("shell");
   expect(tabKind("codex", true)).toBe("cli");
   expect(tabKind("claude", false)).toBe("claude");
   expect(tabKind("claude", true)).toBe("shell");

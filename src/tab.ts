@@ -34,8 +34,9 @@ export function isOtherCli(program: string): boolean {
   return (OTHER_CLIS as readonly string[]).includes(program);
 }
 
-/** How the terminal treats keys: an ended Claude tab runs a shell. */
+/** How the terminal treats keys: an ended Claude or Antigravity tab runs a shell. */
 export function tabKind(program: string, ended: boolean): TabKind {
+  if (program === "agy") return ended ? "shell" : "cli";
   if (isOtherCli(program)) return "cli";
   return program === "claude" && !ended ? "claude" : "shell";
 }
