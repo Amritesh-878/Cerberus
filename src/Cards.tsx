@@ -1,4 +1,4 @@
-import { createSignal, type JSX, Show, untrack } from "solid-js";
+import { createSignal, type JSX, onCleanup, Show, untrack } from "solid-js";
 
 import type { PanelCard } from "./accounts";
 import { ChevronIcon } from "./icons";
@@ -29,44 +29,51 @@ function cardBefore(head: HTMLElement, y: number): PanelCard | null {
   return (found?.dataset.card as PanelCard | undefined) ?? null;
 }
 
+const FOLLOWED = ["pointermove", "pointerup", "pointercancel"] as const;
+
 /** Pointer handlers that let a card's header drag it to another place in the panel. */
 function headerDrag(id: PanelCard, state: PanelState) {
-  let start: { pointer: number; y: number } | undefined;
+  let start: { pointer: number; y: number; head: HTMLElement } | undefined;
   let moved = false;
+  const stop = () => {
+    for (const type of FOLLOWED) window.removeEventListener(type, follow, true);
+    start = undefined;
+    setCardDrag(undefined);
+  };
+  // Followed on the window, never by pointer capture: WebView2 sends the click after a captured press to the header, not the title.
+  function follow(event: PointerEvent) {
+    if (event.pointerId !== start?.pointer) return;
+    if (event.type === "pointercancel") {
+      stop();
+      return;
+    }
+    if (event.type === "pointerup") {
+      const drop = cardDrag();
+      stop();
+      if (moved && drop && drop.before !== drop.card) {
+        state.moveCard(drop.card, drop.before ?? undefined);
+      }
+      return;
+    }
+    if (!moved && Math.abs(event.clientY - start.y) < CARD_DRAG_PX) return;
+    moved = true;
+    setCardDrag({ card: id, before: cardBefore(start.head, event.clientY) });
+  }
+  onCleanup(stop);
   return {
     onPointerDown: (event: PointerEvent & { currentTarget: HTMLElement }) => {
       // A button in the header other than the title does its own job.
       const button = (event.target as Element).closest("button");
       if (button && !button.classList.contains("card-title")) return;
       if (event.button !== 0 || event.pointerType === "touch") return;
-      start = { pointer: event.pointerId, y: event.clientY };
+      stop();
+      start = {
+        pointer: event.pointerId,
+        y: event.clientY,
+        head: event.currentTarget,
+      };
       moved = false;
-      event.currentTarget.setPointerCapture(event.pointerId);
-    },
-    onPointerMove: (event: PointerEvent & { currentTarget: HTMLElement }) => {
-      if (event.pointerId !== start?.pointer) return;
-      if (!moved && Math.abs(event.clientY - start.y) < CARD_DRAG_PX) return;
-      moved = true;
-      setCardDrag({
-        card: id,
-        before: cardBefore(event.currentTarget, event.clientY),
-      });
-    },
-    onPointerUp: (event: PointerEvent & { currentTarget: HTMLElement }) => {
-      if (event.pointerId !== start?.pointer) return;
-      start = undefined;
-      const drop = cardDrag();
-      setCardDrag(undefined);
-      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-        event.currentTarget.releasePointerCapture(event.pointerId);
-      }
-      if (moved && drop && drop.before !== drop.card) {
-        state.moveCard(drop.card, drop.before ?? undefined);
-      }
-    },
-    onPointerCancel: () => {
-      start = undefined;
-      setCardDrag(undefined);
+      for (const type of FOLLOWED) window.addEventListener(type, follow, true);
     },
     /** True once after a drag, for the click on the title that ends it. */
     swallowClick: () => {
@@ -120,9 +127,6 @@ export function Card(props: {
         class="card-head"
         title="Drag to move the card"
         onPointerDown={drag.onPointerDown}
-        onPointerMove={drag.onPointerMove}
-        onPointerUp={drag.onPointerUp}
-        onPointerCancel={drag.onPointerCancel}
       >
         <Show
           when={props.fixed !== true}
