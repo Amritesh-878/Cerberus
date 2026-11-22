@@ -412,7 +412,7 @@ test("a claude through the wrapper is the tab's own chat, with no bar", async ()
   ).toBeNull();
 });
 
-test("a hand chat whose account is removed leaves no bar over its tab", async () => {
+test("a hand chat's tab moves with its account's removal and keeps no bar", async () => {
   const app = core();
   let profiles = SAVED;
   const root = await renderApp(() => profiles, {
@@ -441,10 +441,12 @@ test("a hand chat whose account is removed leaves no bar over its tab", async ()
   );
   click(work ?? root, "Remove");
   await settle();
-  click(root.querySelector(".row-confirm") ?? root, "Remove work");
+  click(root.querySelector(".row-confirm") ?? root, "Move and remove work");
+  await settle();
   await settle();
   await open(root, "shell");
 
-  expect(root.querySelector(".removed-note")).not.toBeNull();
+  // The tab moved to the other account with its chat, and the bar about the old run went with it.
+  expect(root.querySelector(".removed-note")).toBeNull();
   expect(root.querySelector(".hand-bar")).toBeNull();
 });

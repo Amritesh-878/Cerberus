@@ -77,6 +77,8 @@ export function Sidebar(props: {
   onRemoveProject: (id: ProjectId) => void;
   onNewProject: () => void;
   onAccounts: () => void;
+  /** A move from one account to the other crosses organizations, so Claude rereads the chat. */
+  crosses: (from: AccountId | undefined, to: Account) => boolean;
   /** Opens the one search over open tabs and every account's chats. */
   onSearch?: () => void;
   /** Setup is running, so only its own tabs show and nothing here can leave it. */
@@ -302,6 +304,7 @@ export function Sidebar(props: {
               setMenu(undefined);
               props.onAccounts();
             }}
+            crosses={(to) => props.crosses(open().tab.launch.account?.id, to)}
             onDismiss={() => {
               setMenu(undefined);
             }}

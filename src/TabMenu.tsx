@@ -4,6 +4,7 @@ import { backdropDismiss } from "./backdrop";
 import {
   type Account,
   type AccountId,
+  OTHER_ORGANIZATION,
   type Profiles,
   savedColor,
 } from "./accounts";
@@ -88,6 +89,8 @@ export function TabMenu(props: {
   onStartTask?: () => void;
   /** Last in the menu, so a signed-out account can be signed in from there. */
   onAccounts?: () => void;
+  /** The move to this account crosses organizations, so Claude rereads the chat. */
+  crosses?: (account: Account) => boolean;
   onDismiss: () => void;
 }) {
   // Read once: the shortcut opens the menu already at its confirm step.
@@ -310,6 +313,9 @@ export function TabMenu(props: {
               <p class="menu-confirm-note">
                 Stops anything it started. A service keeps a server running.
               </p>
+              <Show when={props.crosses?.(account())}>
+                <p class="menu-confirm-note">{OTHER_ORGANIZATION}</p>
+              </Show>
               <div class="confirm-actions">
                 <button
                   type="button"

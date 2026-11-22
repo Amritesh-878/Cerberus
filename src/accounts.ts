@@ -141,6 +141,13 @@ export function accountState(
   return isRemoved(profiles, id) ? "removed" : statusText(status);
 }
 
+/** Two spellings of one account folder: either slash, any case, no trailing separator, as Windows and macOS read them. */
+export function sameFolder(a: string, b: string): boolean {
+  const key = (dir: string) =>
+    dir.replaceAll("\\", "/").replace(/\/+$/, "").toLowerCase();
+  return key(a) === key(b);
+}
+
 /** What the core knows of an account's login; the ids themselves stay in the core. */
 export interface LoginFacts {
   id: AccountId;

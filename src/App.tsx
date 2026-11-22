@@ -18,14 +18,19 @@ import {
 
 import {
   type Account,
+  type AccountId,
+  accountLogins,
   accountState,
+  crossesOrganization,
   isNewer,
   isRemoved,
   savedColor,
   loadProfiles,
   pickFolder,
+  preselectedAccount,
   type Profiles,
   resetProfiles,
+  sameFolder,
   setSidebarCollapsed,
   setSidebarWidth,
   setSplitShare,
@@ -63,6 +68,8 @@ import {
   pickHandoff,
 } from "./handoff";
 import { HandNote } from "./HandNote";
+import { RemovedNote } from "./RemovedNote";
+import { repointed } from "./repoint";
 import { Home } from "./Home";
 import { AccountDot, MenuIcon, PanelIcon, ProgramIcon } from "./icons";
 import { shortcutFor } from "./keys";
@@ -618,32 +625,63 @@ export function App() {
     reason: string;
   }>();
   // `afterLimit`: the move came from the limit popup or banner, so the chat gets `continue` typed, never sent.
-  const continueOn = (id: TabId, account: Account, afterLimit = false) => {
-    if (moving().has(id)) return;
+  // `quiet`: one of many moves for an account's removal, so it neither jumps to the tab nor shows its own failure.
+  const continueOn = (
+    id: TabId,
+    account: Account,
+    afterLimit = false,
+    quiet = false,
+  ): Promise<boolean> => {
+    if (moving().has(id)) return Promise.resolve(false);
     setMovingTab(id, account.name);
     const initialRun = runOf(id);
     batch(() => {
       setRun(id, 0);
       setBoard((b) => cleared(b, id));
       setAlert(id, undefined);
-      select(id);
+      if (!quiet) select(id);
     });
     const restart = () => {
       setMovingTab(id, undefined);
       setRun(id, initialRun + 1);
     };
-    continueOnAccount(id, account.id).then(
+    return continueOnAccount(id, account.id).then(
       () => {
         setTree(moveToAccount(tree(), id, account));
         markEnded(id, false);
         if (afterLimit) prefills.set(id, AFTER_LIMIT);
         restart();
+        return true;
       },
       (error: unknown) => {
-        setMoveFailed({ account: account.name, reason: String(error) });
+        if (!quiet)
+          setMoveFailed({ account: account.name, reason: String(error) });
         restart();
+        return false;
       },
     );
+  };
+
+  // An account that came back on a removed one's folder takes its tabs, with no note: their chats are already there.
+  createEffect(() => {
+    const current = profiles();
+    if (!current) return;
+    const now = tree();
+    const next = repointed(now, current);
+    if (next !== now) setTree(next);
+  });
+  // Who shares a login or an organization, read again whenever the accounts change.
+  const [logins] = createResource(profiles, accountLogins);
+  const defaultTarget = () => {
+    const current = profiles();
+    if (!current) return undefined;
+    const id = preselectedAccount(current);
+    return current.accounts.find((a) => a.id === id);
+  };
+  // A removed account's tab: its chat moves, or a shell starts again on the account picked.
+  const moveRemoved = (id: TabId, to: Account) => {
+    if (tabById(id)?.launch.program === "claude") void continueOn(id, to);
+    else restartOn(id, to);
   };
 
   // A shell has no chat to carry, so a shell left on a removed account just starts again on another.
@@ -652,6 +690,26 @@ export function App() {
       setTree(moveToAccount(tree(), id, account));
       setRun(id, runOf(id) + 1);
     });
+  };
+
+  // Every tab on `from` goes to `to` before `from` is removed: one folder re-points, a chat moves, anything else restarts there.
+  const moveTabsOff = async (from: AccountId, to: Account) => {
+    const source = profiles()?.accounts.find((a) => a.id === from);
+    const ids = tree()
+      .tabs.filter((t) => t.launch.account?.id === from)
+      .map((t) => t.id);
+    for (const id of ids) {
+      const tab = tabById(id);
+      if (!tab) continue;
+      if (source && sameFolder(source.configDir, to.configDir)) {
+        setTree(moveToAccount(tree(), id, to));
+      } else if (
+        tab.launch.program !== "claude" ||
+        !(await continueOn(id, to, false, true))
+      ) {
+        restartOn(id, to);
+      }
+    }
   };
 
   const resume = (id: TabId) => {
@@ -1340,7 +1398,9 @@ export function App() {
               movingTo={(id) => moving().get(id)}
               ended={(id) => ended().has(id)}
               removed={onRemoved}
-              onContinue={continueOn}
+              onContinue={(id, account) => {
+                void continueOn(id, account);
+              }}
               handoffAction={handoffAction}
               onResume={resume}
               onSelect={select}
@@ -1360,6 +1420,7 @@ export function App() {
                 showPage("accounts");
                 setDrawer(false);
               }}
+              crosses={(from, to) => crossesOrganization(logins(), from, to.id)}
               onSearch={() => {
                 setFinding(true);
                 setDrawer(false);
@@ -1699,56 +1760,25 @@ export function App() {
                                 when={moving().get(id)}
                                 fallback={
                                   <Show when={onRemoved(id)}>
-                                    <Show
-                                      when={tab().launch.program === "claude"}
-                                      fallback={
-                                        <div class="pane-note removed-note">
-                                          <p>
-                                            {tab().launch.account?.name} was
-                                            removed. The shell closed.
-                                          </p>
-                                          <div class="removed-actions">
-                                            <For each={loaded().accounts}>
-                                              {(account) => (
-                                                <button
-                                                  type="button"
-                                                  class="secondary"
-                                                  onClick={() => {
-                                                    restartOn(id, account);
-                                                  }}
-                                                >
-                                                  Restart on {account.name}
-                                                </button>
-                                              )}
-                                            </For>
-                                          </div>
-                                        </div>
+                                    <RemovedNote
+                                      name={
+                                        tab().launch.account?.name ??
+                                        "This account"
                                       }
-                                    >
-                                      <div class="pane-note removed-note">
-                                        <p>
-                                          {tab().launch.account?.name} was
-                                          removed. The chat is saved.
-                                        </p>
-                                        <button
-                                          type="button"
-                                          class="secondary"
-                                          onClick={(event) => {
-                                            const box =
-                                              event.currentTarget.getBoundingClientRect();
-                                            setPillMenu({
-                                              at: {
-                                                x: box.left,
-                                                y: box.bottom + 4,
-                                              },
-                                              tab: id,
-                                            });
-                                          }}
-                                        >
-                                          Move to another account…
-                                        </button>
-                                      </div>
-                                    </Show>
+                                      chat={tab().launch.program === "claude"}
+                                      to={defaultTarget()}
+                                      accounts={loaded().accounts}
+                                      crosses={(to) =>
+                                        crossesOrganization(
+                                          logins(),
+                                          tab().launch.account?.id,
+                                          to.id,
+                                        )
+                                      }
+                                      onMove={(to) => {
+                                        moveRemoved(id, to);
+                                      }}
+                                    />
                                   </Show>
                                 }
                               >
@@ -1942,6 +1972,7 @@ export function App() {
                           onAlerts={alertsSetting.save}
                           onProfiles={changed}
                           onOpen={openSetupTab}
+                          onMoveTabs={moveTabsOff}
                           onClose={() => {
                             showPage(undefined);
                           }}
@@ -2060,9 +2091,16 @@ export function App() {
                   onContinue={(account) => {
                     const id = shown().hit.tab;
                     limitDone();
-                    continueOn(id, account, true);
+                    void continueOn(id, account, true);
                   }}
                   onNotNow={limitDone}
+                  crosses={(account) =>
+                    crossesOrganization(
+                      logins(),
+                      shown().hit.account,
+                      account.id,
+                    )
+                  }
                 />
               )}
             </Show>
@@ -2190,7 +2228,11 @@ export function App() {
                     at={open.at}
                     onContinue={(account) => {
                       setPillMenu(undefined);
-                      continueOn(open.tab, account, open.fromLimit === true);
+                      void continueOn(
+                        open.tab,
+                        account,
+                        open.fromLimit === true,
+                      );
                     }}
                     onResume={() => {
                       setPillMenu(undefined);
@@ -2202,6 +2244,13 @@ export function App() {
                       setPillMenu(undefined);
                       showPage("accounts");
                     }}
+                    crosses={(account) =>
+                      crossesOrganization(
+                        logins(),
+                        tab().launch.account?.id,
+                        account.id,
+                      )
+                    }
                     onDismiss={() => {
                       setPillMenu(undefined);
                     }}

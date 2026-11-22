@@ -1,6 +1,11 @@
 import { createMemo, For, onCleanup, onMount, Show } from "solid-js";
 
-import { type Account, type Profiles, savedColor } from "./accounts";
+import {
+  type Account,
+  OTHER_ORGANIZATION,
+  type Profiles,
+  savedColor,
+} from "./accounts";
 import { backdropDismiss } from "./backdrop";
 import { AccountDot } from "./icons";
 import { type LimitHit, limitText, signedInOffers } from "./limits";
@@ -17,6 +22,8 @@ export function LimitPopup(props: {
   statuses: Statuses;
   onContinue: (account: Account) => void;
   onNotNow: () => void;
+  /** The move to this account crosses organizations, so Claude rereads the chat. */
+  crosses: (account: Account) => boolean;
 }) {
   const offered = createMemo(() =>
     signedInOffers(props.hit.offers, props.profiles, props.statuses),
@@ -106,6 +113,21 @@ export function LimitPopup(props: {
             Stops anything it started. Types <code>continue</code> for you to
             send.
           </p>
+        </Show>
+        <Show
+          when={offered()
+            .filter((a) => props.crosses(a))
+            .map((a) => a.name)
+            .join(", ")}
+        >
+          {(names) => (
+            <p class="limit-fine">
+              {OTHER_ORGANIZATION.replace(
+                "Other organization:",
+                `Other organization (${names()}):`,
+              )}
+            </p>
+          )}
         </Show>
       </div>
     </div>
