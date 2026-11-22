@@ -43,7 +43,11 @@ function headerDrag(id: PanelCard, state: PanelState) {
   // Followed on the window, never by pointer capture: WebView2 sends the click after a captured press to the header, not the title.
   function follow(event: PointerEvent) {
     if (event.pointerId !== start?.pointer) return;
-    if (event.type === "pointercancel") {
+    // A move with no button held means the release happened outside the window, so the drag ends and the card stays.
+    if (
+      event.type === "pointercancel" ||
+      (event.type === "pointermove" && event.buttons === 0)
+    ) {
       stop();
       return;
     }

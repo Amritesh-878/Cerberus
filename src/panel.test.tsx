@@ -695,3 +695,35 @@ test("dragging a card's header moves it, saves the order, and Reset card order p
   expect(card(root, "Usage").style.order).toBe("4");
   expect(root.querySelector(".panel-reset")).toBeNull();
 });
+
+test("a card drag released outside the window ends at the next move and moves nothing", async () => {
+  const core = panelCore(withPanel({ open: true }));
+  const root = await renderApp(core.profiles, core.core);
+  await open(root, "planner");
+  for (const section of root.querySelectorAll<HTMLElement>(
+    ".panel-cards > .card",
+  )) {
+    const top = 100 * Number(section.style.order);
+    section.getBoundingClientRect = () => new DOMRect(0, top, 300, 100);
+  }
+  const head = card(root, "Usage").querySelector<HTMLElement>(".card-head");
+  if (!head) throw new Error("no head");
+  const at = (type: string, y: number, buttons: number) => {
+    head.dispatchEvent(
+      new PointerEvent(type, { bubbles: true, clientY: y, button: 0, buttons }),
+    );
+  };
+  const saves = core.saved.length;
+
+  at("pointerdown", 450, 1);
+  at("pointermove", 140, 1);
+  await settle();
+  // Back in the window with the button already up: the release was missed.
+  at("pointermove", 140, 0);
+  at("pointerup", 140, 0);
+  await settle();
+
+  expect(root.querySelector(".card.drop-before, .card.dragging")).toBeNull();
+  expect(core.saved.length).toBe(saves);
+  expect(card(root, "Usage").style.order).toBe("4");
+});
