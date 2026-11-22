@@ -160,8 +160,9 @@ pnpm run lint:fix && pnpm run typecheck && pnpm test
 cd src-tauri && cargo fmt && cargo clippy --all-targets -- -D warnings && cargo test
 ```
 
-CI runs cargo audit and pnpm audit; a new vulnerability fails the build. Accepted upstream warnings
-are listed, with a reason each, in `src-tauri/audit.toml`.
+CI runs `cargo audit`, where any vulnerability fails the build, and `pnpm audit --prod --audit-level
+high`, which checks the shipped JS packages only and fails at high severity or above. Accepted
+upstream warnings are listed, with a reason each, in `src-tauri/.cargo/audit.toml`.
 
 | Path | What it is |
 |---|---|

@@ -726,5 +726,7 @@ unreadable `profiles.json` is kept as `profiles.json.bad` and the app offers to 
 ## Building from source
 
 The README's "Build from source" has the commands. The app installs its JS packages with pnpm
-(`pnpm install --frozen-lockfile`), which runs no package's install script. CI runs cargo audit and
-pnpm audit; a new vulnerability fails the build.
+(`pnpm install --frozen-lockfile`), which runs no package's install script. CI runs `cargo audit`,
+where any vulnerability fails the build, and `pnpm audit --prod --audit-level high`, which checks the
+shipped JS packages only and fails at high severity or above. Accepted upstream warnings are in
+`src-tauri/.cargo/audit.toml`.
