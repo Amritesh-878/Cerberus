@@ -12,6 +12,7 @@ use crate::sessions::slug;
 const ONE: &str = "11111111-1111-4111-8111-111111111111";
 const TWO: &str = "22222222-2222-4222-8222-222222222222";
 const THREE: &str = "33333333-3333-4333-8333-333333333333";
+const FOUR: &str = "44444444-4444-4444-8444-444444444444";
 
 fn chat(title: &str, cwd: &str, stamp: &str, text: &str) -> String {
     let cwd_json = serde_json::to_string(cwd).unwrap();
@@ -216,35 +217,81 @@ fn words_find_a_chat_on_any_account_with_a_line_around_the_match() {
     assert_eq!(train.len(), 1);
     assert_eq!(train[0].id, THREE);
     assert_eq!(train[0].snippet.as_deref(), Some("Booked the train."));
+    assert_eq!(
+        train[0].marks,
+        [[0, 6], [11, 5]],
+        "both words marked in the line"
+    );
     assert_eq!(both.len(), 2, "the folder name matches both chats in it");
+    assert!(both.iter().all(|c| c.place == Place::Folder));
     assert!(none.is_empty());
 }
 
 /// Runs one search and returns its chats in the list's order, as the dialog shows them.
-fn ranked(finder: &ChatFinder, sources: Vec<Source>, query: &str) -> Vec<(String, u32, u32)> {
+fn ranked(finder: &ChatFinder, sources: Vec<Source>, query: &str) -> Vec<(String, Group, Place)> {
     let mut chats = search(finder, sources, query, HashMap::new());
     chats.sort_by(Found::order);
-    chats.into_iter().map(|c| (c.id, c.hits, c.exact)).collect()
+    chats
+        .into_iter()
+        .map(|c| (c.id, c.group, c.place))
+        .collect()
 }
 
 #[test]
-fn a_chat_matching_more_words_comes_first_and_ties_go_newest_first() {
+fn letters_in_order_find_a_title_and_mark_them() {
     let fx = corpus();
     let finder = ChatFinder::default();
     let sources = vec![fx.work.clone(), fx.home.clone()];
 
-    let more = ranked(&finder, sources.clone(), "notes login redirect");
-    let tie = ranked(&finder, sources, "train login");
+    let found = search(&finder, sources, "fxlog", HashMap::new());
+
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].id, ONE);
+    assert_eq!(found[0].group, Group::Name);
+    assert_eq!(found[0].place, Place::Title);
+    assert_eq!(found[0].marks, [[0, 1], [2, 1], [8, 3]]);
+}
+
+#[test]
+fn a_chat_lists_only_when_it_holds_every_word() {
+    let fx = corpus();
+    let finder = ChatFinder::default();
+    let sources = vec![fx.work.clone(), fx.home.clone()];
+
+    let all = ranked(&finder, sources.clone(), "booked train");
+    let red = ranked(&finder, sources, "changed redirect");
+
+    assert_eq!(all, [(THREE.to_owned(), Group::Text, Place::Text)]);
+    assert_eq!(red, [(ONE.to_owned(), Group::Text, Place::Text)]);
+}
+
+#[test]
+fn close_matches_come_only_when_no_chat_holds_every_word() {
+    let fx = corpus();
+    let finder = ChatFinder::default();
+    let sources = vec![fx.work.clone(), fx.home.clone()];
+
+    let most = ranked(&finder, sources.clone(), "notes login redirect");
+    let tie = ranked(&finder, sources.clone(), "train login");
+    let found = ranked(&finder, sources, "login redirect");
 
     assert_eq!(
-        more,
-        [(ONE.to_owned(), 2, 2), (TWO.to_owned(), 1, 1)],
-        "the older chat with two words before the newer one with one"
+        most,
+        [(ONE.to_owned(), Group::Close, Place::Text)],
+        "two of three words; one of three is not most"
     );
     assert_eq!(
         tie,
-        [(ONE.to_owned(), 1, 1), (THREE.to_owned(), 1, 1)],
+        [
+            (ONE.to_owned(), Group::Close, Place::Text),
+            (THREE.to_owned(), Group::Close, Place::Text)
+        ],
         "one word each, so the newest first"
+    );
+    assert_eq!(
+        found,
+        [(ONE.to_owned(), Group::Text, Place::Text)],
+        "a full match leaves no close ones"
     );
 }
 
@@ -254,15 +301,63 @@ fn a_misremembered_word_keeps_the_chat_below_an_exact_one() {
     let finder = ChatFinder::default();
     let sources = vec![fx.work.clone(), fx.home.clone()];
 
-    let wrong = ranked(&finder, sources.clone(), "fix login giraffe");
-    let typo = ranked(&finder, sources, "relaese booked");
+    let typo = ranked(&finder, sources.clone(), "relaese booked");
+    let title = ranked(&finder, sources, "lgoin");
 
-    assert_eq!(wrong, [(ONE.to_owned(), 2, 2)]);
     assert_eq!(
         typo,
-        [(THREE.to_owned(), 1, 1), (TWO.to_owned(), 1, 0)],
+        [
+            (THREE.to_owned(), Group::Close, Place::Text),
+            (TWO.to_owned(), Group::Close, Place::Text)
+        ],
         "the older exact match before the newer typo"
     );
+    assert_eq!(
+        title,
+        [(ONE.to_owned(), Group::Text, Place::Title)],
+        "a typo in the title is a title match"
+    );
+}
+
+#[test]
+fn a_name_match_comes_before_a_chat_whose_words_are_only_in_its_messages() {
+    let fx = corpus();
+    put(
+        &fx.home.config_dir,
+        &fx.alive,
+        FOUR,
+        &chat(
+            "Pack for the coast",
+            &fx.alive,
+            "2026-11-08T10:00:00.000Z",
+            "Write the release notes later.",
+        ),
+    );
+    let finder = ChatFinder::default();
+    let sources = vec![fx.work.clone(), fx.home.clone()];
+
+    let notes = ranked(&finder, sources, "release notes");
+
+    assert_eq!(
+        notes,
+        [
+            (TWO.to_owned(), Group::Name, Place::Title),
+            (FOUR.to_owned(), Group::Text, Place::Text)
+        ],
+        "the older title match first"
+    );
+}
+
+#[test]
+fn one_letter_lists_names_only() {
+    let fx = corpus();
+    let finder = ChatFinder::default();
+    let sources = vec![fx.work.clone(), fx.home.clone()];
+
+    let found = search(&finder, sources, "w", HashMap::new());
+
+    assert!(found.iter().all(|c| c.group == Group::Name));
+    assert!(found.iter().any(|c| c.id == TWO), "Write release notes");
 }
 
 #[test]
@@ -425,9 +520,9 @@ fn a_stopped_search_adds_nothing_to_the_cache() {
     };
     finder.current.store(5, Ordering::Release);
 
-    let stale = finder.check(4, &file, stamp, &Query::new(""), &|| false);
+    let stale = finder.check(4, &file, stamp, &Query::new(""), Pass::Main, &|| false);
     assert!(stale.is_some(), "it still answers its own caller");
     assert!(finder.cache().is_empty());
-    finder.check(5, &file, stamp, &Query::new(""), &|| false);
+    finder.check(5, &file, stamp, &Query::new(""), Pass::Main, &|| false);
     assert_eq!(finder.cache().len(), 1);
 }

@@ -46,8 +46,10 @@ const OPEN: FoundChat = {
   folder: ALPHA,
   folderExists: true,
   last: Date.parse("2026-11-08T10:00:00Z"),
-  hits: 0,
-  exact: 0,
+  group: "text",
+  score: 0,
+  place: "text",
+  marks: [],
   snippet: null,
   openIn: 3,
 };
@@ -59,8 +61,10 @@ const ELSEWHERE: FoundChat = {
   folder: String.raw`C:\code\alpha\api`,
   folderExists: true,
   last: Date.parse("2026-11-09T10:00:00Z"),
-  hits: 0,
-  exact: 0,
+  group: "text",
+  score: 0,
+  place: "text",
+  marks: [],
   snippet: "…the api tests now pass…",
   openIn: null,
 };
@@ -369,22 +373,102 @@ test("typing searches again, and an older search's results are dropped", async (
   );
 });
 
+/** Types into the box and waits out the typing pause. */
+async function typeQuery(root: HTMLElement, text: string): Promise<void> {
+  const box = root.querySelector<HTMLInputElement>(".find-chat input");
+  if (!box) throw new Error("no search box");
+  box.value = text;
+  box.dispatchEvent(new InputEvent("input", { bubbles: true }));
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  await settle();
+}
+
+test("a row says where it matched and marks the typed letters there", async () => {
+  const find = findCore();
+  const root = await openDialog(find);
+
+  await typeQuery(root, "fxapi");
+  answer(find, 1, [
+    {
+      ...ELSEWHERE,
+      group: "name",
+      score: 90,
+      place: "title",
+      marks: [
+        [0, 1],
+        [2, 1],
+        [8, 3],
+      ],
+    },
+    {
+      ...GONE,
+      place: "text",
+      snippet: "an api in the old proto",
+      marks: [[3, 3]],
+    },
+  ]);
+  await settle();
+
+  const marked = [...root.querySelectorAll(".find-row mark")].map(
+    (m) => m.textContent,
+  );
+  expect(marked).toEqual(["F", "x", "api", "api"]);
+  expect(root.querySelector(".find-where")?.textContent).toBe("title");
+});
+
+test("close matches show under their own heading, only when nothing had every word", async () => {
+  const find = findCore();
+  const root = await openDialog(find);
+
+  await typeQuery(root, "api giraffe");
+  answer(find, 1, [{ ...ELSEWHERE, group: "close", score: 101 }]);
+  await settle();
+
+  const groups = [...root.querySelectorAll(".find-group")].map(
+    (g) => g.textContent,
+  );
+  expect(groups).toContain("Close matches");
+  expect(groups).not.toContain("Chats");
+  expect(root.querySelector(".find-status")?.textContent).toBe(
+    "No chat has every word",
+  );
+});
+
+test("one letter filters the open tabs and leaves chats unsearched", async () => {
+  const find = findCore();
+  const root = await openDialog(find);
+
+  await typeQuery(root, "p");
+
+  expect(find.finds).toHaveLength(1);
+  expect(rows(root)).toEqual(["planner"]);
+  expect(root.querySelector(".find-status")?.textContent).toBe(
+    "Type two letters to search chats",
+  );
+});
+
 test("the helpers: merging, the holding project and the day", () => {
   expect(merged([OPEN], [ELSEWHERE, OPEN]).map((c) => c.id)).toEqual([
     ELSEWHERE.id,
     OPEN.id,
   ]);
-  const typed = (chat: FoundChat, hits: number, exact: number) => ({
-    ...chat,
-    hits,
-    exact,
-  });
+  const ranked = (
+    chat: FoundChat,
+    group: FoundChat["group"],
+    score: number,
+  ): FoundChat => ({ ...chat, group, score });
+  // Name matches, then text, then close ones; within a group the better score, then the newer chat.
   expect(
     merged(
-      [typed(ELSEWHERE, 1, 1), typed(GONE, 2, 1)],
-      [typed(OPEN, 2, 2), typed(GONE, 2, 1)],
+      [ranked(ELSEWHERE, "text", 1000), ranked(GONE, "name", 40)],
+      [ranked(OPEN, "text", 1000), ranked(GONE, "name", 40)],
     ).map((c) => c.id),
-  ).toEqual([OPEN.id, GONE.id, ELSEWHERE.id]);
+  ).toEqual([GONE.id, ELSEWHERE.id, OPEN.id]);
+  expect(
+    merged([ranked(OPEN, "close", 200)], [ranked(GONE, "text", 0)]).map(
+      (c) => c.id,
+    ),
+  ).toEqual([GONE.id, OPEN.id]);
   const tree = {
     ...emptyTree(),
     projects: [
@@ -405,7 +489,7 @@ test("the helpers: merging, the holding project and the day", () => {
   );
 });
 
-test("open tabs match by title, project, folder and account, every word", () => {
+test("open tabs match each word's letters in order in a title, project, folder name or account, best first", () => {
   const tab = {
     id: 3,
     title: "planner",
@@ -422,12 +506,20 @@ test("open tabs match by title, project, folder and account, every word", () => 
     account: null,
     program: "powershell",
   };
+  const notes = { ...tab, id: 5, title: "the planner notes" };
   const titles = (query: string) =>
-    matchTabs([tab, shell], query).map((t) => t.title);
+    matchTabs([tab, shell, notes], query).map((hit) => hit.tab.title);
 
-  expect(titles("")).toEqual(["planner", "shell"]);
-  expect(titles("PLAN")).toEqual(["planner"]);
-  expect(titles("alpha work")).toEqual(["planner"]);
-  expect(titles("code")).toEqual(["planner", "shell"]);
+  expect(titles("")).toEqual(["planner", "shell", "the planner notes"]);
+  expect(titles("PLAN")).toEqual(["planner", "the planner notes"]);
+  expect(titles("pnr")).toEqual(["planner", "the planner notes"]);
+  expect(titles("sh")).toEqual(["shell"]);
+  expect(titles("alpha work")).toEqual(["planner", "the planner notes"]);
+  expect(titles("code"), "a folder's name, not its whole path").toEqual([]);
   expect(titles("planner personal")).toEqual([]);
+  expect(matchTabs([tab], "pnr")[0]?.marks).toEqual([
+    [0, 1],
+    [3, 1],
+    [6, 1],
+  ]);
 });

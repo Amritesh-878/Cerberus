@@ -30,6 +30,88 @@ impl Query {
     pub fn is_empty(&self) -> bool {
         self.words.is_empty()
     }
+
+    pub fn words(&self) -> &[String] {
+        &self.words
+    }
+}
+
+/// Where a short string (a title, a folder's name, a snippet) holds the words, for ranking and highlighting.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Field {
+    /// Every word is in it, exactly or one edit away.
+    pub all: bool,
+    /// How many words are in it exactly.
+    pub exact: u32,
+    /// Character ranges to highlight, as start and length, in order.
+    pub marks: Vec<[u32; 2]>,
+}
+
+/// Each word's exact matches anywhere in `text`, and for a typo word, whole words one edit from it.
+pub fn field(text: &str, query: &Query) -> Field {
+    let chars: Vec<char> = text.chars().collect();
+    let lower: Vec<char> = chars
+        .iter()
+        .map(|c| c.to_lowercase().next().unwrap_or(*c))
+        .collect();
+    let mut marks = Vec::new();
+    let (mut all, mut exact) = (true, 0);
+    for word in &query.words {
+        let wanted: Vec<char> = word.chars().collect();
+        let mut hit = false;
+        if !wanted.is_empty() && wanted.len() <= lower.len() {
+            for start in 0..=lower.len() - wanted.len() {
+                if lower[start..start + wanted.len()] == wanted[..] {
+                    marks.push([start, wanted.len()]);
+                    hit = true;
+                }
+            }
+        }
+        if hit {
+            exact += 1;
+            continue;
+        }
+        if forgives(word) {
+            for (start, run) in runs(&lower) {
+                let bytes: String = run.iter().collect();
+                if bytes.len().abs_diff(word.len()) <= 1
+                    && one_edit(word.as_bytes(), bytes.as_bytes())
+                {
+                    marks.push([start, run.len()]);
+                    hit = true;
+                }
+            }
+        }
+        all &= hit;
+    }
+    marks.sort_unstable();
+    let marks = marks
+        .into_iter()
+        .map(|[start, len]| [to_u32(start), to_u32(len)])
+        .collect();
+    Field { all, exact, marks }
+}
+
+fn to_u32(n: usize) -> u32 {
+    u32::try_from(n).unwrap_or(u32::MAX)
+}
+
+/// Runs of ASCII letters and digits with where each starts, the words a typo can stand for.
+fn runs(chars: &[char]) -> impl Iterator<Item = (usize, &[char])> {
+    let mut at = 0;
+    std::iter::from_fn(move || {
+        while at < chars.len() && !chars[at].is_ascii_alphanumeric() {
+            at += 1;
+        }
+        if at >= chars.len() {
+            return None;
+        }
+        let start = at;
+        while at < chars.len() && chars[at].is_ascii_alphanumeric() {
+            at += 1;
+        }
+        Some((start, &chars[start..at]))
+    })
 }
 
 /// A word's runs of ASCII letters and digits, which JSON never escapes, for the raw file check.
@@ -160,11 +242,22 @@ pub fn holds_any(bytes: &[u8], query: &Query) -> bool {
         return true;
     }
     let lower = bytes.to_ascii_lowercase();
-    query.words.iter().any(|word| {
-        // A word without a plain piece can't be checked here, so it lets the file through.
-        plain_pieces(word).all(|piece| memmem::find(&lower, piece.as_bytes()).is_some())
-            || (forgives(word) && near(&lower, word.as_bytes()))
-    })
+    query.words.iter().any(|word| could_hold(&lower, word))
+}
+
+/// Whether every word could match the raw file; a file where one can't is skipped by the all-words search.
+pub fn holds_all(bytes: &[u8], query: &Query) -> bool {
+    if query.is_empty() {
+        return true;
+    }
+    let lower = bytes.to_ascii_lowercase();
+    query.words.iter().all(|word| could_hold(&lower, word))
+}
+
+// A word without a plain piece can't be checked here, so it lets the file through.
+fn could_hold(lower: &[u8], word: &str) -> bool {
+    plain_pieces(word).all(|piece| memmem::find(lower, piece.as_bytes()).is_some())
+        || (forgives(word) && near(lower, word.as_bytes()))
 }
 
 /// Whether `lower` holds a run one edit from `word`, found by the half of it that one edit leaves whole.
@@ -663,6 +756,29 @@ pub(crate) mod tests {
         );
         assert!(!holds("dshbaord"), "two edits away");
         assert!(holds(r"c:\code\alpha"), "a folder with backslashes");
+    }
+
+    #[test]
+    fn the_all_words_check_skips_a_file_missing_any_word() {
+        let holds = |query: &str| holds_all(FAKE_CHAT.as_bytes(), &Query::new(query));
+
+        assert!(holds("LOGIN Dashboard"));
+        assert!(!holds("giraffe login"), "every word is needed");
+        assert!(
+            holds("dashbaord login"),
+            "a word one edit away still counts"
+        );
+    }
+
+    #[test]
+    fn a_field_marks_exact_words_and_a_whole_word_one_edit_away() {
+        let found = field("Fix the Login dashboard", &Query::new("login dashbaord"));
+        let short = field("Fix the bug", &Query::new("fxi"));
+
+        assert!(found.all);
+        assert_eq!(found.exact, 1);
+        assert_eq!(found.marks, [[8, 5], [14, 9]]);
+        assert!(!short.all, "a word under five letters gets no typo");
     }
 
     #[test]

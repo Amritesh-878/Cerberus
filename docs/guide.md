@@ -458,21 +458,28 @@ from a transcript.
 search box at the top of the sidebar (or Ctrl+Shift+F, Cmd+Shift+F on macOS) opens one list for
 your open tabs and every account's chats:
 
-- **Open tabs** come first: every tab whose title, project, folder or account holds all the words
-  you typed; with nothing typed, all of them. Enter or a click shows that tab.
+- **Open tabs** come first, best match first: each word you type must appear, letters in order
+  (`cerpl` finds Cerberus Planner), in the tab's title, project, folder name or account. The matched
+  letters are highlighted. With nothing typed, all tabs show. Enter or a click shows that tab.
 - **Chats** follow. A chat already open in a tab is listed once, as that tab. Ctrl+K is left to the
   shell, where it deletes to the end of the line.
 - Before you type, it lists every chat, newest first. Each row has the chat's title (its summary,
   else its first message), its account, its folder, and when its last message was.
-- Words match anywhere, in any case: in the title, the folder or the text of what you and Claude
-  wrote. Tool calls, their output and Claude's thinking are not searched.
-- A chat needs only one of your words to show. Chats that match more of them come first, then the
-  newest, so one word you misremember only moves a chat down the list.
+- A chat's title and folder name match the same way as tabs, letters in order. These chats come
+  first, best match first.
+- Then chats whose text holds **every** word you typed, in any order and case: in the title, the
+  folder or what you and Claude wrote. Tool calls, their output and Claude's thinking are not
+  searched. A chat whose title or folder holds every word comes before one where they are only in
+  its messages, an exact match before a typo, then the newest.
+- Only when no chat holds every word, **Close matches** lists the chats holding most of them,
+  under their own heading.
+- One letter filters the open tabs only; chats are searched from two letters on.
 - A word of five or more letters and digits also finds a word one typo away: one letter added,
   missing, changed, or two neighbours swapped, so `authentcation` finds `authentication`. Shorter
   words, and words with other characters such as a path, must appear as typed. An exact match ranks
   above a typo.
-- A row shows a line around its best match, an exact one before a typo.
+- A row says where it matched: "title" or "folder" beside the title, or a line around the match
+  in its messages, with your words highlighted, typos included.
 - Paste a chat's id, alone or as `claude --resume <id>`, and the list shows just that chat on
   whichever account has it, so a resume that failed in a shell tab is one paste away.
 - Arrow keys move, Enter (or a click) opens, Escape closes.

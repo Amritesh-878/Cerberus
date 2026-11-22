@@ -10,19 +10,56 @@ import {
   startFind,
   whenText,
 } from "./chatSearch";
+import type { Mark } from "./fuzzy";
 import { AccountDot, CloseIcon, ProgramIcon, SearchIcon } from "./icons";
 import { keepInside } from "./ShortcutsSheet";
-import { matchTabs, type TabEntry } from "./tabSearch";
+import { matchTabs, type TabHit } from "./tabSearch";
 import { folderName, type TabId } from "./tree";
 
 // Long enough to skip the searches between quick keystrokes, short enough to feel live.
 const TYPING_MS = 120;
 
+/** One letter filters the open tabs; chats are searched from two on, where a match means something. */
+function searchesChats(text: string): boolean {
+  return text.trim().length !== 1;
+}
+
+/** `text` with the marked character ranges highlighted. */
+function Marked(props: { text: string; marks: readonly Mark[] }) {
+  const parts = () => {
+    const chars = Array.from(props.text);
+    const out: { text: string; marked: boolean }[] = [];
+    let at = 0;
+    for (const [start, length] of props.marks) {
+      if (start < at) continue;
+      if (start > at)
+        out.push({ text: chars.slice(at, start).join(""), marked: false });
+      out.push({
+        text: chars.slice(start, start + length).join(""),
+        marked: true,
+      });
+      at = start + length;
+    }
+    if (at < chars.length)
+      out.push({ text: chars.slice(at).join(""), marked: false });
+    return out;
+  };
+  return (
+    <For each={parts()}>
+      {(part) => (
+        <Show when={part.marked} fallback={part.text}>
+          <mark>{part.text}</mark>
+        </Show>
+      )}
+    </For>
+  );
+}
+
 /** One list for open tabs and every account's chats: Enter on a tab shows it, on a chat opens it in its folder on its account. */
 export function FindChat(props: {
   profiles: Profiles;
   /** Every open tab, in the sidebar's order. */
-  tabs: TabEntry[];
+  tabs: TabHit["tab"][];
   onSwitch: (tab: TabId) => void;
   /** Opens the chat, in `folder` when its own is gone; the dialog closes once it resolves. */
   onOpen: (chat: FoundChat, folder?: string) => Promise<void>;
@@ -51,6 +88,13 @@ export function FindChat(props: {
     else setDone(batch.searched);
   };
   const search = (text: string) => {
+    if (!searchesChats(text)) {
+      // Only a newer search can replace the list, so the old one is cleared here.
+      newest += 1;
+      setChats([]);
+      setDone(undefined);
+      return;
+    }
     startFind(text, onBatch).then(
       (number) => {
         if (number > newest) {
@@ -65,22 +109,27 @@ export function FindChat(props: {
   };
 
   // A chat already open in a tab shows once, as that tab, even when only its words matched.
-  const shownTabs = () => {
+  const shownTabs = (): TabHit[] => {
     const matched = matchTabs(props.tabs, query());
     const viaChats = chats()
       .map((chat) => chat.openIn)
       .filter((id): id is number => id !== null)
-      .filter((id) => !matched.some((t) => t.id === id))
+      .filter((id) => !matched.some((hit) => hit.tab.id === id))
       .map((id) => props.tabs.find((t) => t.id === id))
-      .filter((tab): tab is TabEntry => tab !== undefined);
+      .filter((tab) => tab !== undefined)
+      .map((tab) => ({ tab, marks: [] }));
     return [...matched, ...viaChats];
   };
   const shownChats = () => chats().filter((chat) => chat.openIn === null);
+  // The core sends close matches only when nothing held every word, so the two never mix.
+  const closeOnly = () =>
+    shownChats().length > 0 &&
+    shownChats().every((chat) => chat.group === "close");
   const rowCount = () => shownTabs().length + shownChats().length;
   const pick = (at: number) => {
     const tabs = shownTabs();
-    const tab = tabs[at];
-    if (tab) props.onSwitch(tab.id);
+    const hit = tabs[at];
+    if (hit) props.onSwitch(hit.tab.id);
     else open(shownChats()[at - tabs.length]);
   };
 
@@ -252,36 +301,41 @@ export function FindChat(props: {
             </li>
           </Show>
           <For each={shownTabs()}>
-            {(tab, at) => (
+            {(hit, at) => (
               <li
                 role="option"
                 aria-selected={at() === selected()}
                 class="find-row find-tab"
                 classList={{ selected: at() === selected() }}
-                title={tab.folder ?? undefined}
+                title={hit.tab.folder ?? undefined}
                 onPointerMove={() => setSelected(at())}
                 onClick={() => {
-                  props.onSwitch(tab.id);
+                  props.onSwitch(hit.tab.id);
                 }}
               >
                 <div class="find-line">
-                  <ProgramIcon program={tab.program} size={13} />
-                  <span class="find-title">{tab.title}</span>
+                  <ProgramIcon program={hit.tab.program} size={13} />
+                  <span class="find-title">
+                    <Marked text={hit.tab.title} marks={hit.marks} />
+                  </span>
                 </div>
                 <div class="find-line find-meta">
-                  <span>{tab.project}</span>
-                  <Show when={tab.account}>
+                  <span>{hit.tab.project}</span>
+                  <Show when={hit.tab.account}>
                     {(name) => (
                       <>
                         <AccountDot
-                          id={tab.accountId ?? 0}
-                          color={savedColor(props.profiles, tab.accountId ?? 0)}
+                          id={hit.tab.accountId ?? 0}
+                          color={savedColor(
+                            props.profiles,
+                            hit.tab.accountId ?? 0,
+                          )}
                         />
                         <span>{name()}</span>
                       </>
                     )}
                   </Show>
-                  <Show when={tab.folder}>
+                  <Show when={hit.tab.folder}>
                     {(folder) => (
                       <span class="find-folder">{folderName(folder())}</span>
                     )}
@@ -290,9 +344,11 @@ export function FindChat(props: {
               </li>
             )}
           </For>
-          <li class="find-group" role="presentation">
-            Chats
-          </li>
+          <Show when={searchesChats(query())}>
+            <li class="find-group" role="presentation">
+              {closeOnly() ? "Close matches" : "Chats"}
+            </li>
+          </Show>
           <For each={shownChats()}>
             {(chat, index) => (
               <li
@@ -309,7 +365,15 @@ export function FindChat(props: {
                 }}
               >
                 <div class="find-line">
-                  <span class="find-title">{chat.title}</span>
+                  <span class="find-title">
+                    <Marked
+                      text={chat.title}
+                      marks={chat.place === "title" ? chat.marks : []}
+                    />
+                  </span>
+                  <Show when={chat.place !== "text" && query().trim() !== ""}>
+                    <span class="find-where">{chat.place}</span>
+                  </Show>
                   <span class="find-when">{whenText(chat.last)}</span>
                 </div>
                 <div class="find-line find-meta">
@@ -324,14 +388,23 @@ export function FindChat(props: {
                     class="find-folder"
                     classList={{ gone: !chat.folderExists }}
                   >
-                    {chat.folder === null
-                      ? "No folder"
-                      : folderName(chat.folder)}
+                    <Show when={chat.folder} fallback="No folder">
+                      {(folder) => (
+                        <Marked
+                          text={folderName(folder())}
+                          marks={chat.place === "folder" ? chat.marks : []}
+                        />
+                      )}
+                    </Show>
                     {chat.folderExists ? "" : " (gone)"}
                   </span>
                 </div>
-                <Show when={chat.snippet}>
-                  {(snippet) => <p class="find-snippet">{snippet()}</p>}
+                <Show when={chat.place === "text" && chat.snippet}>
+                  {(snippet) => (
+                    <p class="find-snippet">
+                      <Marked text={snippet()} marks={chat.marks} />
+                    </p>
+                  )}
                 </Show>
               </li>
             )}
@@ -339,20 +412,27 @@ export function FindChat(props: {
         </ul>
         <p class="find-status" aria-live="polite">
           <Show
-            when={done() !== undefined}
-            fallback={
-              chats().length > 0
-                ? `${String(chats().length)} chats so far…`
-                : "Searching chats…"
-            }
+            when={searchesChats(query())}
+            fallback="Type two letters to search chats"
           >
-            {chats().length === 0
-              ? query().trim() === ""
-                ? "No chats yet"
-                : "No chats match"
-              : shownChats().length === 0
-                ? "Every chat found is open above"
-                : `${String(shownChats().length)} of ${String(done())} chats`}
+            <Show
+              when={done() !== undefined}
+              fallback={
+                chats().length > 0
+                  ? `${String(chats().length)} chats so far…`
+                  : "Searching chats…"
+              }
+            >
+              {chats().length === 0
+                ? query().trim() === ""
+                  ? "No chats yet"
+                  : "No chats match"
+                : shownChats().length === 0
+                  ? "Every chat found is open above"
+                  : closeOnly()
+                    ? "No chat has every word"
+                    : `${String(shownChats().length)} of ${String(done())} chats`}
+            </Show>
           </Show>
         </p>
         <Show when={error()}>
