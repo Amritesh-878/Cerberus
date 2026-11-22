@@ -707,10 +707,7 @@ export function App() {
       if (!tab || moving().has(id)) continue;
       if (source && sameFolder(source.configDir, to.configDir)) {
         setTree(moveToAccount(tree(), id, to));
-      } else if (
-        tab.launch.program !== "claude" ||
-        !(await tabHasChat(id))
-      ) {
+      } else if (tab.launch.program !== "claude" || !(await tabHasChat(id))) {
         restartOn(id, to);
       } else if (!(await continueOn(id, to, false, true))) {
         stayed.push(tab.title);
