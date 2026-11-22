@@ -7,8 +7,8 @@ use tauri::ipc::{Channel, InvokeResponseBody, IpcResponse};
 use tauri::{AppHandle, Manager, State};
 
 use crate::accounts::{
-    AccountId, Accounts, AccountsError, AuthState, AuthStatus, Candidate, PanelPrefs, Profiles,
-    Removal, SetupStep,
+    AccountId, Accounts, AccountsError, AuthState, AuthStatus, Candidate, LoginFacts, PanelPrefs,
+    Profiles, Removal, SetupStep,
 };
 use crate::blocking::blocking;
 use crate::bridge::Bridge;
@@ -616,6 +616,12 @@ pub async fn set_account_color(
         accounts.update(|p| p.set_color(id, &color))
     })
     .await
+}
+
+/// Which accounts share a login or an organization; the ids themselves stay in the core.
+#[tauri::command]
+pub async fn account_logins(app: AppHandle) -> Result<Vec<LoginFacts>, AccountsError> {
+    blocking(move || app.state::<Accounts>().logins()).await
 }
 
 #[tauri::command]

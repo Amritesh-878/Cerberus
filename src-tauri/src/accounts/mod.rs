@@ -1,4 +1,5 @@
 mod detect;
+mod login;
 mod palette;
 mod removal;
 mod status;
@@ -13,6 +14,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize, Serializer};
 
 pub use crate::accounts::detect::Candidate;
+pub use crate::accounts::login::LoginFacts;
 pub use crate::accounts::removal::Removal;
 pub use crate::accounts::status::{AuthState, AuthStatus};
 use crate::accounts::store::Store;
@@ -58,8 +60,10 @@ pub enum AccountsError {
     DuplicateName(String),
     #[error("not a full path: {0}")]
     RelativeDir(String),
-    #[error("another account already uses {0}")]
+    #[error("Already added as {0}.")]
     DuplicateDir(String),
+    #[error("Same login as {0}. Use that account.")]
+    SameLogin(String),
     #[error("folder not found: {0}")]
     NoSuchDir(String),
     #[error("no account {0}")]
@@ -228,12 +232,12 @@ impl Profiles {
         if !config_dir.is_absolute() {
             return Err(AccountsError::RelativeDir(shown(&config_dir)));
         }
-        if self
+        if let Some(twin) = self
             .accounts
             .iter()
-            .any(|a| same_dir(&a.config_dir, &config_dir))
+            .find(|a| same_dir(&a.config_dir, &config_dir))
         {
-            return Err(AccountsError::DuplicateDir(shown(&config_dir)));
+            return Err(AccountsError::DuplicateDir(twin.name.clone()));
         }
         let id = self.next_id;
         self.next_id += 1;
@@ -340,6 +344,34 @@ impl Profiles {
         Ok(name.to_owned())
     }
 
+    /// An older file's second account on a folder is retired (its tabs re-point by folder), and a repeated name gets a number.
+    fn fix_duplicates(&mut self) {
+        let mut kept: Vec<Account> = Vec::new();
+        for mut account in std::mem::take(&mut self.accounts) {
+            if kept
+                .iter()
+                .any(|k| same_dir(&k.config_dir, &account.config_dir))
+            {
+                if self.default_account == Some(account.id) {
+                    self.default_account = None;
+                }
+                self.retired.push(account);
+                continue;
+            }
+            let taken = |name: &str| kept.iter().any(|k| k.name.eq_ignore_ascii_case(name));
+            if taken(&account.name) {
+                let base = account.name.clone();
+                let free = (2..).map(|n| format!("{base} {n}")).find(|n| !taken(n));
+                account.name = free.unwrap_or(base);
+            }
+            kept.push(account);
+        }
+        self.accounts = kept;
+        if self.default_account.is_none() {
+            self.default_account = self.accounts.first().map(|a| a.id);
+        }
+    }
+
     /// Checks a file read from disk by replaying each account through the rules `add` enforces.
     fn validate(&self) -> Result<(), AccountsError> {
         let mut replay = Self::default();
@@ -398,6 +430,17 @@ impl Accounts {
 
     /// Creates the account's folder when it is new, so `claude` starts there on first login.
     pub fn add(&self, name: &str, config_dir: PathBuf) -> Result<Profiles, AccountsError> {
+        // A folder signed in to a login already added is a second door to the same chats' owner.
+        if let Some(login) = login::read(&self.config_file(&config_dir)) {
+            let profiles = self.load()?;
+            let twin = profiles.accounts.iter().find(|a| {
+                login::read(&self.config_file(&a.config_dir))
+                    .is_some_and(|l| l.account == login.account)
+            });
+            if let Some(twin) = twin {
+                return Err(AccountsError::SameLogin(twin.name.clone()));
+            }
+        }
         self.update(|p| {
             p.add(name, config_dir.clone())?;
             fs::create_dir_all(&config_dir)?;
@@ -603,6 +646,24 @@ impl Accounts {
         };
         let dir = self.load()?.account(id)?.config_dir.clone();
         Ok(env_dir(&self.home, dir))
+    }
+
+    /// Claude Code's settings file for an account folder: inside it, or in the home folder for the default `~/.claude`.
+    pub fn config_file(&self, config_dir: &Path) -> PathBuf {
+        env_dir(&self.home, config_dir.to_path_buf())
+            .unwrap_or_else(|| self.home.clone())
+            .join(".claude.json")
+    }
+
+    /// Which accounts share a login or an organization, read from each folder's two ids only.
+    pub fn logins(&self) -> Result<Vec<LoginFacts>, AccountsError> {
+        let profiles = self.load()?;
+        let logins: Vec<_> = profiles
+            .accounts
+            .iter()
+            .map(|a| (a.id, login::read(&self.config_file(&a.config_dir))))
+            .collect();
+        Ok(login::facts(&logins))
     }
 
     /// Where a tab's chat lives, a removed account's folder included, so the chat can still move.
@@ -1327,6 +1388,34 @@ mod tests {
             .unwrap();
 
         assert!(home.path().join(".claude-fresh").is_dir());
+    }
+
+    #[test]
+    fn a_folder_signed_in_to_a_login_already_added_is_refused_with_its_name() {
+        let home = TestDir::new();
+        let accounts = Accounts::new(&home.path().join("app"), home.path().to_path_buf());
+        let signed = |dir: &str, login: &str| {
+            let folder = home.path().join(dir);
+            fs::create_dir_all(&folder).unwrap();
+            let config = format!(r#"{{"oauthAccount":{{"accountUuid":"{login}"}}}}"#);
+            fs::write(folder.join(".claude.json"), config).unwrap();
+            folder
+        };
+        accounts.add("Work", signed(".claude-work", "u-1")).unwrap();
+
+        let same = accounts.add("Work again", signed(".claude-w2", "u-1"));
+        let other = accounts.add("Personal", signed(".claude-me", "u-2"));
+
+        assert_eq!(
+            same.unwrap_err().to_string(),
+            "Same login as Work. Use that account."
+        );
+        assert!(other.is_ok());
+        let facts = accounts.logins().unwrap();
+        assert_eq!(
+            facts.iter().map(|f| f.same_as).collect::<Vec<_>>(),
+            [None, None]
+        );
     }
 
     #[test]

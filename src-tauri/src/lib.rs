@@ -158,6 +158,7 @@ pub fn run() {
             commands::add_account,
             commands::rename_account,
             commands::remove_account,
+            commands::account_logins,
             commands::set_default_account,
             commands::set_account_color,
             commands::set_start_folder,
