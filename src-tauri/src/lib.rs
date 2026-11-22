@@ -149,6 +149,7 @@ pub fn run() {
             commands::resume_chat,
             commands::reopen_as_claude,
             commands::tab_env,
+            commands::tab_has_chat,
             commands::tab_set_env,
             commands::tab_move_folder,
             commands::load_profiles,

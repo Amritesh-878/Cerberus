@@ -39,7 +39,7 @@ import {
 import { AccountsScreen } from "./AccountsScreen";
 import { Approvals, type TabName } from "./Approvals";
 import { createAlertsSetting } from "./alerting";
-import { continueOnAccount, continueTargets } from "./carry";
+import { continueOnAccount, tabHasChat, continueTargets } from "./carry";
 import {
   type Board,
   cleared,
@@ -694,23 +694,34 @@ export function App() {
     });
   };
 
-  // Every tab on `from` goes to `to` before `from` is removed: one folder re-points, a chat moves, anything else restarts there.
+  // Every tab on `from` goes to `to` before `from` is removed: one folder re-points, a chat moves, a tab with no chat starts there.
   const moveTabsOff = async (from: AccountId, to: Account) => {
     const source = profiles()?.accounts.find((a) => a.id === from);
     const ids = tree()
       .tabs.filter((t) => t.launch.account?.id === from)
       .map((t) => t.id);
+    const stayed: string[] = [];
     for (const id of ids) {
       const tab = tabById(id);
-      if (!tab) continue;
+      // A tab already moving finishes its own move.
+      if (!tab || moving().has(id)) continue;
       if (source && sameFolder(source.configDir, to.configDir)) {
         setTree(moveToAccount(tree(), id, to));
       } else if (
         tab.launch.program !== "claude" ||
-        !(await continueOn(id, to, false, true))
+        !(await tabHasChat(id))
       ) {
         restartOn(id, to);
+      } else if (!(await continueOn(id, to, false, true))) {
+        stayed.push(tab.title);
       }
+    }
+    // A chat that couldn't move stays saved on its tab, which offers the move again once its account is gone.
+    if (stayed.length > 0) {
+      setMoveFailed({
+        account: to.name,
+        reason: `${stayed.join(", ")} couldn't move`,
+      });
     }
   };
 
