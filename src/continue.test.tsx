@@ -7,6 +7,7 @@ import {
   click,
   field,
   press,
+  pressAndRelease,
   ptyCore,
   renderApp,
   SAVED,
@@ -452,6 +453,74 @@ test("removing an account with tabs asks first, then closes their programs and k
     "work was removed. The chat is saved.",
   );
   expect(fake.app.pty.spawned).toHaveLength(1);
+});
+
+/** Removes "work" from the Accounts page, then shows its Claude tab with its Move menu open. */
+async function removedTabMenu(fake: ReturnType<typeof removing>) {
+  const root = await renderApp(fake.profiles, fake.core);
+  await open(root, "Claude Code · work");
+  click(root, "Accounts");
+  await settle();
+  click(accountRow(root, "work"), "Remove");
+  await settle();
+  click(root.querySelector(".row-confirm") ?? root, "Remove work");
+  await settle();
+  await open(root, "Claude Code · work");
+  click(
+    root.querySelector(".removed-note") ?? root,
+    "Move to another account…",
+  );
+  await settle();
+  expect(root.querySelector(".tab-menu")).not.toBeNull();
+  return root;
+}
+
+test("a removed account's tab menu closes on Escape and on its backdrop, so the window takes clicks again", async () => {
+  const root = await removedTabMenu(removing([]));
+
+  press("Escape");
+  await settle();
+  expect(document.querySelector(".popover-backdrop")).toBeNull();
+
+  click(
+    root.querySelector(".removed-note") ?? root,
+    "Move to another account…",
+  );
+  await settle();
+  const backdrop = document.querySelector(".popover-backdrop");
+  if (!backdrop) throw new Error("no backdrop");
+  pressAndRelease(backdrop, backdrop);
+  await settle();
+  expect(document.querySelector(".popover-backdrop")).toBeNull();
+});
+
+test("a shortcut under an open menu opens no second layer, and Escape then clears the window", async () => {
+  const root = await renderApp(() => SAVED, core().core);
+  await openPill(root);
+
+  press("F", { ctrlKey: true, shiftKey: true });
+  press("?", { ctrlKey: true, shiftKey: true, code: "Slash" });
+  await settle();
+  expect(
+    document.querySelectorAll(".popover-backdrop, .sheet-backdrop"),
+  ).toHaveLength(1);
+
+  press("Escape");
+  await settle();
+  expect(
+    document.querySelectorAll(".popover-backdrop, .sheet-backdrop"),
+  ).toHaveLength(0);
+});
+
+test("a removed account's tab moves to the account picked in its menu", async () => {
+  const fake = removing([]);
+  const root = await removedTabMenu(fake);
+
+  click(root.querySelector(".tab-menu") ?? root, "Move to personal…");
+  await settle();
+
+  expect(document.querySelector(".popover-backdrop")).toBeNull();
+  expect(fake.app.continued).toEqual([{ tab: 2, account: 0 }]);
 });
 
 test("Cancel keeps an account its tabs use, and their programs run on", async () => {

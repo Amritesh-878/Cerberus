@@ -155,6 +155,8 @@ export function Panel(props: {
     },
   };
   const inProject = () => props.tab?.projectId != null;
+  // Passed as a call, not a ternary: Solid wraps a conditional prop in a memo, and one read from a click handler has no owner.
+  const addFolder = () => (inProject() ? props.onAddFolder : undefined);
   const worktreeActions: WorktreeActions = {
     openVsCode: (path) => {
       act(openVsCode(path));
@@ -364,7 +366,7 @@ export function Panel(props: {
               tab={props.tab?.id ?? 0}
               tabTitle={props.tabTitle}
               worktreeActions={worktreeActions}
-              onAddFolder={inProject() ? props.onAddFolder : undefined}
+              onAddFolder={addFolder()}
               folder={props.tab?.launch.spec.cwd ?? null}
               folders={feed.folders()}
               prs={loadedValue(feed.prs()) ?? []}

@@ -558,6 +558,8 @@ export function App() {
       account != null && current !== undefined && isRemoved(current, account.id)
     );
   };
+  // The tab's own chat ended, so its menu offers Resume; a removed account's tab moves instead.
+  const endedHere = (id: TabId) => ended().has(id) && !onRemoved(id);
   const isRunning = (id: TabId) =>
     started().has(id) &&
     runOf(id) !== 0 &&
@@ -688,9 +690,12 @@ export function App() {
     ended: chatEnded,
     setAlert,
   });
+  // A removed account's tab runs nothing, so its hand-started chat has neither bar nor popup.
   const byHandShown = () => {
     const id = shown();
-    return id !== undefined && hands.byHand(id) ? id : undefined;
+    return id !== undefined && hands.byHand(id) && !onRemoved(id)
+      ? id
+      : undefined;
   };
 
   const openSetupTab = (launch: Tab) => {
@@ -857,8 +862,11 @@ export function App() {
     const onKey = (event: KeyboardEvent) => {
       const shortcut = shortcutFor(event);
       if (!shortcut || profiles() === undefined) return;
-      // The Edit environment dialog is modal: a shortcut behind it could close its tab and drop the edits.
-      if (editing() !== undefined) return;
+      // Under a layer the keys stay with it, as a shortcut could stack a second one or close the tab it is about; its own toggle still works.
+      const ownToggle =
+        (shortcut === "shortcuts" && sheet()) ||
+        (shortcut === "findChat" && finding());
+      if (layerOpen() && !ownToggle) return;
       event.preventDefault();
       event.stopPropagation();
       if (shortcut === "shortcuts") {
@@ -1028,6 +1036,12 @@ export function App() {
       (hand !== undefined && hands.unasked(hand))
     );
   };
+  // Any layer over the window, menus included; window shortcuts wait for it so two never stack.
+  const layerOpen = () =>
+    otherDialog() ||
+    pillMenu() !== undefined ||
+    opening() !== undefined ||
+    limitShown() !== undefined;
   // A Claude tab in a project with a planner above it, or that is one, can start a task.
   const canStartTask = (id: TabId) => {
     const tab = tabById(id);
@@ -1035,6 +1049,14 @@ export function App() {
       tab?.launch.program === "claude" && plannerFor(tree(), tab) !== undefined
     );
   };
+  // The menu's Start a task, which closes the menu first; none for a tab that can't start one.
+  const startTaskFrom = (id: TabId) =>
+    canStartTask(id)
+      ? () => {
+          setPillMenu(undefined);
+          setStartingTask(id);
+        }
+      : undefined;
   const chatShown = () => {
     const tab = shownTab();
     return tab?.launch.program === "claude" && isRunning(tab.id)
@@ -2142,60 +2164,59 @@ export function App() {
             <Show
               when={(() => {
                 const open = pillMenu();
-                return open === undefined ? undefined : tabById(open.tab);
+                return open !== undefined && tabById(open.tab) !== undefined
+                  ? open
+                  : undefined;
               })()}
+              keyed
             >
-              {(tab) => (
-                <TabMenu
-                  title={tab().title}
-                  chosen={pillMenu()?.chosen}
-                  account={menuAccount(
-                    loaded().accounts.find(
-                      (a) => a.id === tab().launch.account?.id,
-                    ) ?? tab().launch.account,
-                    loaded(),
-                    (id) => accountState(loaded(), statuses.get(id), id),
-                  )}
-                  targets={continueTargets(
-                    tab(),
-                    loaded().accounts,
-                    statuses.get,
-                  )}
-                  running={isRunning(tab().id)}
-                  busy={moving().has(tab().id)}
-                  ended={ended().has(tab().id) && !onRemoved(tab().id)}
-                  at={pillMenu()?.at ?? { x: 0, y: 0 }}
-                  onContinue={(account) => {
-                    // Read before closing, since closing unmounts what holds the tab.
-                    const id = tab().id;
-                    const fromLimit = pillMenu()?.fromLimit === true;
-                    setPillMenu(undefined);
-                    continueOn(id, account, fromLimit);
-                  }}
-                  onResume={() => {
-                    const id = tab().id;
-                    setPillMenu(undefined);
-                    resume(id);
-                  }}
-                  handoff={handoffAction(tab().id)}
-                  onStartTask={
-                    canStartTask(tab().id)
-                      ? () => {
-                          const id = tab().id;
-                          setPillMenu(undefined);
-                          setStartingTask(id);
-                        }
-                      : undefined
-                  }
-                  onAccounts={() => {
-                    setPillMenu(undefined);
-                    showPage("accounts");
-                  }}
-                  onDismiss={() => {
-                    setPillMenu(undefined);
-                  }}
-                />
-              )}
+              {(open) => {
+                const first = untrack(() => tabById(open.tab));
+                if (first === undefined) return undefined;
+                // Never throws: a read left over from the update that closes the menu sees the tab as it last was.
+                let last = first;
+                const tab = () => (last = tabById(open.tab) ?? last);
+                return (
+                  <TabMenu
+                    title={tab().title}
+                    chosen={open.chosen}
+                    account={menuAccount(
+                      loaded().accounts.find(
+                        (a) => a.id === tab().launch.account?.id,
+                      ) ?? tab().launch.account,
+                      loaded(),
+                      (id) => accountState(loaded(), statuses.get(id), id),
+                    )}
+                    targets={continueTargets(
+                      tab(),
+                      loaded().accounts,
+                      statuses.get,
+                    )}
+                    running={isRunning(open.tab)}
+                    busy={moving().has(open.tab)}
+                    // A call, not `a && b`: Solid wraps a logical prop in a memo, and one read from a click handler has no owner.
+                    ended={endedHere(open.tab)}
+                    at={open.at}
+                    onContinue={(account) => {
+                      setPillMenu(undefined);
+                      continueOn(open.tab, account, open.fromLimit === true);
+                    }}
+                    onResume={() => {
+                      setPillMenu(undefined);
+                      resume(open.tab);
+                    }}
+                    handoff={handoffAction(open.tab)}
+                    onStartTask={startTaskFrom(open.tab)}
+                    onAccounts={() => {
+                      setPillMenu(undefined);
+                      showPage("accounts");
+                    }}
+                    onDismiss={() => {
+                      setPillMenu(undefined);
+                    }}
+                  />
+                );
+              }}
             </Show>
             <Show when={opening()}>
               {(open) => (
