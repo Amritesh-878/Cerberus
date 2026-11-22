@@ -765,3 +765,43 @@ test("after a drag ends without a click on its title, the title's next Enter fol
   await settle();
   expect(folded()).toBe(false);
 });
+
+test("a card dragged while other cards leave the panel still lands where it was dropped", async () => {
+  const core = panelCore(withPanel({ open: true }));
+  const root = await renderApp(core.profiles, core.core);
+  await open(root, "planner");
+  for (const section of root.querySelectorAll<HTMLElement>(
+    ".panel-cards > .card",
+  )) {
+    const top = 100 * Number(section.style.order);
+    section.getBoundingClientRect = () => new DOMRect(0, top, 300, 100);
+  }
+  const head = card(root, "Usage").querySelector<HTMLElement>(".card-head");
+  if (!head) throw new Error("no head");
+  const at = (type: string, y: number, buttons: number) => {
+    window.dispatchEvent(
+      new PointerEvent(type, { clientY: y, button: 0, buttons }),
+    );
+  };
+  head.dispatchEvent(
+    new PointerEvent("pointerdown", {
+      bubbles: true,
+      clientY: 450,
+      button: 0,
+      buttons: 1,
+    }),
+  );
+  at("pointermove", 140, 1);
+  await settle();
+
+  // A shell tab has no skills, so those cards leave while Usage is still held.
+  await open(root, "notes shell");
+  at("pointerup", 140, 0);
+  await settle();
+
+  expect(core.saved.at(-1)?.order?.slice(0, 3)).toEqual([
+    "environment",
+    "usage",
+    "context",
+  ]);
+});

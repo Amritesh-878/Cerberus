@@ -38,7 +38,8 @@ function headerDrag(id: PanelCard, state: PanelState) {
   const stop = () => {
     for (const type of FOLLOWED) window.removeEventListener(type, follow, true);
     start = undefined;
-    setCardDrag(undefined);
+    // Every card stops on unmount; only the card being dragged may drop the drag.
+    if (untrack(cardDrag)?.card === id) setCardDrag(undefined);
   };
   // Followed on the window, never by pointer capture: WebView2 sends the click after a captured press to the header, not the title.
   function follow(event: PointerEvent) {
