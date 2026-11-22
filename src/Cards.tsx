@@ -49,6 +49,8 @@ function headerDrag(id: PanelCard, state: PanelState) {
       (event.type === "pointermove" && event.buttons === 0)
     ) {
       stop();
+      // No click follows a drag that ended this way, so the title's next one (Enter or Space) is a real one.
+      moved = false;
       return;
     }
     if (event.type === "pointerup") {
@@ -57,6 +59,10 @@ function headerDrag(id: PanelCard, state: PanelState) {
       if (moved && drop && drop.before !== drop.card) {
         state.moveCard(drop.card, drop.before ?? undefined);
       }
+      // Only the click this release makes is the drag's own; one released off the title makes none.
+      setTimeout(() => {
+        moved = false;
+      }, 0);
       return;
     }
     if (!moved && Math.abs(event.clientY - start.y) < CARD_DRAG_PX) return;
