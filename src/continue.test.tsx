@@ -192,6 +192,29 @@ test("a move to another organization says Claude rereads the chat", async () => 
   );
 });
 
+test("a tab that isn't running still asks before a move to another organization", async () => {
+  const app = core();
+  const root = await renderApp(() => SAVED, {
+    ...app.core,
+    account_logins: () => [
+      { id: 0, sameAs: null, organization: 0 },
+      { id: 1, sameAs: null, organization: 1 },
+    ],
+  });
+
+  await openMenu(root, "Claude Code · work");
+  click(root.querySelector(".tab-menu") ?? root, "Move to personal…");
+  await settle();
+
+  expect(app.continued).toEqual([]);
+  const confirm = root.querySelector(".menu-confirm")?.textContent ?? "";
+  expect(confirm).toContain("Other organization");
+  expect(confirm).not.toContain("Stops anything it started");
+  click(root.querySelector(".menu-confirm") ?? root, "Move");
+  await settle();
+  expect(app.continued).toEqual([{ tab: 2, account: 0 }]);
+});
+
 test("a move within one organization says nothing about it", async () => {
   expect(await moveConfirm([0, 0])).not.toContain("Other organization");
 });
