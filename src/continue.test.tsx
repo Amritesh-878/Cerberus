@@ -192,6 +192,29 @@ test("a move to another organization says Claude rereads the chat", async () => 
   );
 });
 
+test("a tab that isn't running still asks before a move to another organization", async () => {
+  const app = core();
+  const root = await renderApp(() => SAVED, {
+    ...app.core,
+    account_logins: () => [
+      { id: 0, sameAs: null, organization: 0 },
+      { id: 1, sameAs: null, organization: 1 },
+    ],
+  });
+
+  await openMenu(root, "Claude Code · work");
+  click(root.querySelector(".tab-menu") ?? root, "Move to personal…");
+  await settle();
+
+  expect(app.continued).toEqual([]);
+  const confirm = root.querySelector(".menu-confirm")?.textContent ?? "";
+  expect(confirm).toContain("Other organization");
+  expect(confirm).not.toContain("Stops anything it started");
+  click(root.querySelector(".menu-confirm") ?? root, "Move");
+  await settle();
+  expect(app.continued).toEqual([{ tab: 2, account: 0 }]);
+});
+
 test("a move within one organization says nothing about it", async () => {
   expect(await moveConfirm([0, 0])).not.toContain("Other organization");
 });
@@ -421,9 +444,9 @@ test("with one account the account pill offers Start a task and Accounts, which 
   expect(root.querySelector("main h1")?.textContent).toBe("Accounts");
 });
 
-function removing(confirmedRemoves: unknown[]) {
+function removing(confirmedRemoves: unknown[], options: Options = {}) {
   let profiles = SAVED;
-  const app = core();
+  const app = core(options);
   return {
     app,
     profiles: () => profiles,
@@ -478,6 +501,46 @@ test("removing an account with tabs asks where they go, moves them there, then r
   expect(root.querySelectorAll(".tab-row.removed")).toHaveLength(0);
 });
 
+/** Removes "work" from the Accounts page, moving its tabs to personal. */
+async function removeWork(fake: ReturnType<typeof removing>, extra = {}) {
+  const root = await renderApp(fake.profiles, { ...fake.core, ...extra });
+  await open(root, "Claude Code · work");
+  click(root, "Accounts");
+  await settle();
+  click(accountRow(root, "work"), "Remove");
+  await settle();
+  click(root.querySelector(".row-confirm") ?? root, "Move and remove work");
+  await settle();
+  await settle();
+  return root;
+}
+
+test("a chat that fails to move during a removal stays saved on its tab and says so", async () => {
+  const fake = removing([], { fails: "the other account has it open" });
+  const root = await removeWork(fake);
+
+  expect(fake.app.continued).toEqual([{ tab: 2, account: 0 }]);
+  // Not started afresh on personal: the tab keeps its chat for a later move.
+  expect(
+    fake.app.pty.spawned.filter((s) => field(s, "account") === 0),
+  ).toHaveLength(0);
+  expect(
+    document.querySelector(".notice-popup, [role=alertdialog]")?.textContent,
+  ).toContain("Claude Code · work couldn't move");
+  await open(root, "Claude Code · work");
+  expect(root.querySelector(".removed-note")?.textContent).toContain(
+    "This chat is saved.",
+  );
+});
+
+test("a Claude tab with no saved chat just starts on the account its old one's tabs go to", async () => {
+  const fake = removing([]);
+  await removeWork(fake, { tab_has_chat: () => false });
+
+  expect(fake.app.continued).toEqual([]);
+  expect(field(fake.app.pty.spawned.at(-1), "account")).toBe(0);
+});
+
 /** "work" was removed in an earlier run: its tabs open on a removed account, the Claude tab's chat ended with it. */
 function removedEarlier() {
   const app = core();
@@ -522,6 +585,25 @@ test("a removed account's tab menu closes on Escape and on its backdrop, so the 
 test("a shortcut under an open menu opens no second layer, and Escape then clears the window", async () => {
   const root = await renderApp(() => SAVED, core().core);
   await openPill(root);
+
+  press("F", { ctrlKey: true, shiftKey: true });
+  press("?", { ctrlKey: true, shiftKey: true, code: "Slash" });
+  await settle();
+  expect(
+    document.querySelectorAll(".popover-backdrop, .sheet-backdrop"),
+  ).toHaveLength(1);
+
+  press("Escape");
+  await settle();
+  expect(
+    document.querySelectorAll(".popover-backdrop, .sheet-backdrop"),
+  ).toHaveLength(0);
+});
+
+test("a shortcut under an open row menu opens no second layer either", async () => {
+  const root = await renderApp(() => SAVED, core().core);
+  await open(root, "Claude Code · work");
+  await openMenu(root, "Claude Code · work");
 
   press("F", { ctrlKey: true, shiftKey: true });
   press("?", { ctrlKey: true, shiftKey: true, code: "Slash" });

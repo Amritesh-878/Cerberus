@@ -432,6 +432,12 @@ fn link_live(
     Some(ticket.token)
 }
 
+/// Whether the tab has a saved chat to move; one never sent a message has none and just starts on another account.
+#[tauri::command]
+pub async fn tab_has_chat(app: AppHandle, tab: TabId) -> bool {
+    blocking(move || app.state::<Saved>().session_of(tab).is_some()).await
+}
+
 /// The tab's variable names; their values never leave the core.
 #[tauri::command]
 pub async fn tab_env(app: AppHandle, tab: TabId) -> Vec<String> {

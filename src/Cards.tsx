@@ -38,7 +38,8 @@ function headerDrag(id: PanelCard, state: PanelState) {
   const stop = () => {
     for (const type of FOLLOWED) window.removeEventListener(type, follow, true);
     start = undefined;
-    setCardDrag(undefined);
+    // Every card stops on unmount; only the card being dragged may drop the drag.
+    if (untrack(cardDrag)?.card === id) setCardDrag(undefined);
   };
   // Followed on the window, never by pointer capture: WebView2 sends the click after a captured press to the header, not the title.
   function follow(event: PointerEvent) {
@@ -49,6 +50,8 @@ function headerDrag(id: PanelCard, state: PanelState) {
       (event.type === "pointermove" && event.buttons === 0)
     ) {
       stop();
+      // No click follows a drag that ended this way, so the title's next one (Enter or Space) is a real one.
+      moved = false;
       return;
     }
     if (event.type === "pointerup") {
@@ -57,6 +60,10 @@ function headerDrag(id: PanelCard, state: PanelState) {
       if (moved && drop && drop.before !== drop.card) {
         state.moveCard(drop.card, drop.before ?? undefined);
       }
+      // Only the click this release makes is the drag's own; one released off the title makes none.
+      setTimeout(() => {
+        moved = false;
+      }, 0);
       return;
     }
     if (!moved && Math.abs(event.clientY - start.y) < CARD_DRAG_PX) return;
