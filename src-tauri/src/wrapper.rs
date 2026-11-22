@@ -101,15 +101,23 @@ fn config_dir() -> Option<PathBuf> {
 /// Runs as `claude`: never sends input, only adds the tab's flags or opens a chat in another account's tab.
 pub fn run() -> ExitCode {
     let args: Vec<OsString> = env::args_os().skip(1).collect();
-    let own = env::current_exe()
-        .ok()
-        .and_then(|exe| exe.parent().map(Path::to_path_buf));
-    let finder = Finder::from_env();
-    let finder = match &own {
-        Some(dir) => finder.without(dir),
-        None => finder,
+    let own = env::current_exe().ok();
+    // The app's folder, and this program's, which a link resolves to `cerberus-cli`'s on Linux.
+    let skip = env::var_os(BIN_VAR)
+        .map(PathBuf::from)
+        .into_iter()
+        .chain(
+            own.as_ref()
+                .and_then(|exe| exe.parent().map(Path::to_path_buf)),
+        )
+        .collect();
+    let find = |skip: &[PathBuf]| {
+        skip.iter()
+            .fold(Finder::from_env(), |finder, dir| finder.without(dir))
+            .find(NAME)
     };
-    let Some(real) = finder.find(NAME) else {
+    let is_self = |found: &Path| own.as_deref().is_some_and(|own| same_file(found, own));
+    let Some(real) = real_claude(find, is_self, skip) else {
         eprintln!("claude: Claude Code is not installed, or not on PATH");
         return ExitCode::from(127);
     };
@@ -131,6 +139,30 @@ pub fn run() -> ExitCode {
     }
     command.args(&args);
     start(command)
+}
+
+/// The first `claude` on PATH that is not this program, under whatever name or link it was found.
+fn real_claude(
+    find: impl Fn(&[PathBuf]) -> Option<PathBuf>,
+    is_self: impl Fn(&Path) -> bool,
+    mut skip: Vec<PathBuf>,
+) -> Option<PathBuf> {
+    // A few rounds cover every copy or link of the wrapper a PATH could hold.
+    for _ in 0..8 {
+        let found = find(&skip)?;
+        if !is_self(&found) {
+            return Some(found);
+        }
+        skip.push(found.parent()?.to_path_buf());
+    }
+    None
+}
+
+fn same_file(a: &Path, b: &Path) -> bool {
+    match (fs::canonicalize(a), fs::canonicalize(b)) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => false,
+    }
 }
 
 #[cfg(unix)]
@@ -302,8 +334,36 @@ mod tests {
     #[test]
     fn the_wrapper_answers_to_claude_with_or_without_an_extension_or_folder() {
         assert!(is_wrapper_name(OsStr::new("claude")));
+        #[cfg(windows)]
         assert!(is_wrapper_name(OsStr::new(r"C:\data\bin\Claude.exe")));
+        #[cfg(unix)]
+        assert!(is_wrapper_name(OsStr::new("/data/bin/claude")));
         assert!(!is_wrapper_name(OsStr::new("cerberus-cli")));
+    }
+
+    #[test]
+    fn the_real_claude_is_the_first_that_is_not_this_program() {
+        let path = ["/app/bin", "/cli", "/real"].map(PathBuf::from);
+        let find = |skip: &[PathBuf]| {
+            path.iter()
+                .find(|dir| !skip.contains(dir))
+                .map(|dir| dir.join("claude"))
+        };
+        // A link in a folder not skipped up front still resolves to this program, so it is skipped then.
+        let is_self = |found: &Path| !found.starts_with("/real");
+
+        let real = real_claude(find, is_self, Vec::new());
+        let only_self = real_claude(
+            |_: &[PathBuf]| Some(PathBuf::from("/app/bin/claude")),
+            |_: &Path| true,
+            Vec::new(),
+        );
+
+        assert_eq!(real, Some(PathBuf::from("/real/claude")));
+        assert_eq!(
+            only_self, None,
+            "a PATH holding only the wrapper never loops"
+        );
     }
 
     #[test]
