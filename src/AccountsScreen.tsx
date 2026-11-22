@@ -102,7 +102,7 @@ export function DefaultAccountPicker(props: {
   return (
     <>
       <label>
-        Which account should new tabs use?
+        New tabs use
         <select
           onChange={(event) => {
             setDefaultAccount(Number(event.currentTarget.value))

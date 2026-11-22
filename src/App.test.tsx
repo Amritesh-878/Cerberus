@@ -129,7 +129,7 @@ test("the walkthrough's last step asks only which account new tabs use", async (
 
   expect(button(root, "Finish").disabled).toBe(false);
   const section = root.querySelector(".defaults");
-  expect(section?.textContent).toContain("Which account should new tabs use?");
+  expect(section?.textContent).toContain("New tabs use");
   expect(section?.querySelectorAll("select, input")).toHaveLength(1);
 });
 

@@ -87,23 +87,10 @@ test("the coder tab is a sub-tab named for the task, in the plan's folder with t
   });
 });
 
-test("the account is the project's last, while it exists, then the tab's own, then the default", () => {
-  const planner = TREE.tabs[0];
-  if (!planner) throw new Error("tree changed");
-  const tasks = (account: number | null) => ({
-    folder: null,
-    prompt: null,
-    account,
-  });
-
-  expect(taskAccount(tasks(1), planner, SAVED)).toBe(1);
-  expect(taskAccount(tasks(9), planner, SAVED)).toBe(0);
-  expect(taskAccount(undefined, planner, SAVED)).toBe(0);
-  const noAccount = {
-    ...planner,
-    launch: { ...planner.launch, account: null },
-  };
-  expect(taskAccount(undefined, noAccount, SAVED)).toBe(1);
+test("a task starts on the default account, or the first one while the default is gone", () => {
+  expect(taskAccount(SAVED)).toBe(1);
+  expect(taskAccount({ ...SAVED, defaultAccount: 9 })).toBe(0);
+  expect(taskAccount({ ...SAVED, accounts: [] })).toBeNull();
 });
 
 test("a project's task settings change field by field and stay with that project", () => {

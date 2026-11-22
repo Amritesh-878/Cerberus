@@ -1,6 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 
-import type { Account, AccountId, Profiles } from "./accounts";
+import {
+  type Account,
+  type AccountId,
+  preselectedAccount,
+  type Profiles,
+} from "./accounts";
 import type { LiveState } from "./board";
 import type { ProgramChoice } from "./pty";
 import { tabFor } from "./tab";
@@ -104,17 +109,9 @@ export function plannerFor(tree: Tree, tab: TreeTab): TreeTab | undefined {
   return parent && isPlanner(parent) ? parent : undefined;
 }
 
-/** The account the last task in the project used, if it still exists, else the tab's own, else the default. */
-export function taskAccount(
-  tasks: ProjectTasks | undefined,
-  tab: TreeTab,
-  profiles: Profiles,
-): AccountId | null {
-  const exists = (id: AccountId | null | undefined): id is AccountId =>
-    id != null && profiles.accounts.some((a) => a.id === id);
-  if (exists(tasks?.account)) return tasks.account;
-  if (exists(tab.launch.account?.id)) return tab.launch.account.id;
-  return profiles.defaultAccount;
+/** New tabs and tasks start on the one default account, unless the dialog picks another. */
+export function taskAccount(profiles: Profiles): AccountId | null {
+  return preselectedAccount(profiles);
 }
 
 export function withProjectTasks(
