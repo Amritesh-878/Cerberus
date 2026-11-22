@@ -45,8 +45,8 @@ here. When you follow an override, say so.
   dirs or transcripts, and makes no decisions; the core returns display-ready data.
 - **Delete dead code** in the change that kills it.
 - **Imports:** standard library, third-party, local; absolute from the crate or package root.
-- **Dependencies are justified and locked.** Commit `Cargo.lock` and `package-lock.json` and
-  install from them (`npm ci`). npm dependencies use exact versions; `Cargo.toml` uses normal
+- **Dependencies are justified and locked.** Commit `Cargo.lock` and `pnpm-lock.yaml` and
+  install from them (`pnpm install --frozen-lockfile`). JS dependencies use exact versions; `Cargo.toml` uses normal
   version requirements, since the lockfile pins them. Prefer what is already installed.
 - **Check the dependents:** when a module others rely on changes, run their checks too.
 
@@ -171,8 +171,8 @@ Apply every item to the diff:
 - No `any` in production code; `?.`, `??` and type guards over casts.
 - Clean up every subscription, listener and timer, including xterm.js and Tauri event listeners.
 - Keep the bundle small, since startup time and memory are what this app competes on.
-- Gate: `npm run lint:fix` (ESLint and Prettier), then `npm run typecheck` (`tsc --noEmit` on both projects), then
-  `npm test` (Vitest).
+- Gate: `pnpm run lint:fix` (ESLint and Prettier), then `pnpm run typecheck` (`tsc --noEmit` on both projects), then
+  `pnpm test` (Vitest).
 
 ### Solid
 

@@ -6,7 +6,7 @@ reviews:
   estimate_code_review_effort: false
   sequence_diagrams: false
   path_filters:
-    ["!package-lock.json", "!src-tauri/Cargo.lock", "!src-tauri/icons/**"]
+    ["!pnpm-lock.yaml", "!src-tauri/Cargo.lock", "!src-tauri/icons/**"]
   pre_merge_checks:
     docstrings: { mode: "off" }
     title:

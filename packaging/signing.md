@@ -64,7 +64,7 @@ In GitHub (Settings, Secrets and variables, Actions):
 
 ## The workflow change, left out until approved
 
-Add these steps to the `build` job of `release.yml`, between `npx tauri build` and "Hash the
+Add these steps to the `build` job of `release.yml`, between `pnpm tauri build` and "Hash the
 installer", so the hash is of the signed file. Give the `build` job `permissions` of
 `contents: read` and `actions: read`; the signing token never needs `contents: write`.
 
@@ -108,8 +108,8 @@ How a signed release then runs:
 ## Limits to know
 
 - Only the installer is signed. The `cerberus.exe` inside it and the uninstaller stay unsigned:
-  signing those needs the app exe signed before Tauri packs it (`npx tauri build --no-bundle`,
-  sign, then `npx tauri bundle --no-binary-patching`, since patching the exe would break its
+  signing those needs the app exe signed before Tauri packs it (`pnpm tauri build --no-bundle`,
+  sign, then `pnpm tauri bundle --no-binary-patching`, since patching the exe would break its
   signature), which is a second request and a second approval per release.
   Add that only if Defender or SmartScreen flag the installed app.
 - A signature from a new certificate still builds SmartScreen reputation over time, so the first

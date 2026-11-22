@@ -1,0 +1,16 @@
+# Accepted upstream warnings with no fix to take; any advisory not listed still shows, and a vulnerability fails CI.
+[advisories]
+ignore = [
+    # glib 0.18: unsound VariantStrIter iterators. Pinned by Tauri's GTK 3 stack on Linux; Cerberus never iterates variants.
+    "RUSTSEC-2024-0429",
+    # chrono: unmaintained. Reached only through serde_with in Tauri's utilities; no maintained release to move to.
+    "RUSTSEC-2026-0543",
+    # proc-macro-error: unmaintained. A build-time macro helper of glib-macros in Tauri's GTK stack.
+    "RUSTSEC-2024-0370",
+    # zbus_names: unmaintained. From zbus, which tauri-plugin-notification uses on Linux for desktop notifications.
+    "RUSTSEC-2026-0371",
+    # zvariant: unmaintained. Same zbus path as above.
+    "RUSTSEC-2026-0370",
+    # zvariant_derive: unmaintained. Same zbus path as above.
+    "RUSTSEC-2026-0372",
+]

@@ -2,6 +2,6 @@ dist/
 coverage/
 node_modules/
 src-tauri/
-package-lock.json
+pnpm-lock.yaml
 .claude/
 *.md
