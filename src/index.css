@@ -794,10 +794,26 @@ button {
   justify-content: center;
 }
 
-.removed-note .secondary {
+.removed-note .secondary,
+.removed-note .go {
   width: auto;
   padding: 0 14px;
   margin: 0;
+}
+
+.removed-note .go {
+  font-weight: 600;
+  color: var(--bg);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.removed-note .go:hover {
+  filter: brightness(1.08);
+}
+
+.removed-fine {
+  font-size: 12px;
 }
 
 .tab-menu {
