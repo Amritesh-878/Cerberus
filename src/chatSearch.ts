@@ -1,6 +1,7 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 
 import type { AccountId } from "./accounts";
+import type { Mark } from "./fuzzy";
 import { addProject, type ProjectId, type TabId, type Tree } from "./tree";
 
 /** One chat the core found; its text came from the transcript and stays in the dialog. */
@@ -12,10 +13,14 @@ export interface FoundChat {
   folderExists: boolean;
   /** Milliseconds since the epoch of its last message. */
   last: number;
-  /** How many typed words it matched, exactly or by one edit. */
-  hits: number;
-  /** How many of those matched exactly. */
-  exact: number;
+  /** Its list: a name match, every word in its text, or "Close matches" when nothing had every word. */
+  group: "name" | "text" | "close";
+  /** Higher is better within its group. */
+  score: number;
+  /** What matched: the title, the folder's name, or the snippet. */
+  place: "title" | "folder" | "text";
+  /** Character ranges of `place` to highlight: start and length. */
+  marks: Mark[];
   snippet: string | null;
   /** A tab that already has this chat. */
   openIn: TabId | null;
@@ -45,7 +50,9 @@ export function resumeFound(tab: TabId, session: string): Promise<void> {
   return invoke("chat_resume", { tab, session });
 }
 
-/** Adds a batch to the list, one row per chat and account: more words, more exact, then newest. */
+const GROUP_ORDER = { name: 0, text: 1, close: 2 } as const;
+
+/** Adds a batch to the list, one row per chat and account: name matches, then text, then close ones; better, then newest. */
 export function merged(
   list: readonly FoundChat[],
   more: readonly FoundChat[],
@@ -53,7 +60,10 @@ export function merged(
   const key = (c: FoundChat) => `${String(c.account)}/${c.id}`;
   const seen = new Set(more.map(key));
   return [...list.filter((c) => !seen.has(key(c))), ...more].sort(
-    (a, b) => b.hits - a.hits || b.exact - a.exact || b.last - a.last,
+    (a, b) =>
+      GROUP_ORDER[a.group] - GROUP_ORDER[b.group] ||
+      b.score - a.score ||
+      b.last - a.last,
   );
 }
 

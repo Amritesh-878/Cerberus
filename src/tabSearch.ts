@@ -1,4 +1,5 @@
-import type { TabId } from "./tree";
+import { fuzzyWords, letterRanges, type Mark, wordsOf } from "./fuzzy";
+import { folderName, type TabId } from "./tree";
 
 /** One open tab as the search lists it. */
 export interface TabEntry {
@@ -12,18 +13,44 @@ export interface TabEntry {
   program: string;
 }
 
-/** Tabs whose title, project, folder or account hold every typed word, in the order given; no words lists them all. */
+/** A tab that matched, with the title's matched letters to highlight. */
+export interface TabHit {
+  tab: TabEntry;
+  marks: Mark[];
+}
+
+/** Tabs where each word's letters appear in order in the title, project, folder name or account, best first; no words lists them all. */
 export function matchTabs(
   entries: readonly TabEntry[],
   query: string,
-): TabEntry[] {
-  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
-  if (words.length === 0) return [...entries];
-  return entries.filter((entry) => {
-    const text = [entry.title, entry.project, entry.folder, entry.account]
-      .filter((part): part is string => part !== null)
-      .join(" ")
-      .toLowerCase();
-    return words.every((word) => text.includes(word));
+): TabHit[] {
+  const words = wordsOf(query);
+  if (words.length === 0) return entries.map((tab) => ({ tab, marks: [] }));
+  const hits: (TabHit & { score: number; index: number })[] = [];
+  entries.forEach((tab, index) => {
+    const fields = [
+      tab.title,
+      tab.project,
+      tab.folder === null ? null : folderName(tab.folder),
+      tab.account,
+    ];
+    let score = 0;
+    const titleMarks: number[] = [];
+    for (const word of words) {
+      let best: { score: number; marks: number[]; field: number } | null = null;
+      for (const [field, text] of fields.entries()) {
+        const found = text === null ? null : fuzzyWords([word], text);
+        if (found && (best === null || found.score > best.score))
+          best = { ...found, field };
+      }
+      if (best === null) return;
+      score += best.score;
+      if (best.field === 0) titleMarks.push(...best.marks);
+    }
+    const unique = [...new Set(titleMarks)].sort((a, b) => a - b);
+    hits.push({ tab, marks: letterRanges(unique), score, index });
   });
+  return hits
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .map(({ tab, marks }) => ({ tab, marks }));
 }

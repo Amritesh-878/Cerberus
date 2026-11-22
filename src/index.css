@@ -3387,6 +3387,18 @@ button.card-row:focus-visible,
   color: var(--faint);
 }
 
+.find-where {
+  flex: none;
+  font-size: 11px;
+  color: var(--dim);
+}
+
+.find-row mark {
+  font-weight: 600;
+  color: var(--accent);
+  background: none;
+}
+
 .find-meta {
   margin-top: 2px;
   font-size: 11px;
