@@ -20,7 +20,8 @@ use crate::bridge::mcp::{self, Env};
 use crate::bridge::wire::Written;
 use crate::bridge::wire::{Ask, AskKind, BRIDGE_VAR, Order, Outcome, Reply, TOKEN_VAR};
 use crate::bridge::{
-    Bridge, Decided, Decision, Hooks, Label, Note, Snapshot, TabNote, Ticket, Why, link, lock,
+    Bridge, Decided, Decision, HELLO_WAIT, Hooks, Label, Note, Snapshot, TabNote, Ticket, Why,
+    link, lock,
 };
 use crate::saved::TabId;
 
@@ -649,6 +650,24 @@ fn a_helper_that_never_says_hello_turns_its_tab_off() {
         }
         assert!(Instant::now() < deadline);
     }
+}
+
+#[test]
+fn a_shell_tabs_link_stays_quiet_while_no_claude_has_been_typed() {
+    let (tx, snapshots) = mpsc::channel();
+    let bridge = Bridge::start(TestHooks(Mutex::new(tx))).unwrap();
+
+    bridge.register_shell(5, Path::new("acc-a")).unwrap();
+
+    // Past the wait a plain tab is marked off; the snapshot that wait sends shows no note.
+    thread::sleep(HELLO_WAIT);
+    let deadline = Instant::now() + WAIT;
+    let mut last = None;
+    while let Ok(snapshot) = snapshots.recv_timeout(Duration::from_millis(300)) {
+        last = Some(snapshot.notes);
+        assert!(Instant::now() < deadline);
+    }
+    assert_eq!(last, Some(Vec::new()));
 }
 
 #[test]

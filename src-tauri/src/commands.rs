@@ -132,7 +132,7 @@ pub async fn pty_spawn(
         let bin = app.state::<wrapper::Bin>().0.clone();
         let (token, live_token) = match (claude_home.as_deref(), shell_home.as_deref(), tab) {
             (Some(home), _, Some(tab)) => (
-                link_messages(&app, &accounts, &mut request, home, tab),
+                link_messages(&app, &accounts, &mut request, home, (tab, false)),
                 account.and_then(|account| {
                     link_live(&live, &accounts, &mut request, (tab, account), (home, &cwd))
                 }),
@@ -335,14 +335,19 @@ fn link_messages(
     accounts: &Accounts,
     request: &mut SpawnRequest,
     home: &std::path::Path,
-    tab: TabId,
+    (tab, shell): (TabId, bool),
 ) -> Option<String> {
     let messages = app.state::<Messages>();
     // An unreadable profiles file is reported elsewhere; the tab starts without messages.
     if !messages.ready() || !accounts.load().is_ok_and(|p| p.messages) {
         return None;
     }
-    let ticket = app.state::<Bridge>().register(tab, home)?;
+    let bridge = app.state::<Bridge>();
+    let ticket = if shell {
+        bridge.register_shell(tab, home)?
+    } else {
+        bridge.register(tab, home)?
+    };
     request.args = messages.args(&request.args);
     request.env.extend(ticket.env);
     Some(ticket.token)
@@ -377,7 +382,7 @@ fn link_shell(
         dirs: Vec::new(),
         tab_env: Vec::new(),
     };
-    let token = link_messages(app, accounts, &mut claude, shell.home, shell.tab);
+    let token = link_messages(app, accounts, &mut claude, shell.home, (shell.tab, true));
     let live_token = shell.account.and_then(|account| {
         link_live(
             live,

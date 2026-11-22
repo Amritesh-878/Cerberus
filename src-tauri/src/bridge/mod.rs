@@ -180,12 +180,15 @@ struct TabLink {
     sighting: Option<(Sighting, SyncSender<()>)>,
     /// Helper runs that are gone, newest last.
     ended: VecDeque<String>,
+    /// A shell tab's link, held for a `claude` that may never be typed, so no hello is no fault.
+    waits: bool,
 }
 
 impl TabLink {
     fn note(&self) -> Option<(Note, Option<Why>)> {
         let Some(hello) = &self.hello else {
-            return (self.born.elapsed() >= HELLO_WAIT).then_some((Note::Off, None));
+            let late = !self.waits && self.born.elapsed() >= HELLO_WAIT;
+            return late.then_some((Note::Off, None));
         };
         let gate_failed = self
             .facts
@@ -336,6 +339,15 @@ impl Bridge {
 
     /// Links a `claude` tab about to start under the account whose config dir is `home`.
     pub fn register(&self, tab: TabId, home: &Path) -> Option<Ticket> {
+        self.link(tab, home, false)
+    }
+
+    /// Links a shell tab, for a `claude` typed in it through the wrapper.
+    pub fn register_shell(&self, tab: TabId, home: &Path) -> Option<Ticket> {
+        self.link(tab, home, true)
+    }
+
+    fn link(&self, tab: TabId, home: &Path, waits: bool) -> Option<Ticket> {
         let core = self.0.as_ref()?;
         let token = match link::random_hex(32) {
             Ok(token) => token,
@@ -356,6 +368,7 @@ impl Bridge {
                 busy: false,
                 sighting: None,
                 ended: VecDeque::new(),
+                waits,
             },
         );
         let weak = Arc::downgrade(core);
