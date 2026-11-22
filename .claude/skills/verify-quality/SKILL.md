@@ -11,13 +11,13 @@ Run both halves; a change to either side can break the other (Tauri commands, sh
 
 ### TypeScript (repo root)
 
-Install from the lockfile first if `node_modules/` is missing or stale: `npm ci`, never
-`npm install`, which on Windows rewrites `package-lock.json`.
+Install from the lockfile first if `node_modules/` is missing or stale:
+`pnpm install --frozen-lockfile`. Add a dependency only with `pnpm add <pkg>@<exact version>`.
 
 ```sh
-npm run lint:fix     # ESLint --fix, then Prettier --write
-npm run typecheck    # tsc --noEmit for src/ and for vite.config.ts
-npm test             # vitest run
+pnpm run lint:fix    # ESLint --fix, then Prettier --write
+pnpm run typecheck   # tsc --noEmit for src/ and for vite.config.ts
+pnpm test            # vitest run
 ```
 
 ### Rust (`src-tauri/`)
@@ -36,7 +36,7 @@ Run each half in its order: lint, then typecheck (`clippy` is both for Rust), th
 - Lint and typecheck: 0 errors, 0 warnings.
 - Tests: 100% passing.
 
-**Name the toolchain when reporting these:** Node and npm versions, and `cargo -V`. A tool
+**Name the toolchain when reporting these:** Node and pnpm versions, and `cargo -V`. A tool
 resolved from `PATH` rather than the project's own `node_modules/.bin` or the pinned toolchain
 reports a clean repo as broken, and the report reads identical either way.
 

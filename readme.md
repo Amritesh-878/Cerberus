@@ -142,23 +142,26 @@ with 1.
 
 ## Build from source
 
-Needs Node 24, Rust, and the [Tauri prerequisites](https://tauri.app/start/prerequisites/) for
-your OS.
+Needs Node 24, pnpm 10 (`corepack enable` picks the version `package.json` names), Rust, and the
+[Tauri prerequisites](https://tauri.app/start/prerequisites/) for your OS.
 
 ```sh
-npm ci              # not npm install, which rewrites the lockfile on Windows
-npm run tauri dev   # run it
-npm run tauri build # Windows installer
-npm run tauri build -- --bundles dmg   # macOS .dmg
-npm run tauri build -- --bundles appimage,deb   # Linux AppImage and .deb
+pnpm install --frozen-lockfile   # exactly the locked versions
+pnpm tauri dev                   # run it
+pnpm tauri build                 # Windows installer
+pnpm tauri build --bundles dmg   # macOS .dmg
+pnpm tauri build --bundles appimage,deb   # Linux AppImage and .deb
 ```
 
 The gate, in order, where only 0 errors, 0 warnings and every test passing counts:
 
 ```sh
-npm run lint:fix && npm run typecheck && npm test
+pnpm run lint:fix && pnpm run typecheck && pnpm test
 cd src-tauri && cargo fmt && cargo clippy --all-targets -- -D warnings && cargo test
 ```
+
+CI runs cargo audit and pnpm audit; a new vulnerability fails the build. Accepted upstream warnings
+are listed, with a reason each, in `src-tauri/audit.toml`.
 
 | Path | What it is |
 |---|---|

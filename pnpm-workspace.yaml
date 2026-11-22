@@ -1,0 +1,6 @@
+# No dependency runs an install script today; one listed here may, and any other is refused.
+onlyBuiltDependencies: []
+# A new dependency with an install script fails the install instead of being skipped unnoticed.
+strictDepBuilds: true
+# A release must be three days old to be picked, so a hijacked version is usually pulled first.
+minimumReleaseAge: 4320
