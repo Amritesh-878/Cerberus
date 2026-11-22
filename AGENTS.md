@@ -1,15 +1,19 @@
 ## Project Context
 
-**Cerberus**: a fast Windows desktop terminal built around Claude Code, replacing Warp for one user. A sidebar tree holds projects; each project has a planner tab (auditor, task
+**Cerberus**: a desktop terminal built around Claude Code (Windows, with macOS and Linux previews), made to replace Warp for its author. A sidebar tree holds projects; each project has a planner tab (auditor, task
 maker) with coder sub-tabs, and every tab is a folder, a Claude account and a session id, saved so
 no chat is ever lost. Each tab runs the official `claude` CLI in a pseudo-terminal under that
-account's `CLAUDE_CONFIG_DIR`; a Cerberus mod streams structured events (file writes, context,
-usage) back to the app. No AI besides Claude Code. Requirements: `../Plans/brief.md`.
+account's `CLAUDE_CONFIG_DIR`; Cerberus's status line and hook helper (`cerberus-live`, DEC-004) report
+context, usage, written files and background tasks back to the app. Antigravity CLI and Codex CLI tabs run
+as plain programs, with no account, messages or live cards; Cerberus never reads their config or history.
+No AI is built into the app itself. Requirements: `../Plans/brief.md`.
 
-Stack: Tauri 2, Rust (PTYs, sessions, accounts, persistence), TypeScript with xterm.js (WebGL) and
-CodeMirror in the webview, a Claude Code mod in TypeScript.
+Stack: Tauri 2, Rust (PTYs, sessions, accounts, persistence, the `cerberus-mcp` and `cerberus-live`
+helpers), Solid and TypeScript with xterm.js (WebGL) and CodeMirror in the webview. Node packages through
+pnpm.
 
-**Pre-release (as of 2026-10-23):** no users but the author; breaking changes allowed.
+**Released (v1.0.0, 2026-11-16):** a few users besides the author. A change to saved data (`tree.db`,
+`profiles.json`) needs a migration, and the release notes say when an older build can't read it.
 
 - **Interactive use only.** The app may prefill a prompt but never sends one by itself: Anthropic's
   Consumer Terms bar automated access to subscription accounts (see `../Plans/project_state.md`).
