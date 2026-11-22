@@ -1,3 +1,4 @@
+import { emit as emitEvent } from "@tauri-apps/api/event";
 import { afterEach, expect, test } from "vitest";
 
 import { type FoundChat, merged, projectFor, whenText } from "./chatSearch";
@@ -194,6 +195,19 @@ test("a chat opens in a new tab on its account, in the project holding its folde
   const spawn = find.pty.spawned.at(-1);
   expect(field(spawn, "account")).toBe(0);
   expect(field(field(spawn, "request"), "cwd")).toBe(ELSEWHERE.folder);
+  expect(activeTitle(root)).toBe("Claude Code · personal");
+});
+
+test("claude --resume for another account's chat opens it in a new tab there, as Find chat does", async () => {
+  const find = findCore();
+  const root = await renderApp(() => SAVED, find.core);
+
+  await emitEvent("chat-elsewhere", ELSEWHERE);
+  await settle();
+  await settle();
+
+  expect(find.of("chat_resume")).toEqual([{ tab: 4, session: ELSEWHERE.id }]);
+  expect(field(find.pty.spawned.at(-1), "account")).toBe(0);
   expect(activeTitle(root)).toBe("Claude Code · personal");
 });
 

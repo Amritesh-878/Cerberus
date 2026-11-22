@@ -11,6 +11,8 @@ export interface HandStart {
   run: number;
   launch: Tab;
   ended: boolean;
+  /** It came through Cerberus's `claude`, so it has the tab's messages and live cards. */
+  wrapped: boolean;
 }
 
 function withLaunch(
@@ -78,18 +80,7 @@ export function createHandChats(app: HandApp) {
   const [starts, setStarts] = createSignal<ReadonlyMap<TabId, HandStart>>(
     new Map(),
   );
-  // Tabs whose hand-started chat hasn't had its popup answered yet; once per chat.
-  const [unasked, setUnasked] = createSignal<ReadonlySet<TabId>>(new Set());
-  const answered = (id: TabId) => {
-    setUnasked((all) => {
-      if (!all.has(id)) return all;
-      const next = new Set(all);
-      next.delete(id);
-      return next;
-    });
-  };
   const forget = (id: TabId) => {
-    answered(id);
     setStarts((all) => {
       if (!all.has(id)) return all;
       const next = new Map(all);
@@ -111,9 +102,9 @@ export function createHandChats(app: HandApp) {
           run: app.runOf(id),
           launch: tab.launch,
           ended: app.isEnded(id),
+          wrapped: chat.wrapped,
         };
         setStarts((all) => new Map(all).set(id, start));
-        setUnasked((all) => new Set(all).add(id));
         app.setTree(startedByHand(app.tree(), id, app.claude(), chat.cwd));
         app.markEnded(id, false);
         app.clear(id);
@@ -166,9 +157,8 @@ export function createHandChats(app: HandApp) {
 
   return {
     byHand: (id: TabId) => startOf(id) !== undefined,
-    /** The popup is still owed for this tab's chat. */
-    unasked: (id: TabId) => unasked().has(id) && startOf(id) !== undefined,
-    answered,
+    /** Started outside the wrapper, so it lacks the tab's messages and live cards. */
+    unwrapped: (id: TabId) => startOf(id)?.wrapped === false,
     heard,
     reopen,
     forget,

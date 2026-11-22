@@ -63,7 +63,6 @@ import {
   pickHandoff,
 } from "./handoff";
 import { HandNote } from "./HandNote";
-import { HandPrompt } from "./HandPrompt";
 import { Home } from "./Home";
 import { AccountDot, MenuIcon, PanelIcon, ProgramIcon } from "./icons";
 import { shortcutFor } from "./keys";
@@ -690,10 +689,13 @@ export function App() {
     ended: chatEnded,
     setAlert,
   });
-  // A removed account's tab runs nothing, so its hand-started chat has neither bar nor popup.
-  const byHandShown = () => {
+  // Only a `claude` that bypassed the wrapper lacks the tab's links; a removed account's tab runs nothing at all.
+  const handBarShown = () => {
     const id = shown();
-    return id !== undefined && hands.byHand(id) && !onRemoved(id)
+    return id !== undefined &&
+      hands.byHand(id) &&
+      hands.unwrapped(id) &&
+      !onRemoved(id)
       ? id
       : undefined;
   };
@@ -904,11 +906,21 @@ export function App() {
     window.addEventListener("keydown", onKey, true);
     // The macOS Help menu item sends this, since its Cmd+/ never reaches the page.
     const fromMenu = listen("show-shortcuts", () => setSheet((open) => !open));
+    // `claude --resume` in a shell tab named another account's chat; it opens as Find chat would open it.
+    const elsewhere = listen<FoundChat>("chat-elsewhere", (event) => {
+      const from = shown();
+      openFound(event.payload).catch((error: unknown) => {
+        if (from !== undefined)
+          setAlert(from, `Couldn't open the chat: ${String(error)}`);
+      });
+    });
     onCleanup(() => {
       window.removeEventListener("keydown", onKey, true);
-      void fromMenu.then((stop) => {
-        stop();
-      });
+      for (const listening of [fromMenu, elsewhere]) {
+        void listening.then((stop) => {
+          stop();
+        });
+      }
     });
   });
 
@@ -1024,7 +1036,6 @@ export function App() {
   const [startingTask, setStartingTask] = createSignal<TabId>();
   // A modal dialog other than the limit popup is open.
   const otherDialog = () => {
-    const hand = byHandShown();
     return (
       editing() !== undefined ||
       startingTask() !== undefined ||
@@ -1032,8 +1043,7 @@ export function App() {
       handoffFailed() !== undefined ||
       finding() ||
       serviceForm() !== undefined ||
-      sheet() ||
-      (hand !== undefined && hands.unasked(hand))
+      sheet()
     );
   };
   // Any layer over the window, menus included; window shortcuts wait for it so two never stack.
@@ -1615,31 +1625,12 @@ export function App() {
                   });
                 }}
               />
-              <Show when={byHandShown()} keyed>
+              <Show when={handBarShown()} keyed>
                 {(id) => (
                   <HandNote
                     working={markOf(board(), id)?.kind === "working"}
                     onReopen={() => {
                       hands.reopen(id);
-                    }}
-                  />
-                )}
-              </Show>
-              <Show
-                when={(() => {
-                  const id = byHandShown();
-                  return id !== undefined && hands.unasked(id) ? id : undefined;
-                })()}
-                keyed
-              >
-                {(id) => (
-                  <HandPrompt
-                    working={markOf(board(), id)?.kind === "working"}
-                    onReopen={() => {
-                      hands.reopen(id);
-                    }}
-                    onNotNow={() => {
-                      hands.answered(id);
                     }}
                   />
                 )}

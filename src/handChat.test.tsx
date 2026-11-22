@@ -121,7 +121,7 @@ test("a claude started in a shell tab makes it a Claude tab while it runs", asyn
   emit(
     app.pty.spawned,
     0,
-    { chat: "started", cwd: ELSEWHERE },
+    { chat: "started", cwd: ELSEWHERE, wrapped: false },
     { state: "working" },
   );
   await settle();
@@ -149,7 +149,7 @@ test("when it exits with a chat to resume, the tab is a shell whose ended chat i
   emit(
     app.pty.spawned,
     0,
-    { chat: "started", cwd: null },
+    { chat: "started", cwd: null, wrapped: false },
     { state: "idle" },
     { chat: "ended", saved: true },
   );
@@ -179,7 +179,7 @@ test("a chat that never had anything to resume hands the tab back as the shell i
   emit(
     app.pty.spawned,
     0,
-    { chat: "started", cwd: ELSEWHERE },
+    { chat: "started", cwd: ELSEWHERE, wrapped: false },
     { chat: "ended", saved: false },
   );
   await settle();
@@ -199,7 +199,7 @@ test("an ended tab running a new claude by hand goes back to its ended chat if t
   await open(root, "planner");
   expect(shows(root, "planner", "shell")).toBe(true);
 
-  emit(app.pty.spawned, 0, { chat: "started", cwd: null });
+  emit(app.pty.spawned, 0, { chat: "started", cwd: null, wrapped: false });
   await settle();
   expect(shows(root, "planner", "claude")).toBe(true);
   emit(app.pty.spawned, 0, { chat: "ended", saved: false });
@@ -224,7 +224,7 @@ test("a claude started in an ended tab's shell clears the ended notice", async (
     "The chat ended. Resume chat is in the tab's menu.",
   );
 
-  emit(app.pty.spawned, 0, { chat: "started", cwd: null });
+  emit(app.pty.spawned, 0, { chat: "started", cwd: null, wrapped: false });
   await settle();
 
   expect(root.querySelector(".terminal-notice")).toBeNull();
@@ -237,7 +237,7 @@ test("Reopen as Claude tab stops the shell, waits for the core, then starts the 
   emit(
     app.pty.spawned,
     0,
-    { chat: "started", cwd: ELSEWHERE },
+    { chat: "started", cwd: ELSEWHERE, wrapped: false },
     { state: "idle" },
   );
   await settle();
@@ -264,7 +264,7 @@ test("a working chat asks before it is stopped to reopen", async () => {
   emit(
     app.pty.spawned,
     0,
-    { chat: "started", cwd: null },
+    { chat: "started", cwd: null, wrapped: false },
     { state: "working" },
   );
   await settle();
@@ -294,7 +294,7 @@ test("a reopen the core refuses says why and still starts the tab", async () => 
     },
   });
   await open(root, "shell");
-  emit(app.pty.spawned, 0, { chat: "started", cwd: null });
+  emit(app.pty.spawned, 0, { chat: "started", cwd: null, wrapped: false });
   await settle();
 
   click(root.querySelector(".hand-bar") ?? root, "Reopen as Claude tab");
@@ -350,7 +350,7 @@ test("Continue on an ended tab after three resumes that found nothing moves the 
     emit(
       app.pty.spawned,
       0,
-      { chat: "started", cwd: null },
+      { chat: "started", cwd: null, wrapped: false },
       { chat: "ended", saved: false },
     );
     await settle();
@@ -373,73 +373,46 @@ test("Continue on an ended tab after three resumes that found nothing moves the 
   expect(shows(root, "planner", "claude")).toBe(true);
 });
 
-test("a chat started by hand asks once, over its tab, to reopen as a Claude tab", async () => {
+test("a claude that bypassed the wrapper gets the quiet bar and never a popup, even over a picker", async () => {
   const app = core();
   const root = await renderApp(() => SAVED, app.core);
   await open(root, "shell");
   emit(
     app.pty.spawned,
     0,
-    { chat: "started", cwd: ELSEWHERE },
+    { chat: "started", cwd: ELSEWHERE, wrapped: false },
     { state: "idle" },
   );
   await settle();
 
-  const prompt = () => document.querySelector<HTMLElement>(".hand-prompt");
-  expect(prompt()?.textContent).toContain("can't message other accounts");
-  expect(document.activeElement?.textContent).toBe("Reopen as Claude tab");
-  click(prompt() ?? root, "Not now");
-  await settle();
-  expect(prompt()).toBeNull();
-  // The bar stays for later, and nothing restarted.
   expect(root.querySelector(".hand-bar")).not.toBeNull();
+  expect(
+    document.querySelector(".sheet-backdrop, .popover-backdrop"),
+  ).toBeNull();
   expect(app.reopened).toEqual([]);
-  expect(app.pty.spawned).toHaveLength(1);
-
-  await open(root, "planner");
-  await open(root, "shell");
-  expect(prompt()).toBeNull();
 });
 
-test("the popup's Reopen asks first while Claude works, then reopens the chat", async () => {
+test("a claude through the wrapper is the tab's own chat, with no bar", async () => {
   const app = core();
   const root = await renderApp(() => SAVED, app.core);
   await open(root, "shell");
   emit(
     app.pty.spawned,
     0,
-    { chat: "started", cwd: ELSEWHERE },
+    { chat: "started", cwd: ELSEWHERE, wrapped: true },
     { state: "working" },
   );
   await settle();
-  const prompt = () => document.querySelector<HTMLElement>(".hand-prompt");
 
-  click(prompt() ?? root, "Reopen as Claude tab");
-  await settle();
-  expect(prompt()?.textContent).toContain("Claude is working");
-  expect(app.reopened).toEqual([]);
-  click(prompt() ?? root, "Stop and reopen");
-  await settle();
-
-  expect(app.reopened).toEqual([2]);
-  expect(prompt()).toBeNull();
+  expect(shows(root, "shell", "claude")).toBe(true);
+  expect(row(root, "shell").querySelector(".mark.working")).not.toBeNull();
+  expect(root.querySelector(".hand-bar")).toBeNull();
+  expect(
+    document.querySelector(".sheet-backdrop, .popover-backdrop"),
+  ).toBeNull();
 });
 
-test("a hand chat started in a hidden tab asks when that tab is shown", async () => {
-  const app = core();
-  const root = await renderApp(() => SAVED, app.core);
-  await open(root, "shell");
-  await open(root, "planner");
-  emit(app.pty.spawned, 0, { chat: "started", cwd: null });
-  await settle();
-  expect(document.querySelector(".hand-prompt")).toBeNull();
-
-  await open(root, "shell");
-
-  expect(document.querySelector(".hand-prompt")).not.toBeNull();
-});
-
-test("a hand chat whose account is removed leaves no bar or popup over its tab", async () => {
+test("a hand chat whose account is removed leaves no bar over its tab", async () => {
   const app = core();
   let profiles = SAVED;
   const root = await renderApp(() => profiles, {
@@ -457,9 +430,9 @@ test("a hand chat whose account is removed leaves no bar or popup over its tab",
     },
   });
   await open(root, "shell");
-  emit(app.pty.spawned, 0, { chat: "started", cwd: ELSEWHERE });
+  emit(app.pty.spawned, 0, { chat: "started", cwd: ELSEWHERE, wrapped: false });
   await settle();
-  expect(document.querySelector(".hand-prompt")).not.toBeNull();
+  expect(root.querySelector(".hand-bar")).not.toBeNull();
 
   click(root, "Accounts");
   await settle();
@@ -473,6 +446,5 @@ test("a hand chat whose account is removed leaves no bar or popup over its tab",
   await open(root, "shell");
 
   expect(root.querySelector(".removed-note")).not.toBeNull();
-  expect(document.querySelector(".hand-prompt")).toBeNull();
   expect(root.querySelector(".hand-bar")).toBeNull();
 });
