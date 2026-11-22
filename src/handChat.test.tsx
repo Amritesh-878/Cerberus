@@ -415,8 +415,12 @@ test("a claude through the wrapper is the tab's own chat, with no bar", async ()
 test("a hand chat's tab moves with its account's removal and keeps no bar", async () => {
   const app = core();
   let profiles = SAVED;
+  const moved: unknown[] = [];
   const root = await renderApp(() => profiles, {
     ...app.core,
+    continue_on_account: (args: unknown) => {
+      moved.push(args);
+    },
     remove_account: (args: unknown) => {
       if (field(args, "confirmed") !== true)
         return { kind: "inUse", tabs: ["alpha / shell"] };
@@ -446,7 +450,13 @@ test("a hand chat's tab moves with its account's removal and keeps no bar", asyn
   await settle();
   await open(root, "shell");
 
-  // The tab moved to the other account with its chat, and the bar about the old run went with it.
+  // Both chats on work were copied to personal, the hand-started one first, and each tab started again there.
+  expect(moved).toEqual([
+    { tab: 2, account: 0 },
+    { tab: 3, account: 0 },
+  ]);
+  expect(field(app.pty.spawned.at(-1), "account")).toBe(0);
+  // The bar about the old run went with it.
   expect(root.querySelector(".removed-note")).toBeNull();
   expect(root.querySelector(".hand-bar")).toBeNull();
 });
