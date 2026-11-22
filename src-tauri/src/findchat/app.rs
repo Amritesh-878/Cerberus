@@ -5,7 +5,7 @@ use tauri::{AppHandle, Manager, State};
 
 use crate::accounts::{Accounts, AccountsError};
 use crate::blocking::blocking;
-use crate::findchat::{Batch, ChatFinder, Source};
+use crate::findchat::{Batch, ChatFinder, Found, Source, locate};
 use crate::saved::{Saved, TabId};
 use crate::sessions::transcript;
 
@@ -73,6 +73,12 @@ pub async fn chat_find(
 #[tauri::command(async)]
 pub fn chat_find_close(finder: State<'_, ChatFinder>) {
     finder.close();
+}
+
+/// The account that has this chat, for a `claude --resume` typed in a tab on another one.
+pub fn owner_of(app: &AppHandle, id: &str) -> Option<Found> {
+    let sources = sources(&app.state::<Accounts>()).ok()?;
+    locate(&sources, id, &app.state::<Saved>().open_sessions())
 }
 
 /// Gives a new, not yet started tab a found chat to resume, once its transcript is where the tab will look.

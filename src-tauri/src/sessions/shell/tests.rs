@@ -285,7 +285,7 @@ fn has(events: &[String], text: &str) -> bool {
 fn started(cwd: &Path) -> String {
     format!(
         "chat {}",
-        serde_json::json!({"chat": "started", "cwd": cwd.to_string_lossy()})
+        serde_json::json!({"chat": "started", "cwd": cwd.to_string_lossy(), "wrapped": false})
     )
 }
 
@@ -572,7 +572,7 @@ fn a_stand_in_claude_typed_into_a_shell_tabs_terminal_is_matched() {
     assert_eq!(
         events,
         [
-            r#"chat {"chat":"started","cwd":null}"#.to_owned(),
+            r#"chat {"chat":"started","cwd":null,"wrapped":false}"#.to_owned(),
             r#"state {"state":"idle"}"#.to_owned(),
             r#"chat {"chat":"ended","saved":false}"#.to_owned(),
         ]

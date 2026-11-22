@@ -647,18 +647,6 @@ button {
   border-bottom: 1px solid var(--line);
 }
 
-.hand-prompt h2 {
-  margin: 0 0 10px;
-  font-size: 15px;
-}
-
-.hand-prompt p {
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--dim);
-}
-
 .hand-actions {
   display: flex;
   gap: 8px;
@@ -806,10 +794,26 @@ button {
   justify-content: center;
 }
 
-.removed-note .secondary {
+.removed-note .secondary,
+.removed-note .go {
   width: auto;
   padding: 0 14px;
   margin: 0;
+}
+
+.removed-note .go {
+  font-weight: 600;
+  color: var(--bg);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.removed-note .go:hover {
+  filter: brightness(1.08);
+}
+
+.removed-fine {
+  font-size: 12px;
 }
 
 .tab-menu {
@@ -1515,6 +1519,12 @@ kbd {
 }
 
 .account-status.out {
+  color: #d6b45a;
+}
+
+.account-twin {
+  display: block;
+  font-size: 12px;
   color: #d6b45a;
 }
 

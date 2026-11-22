@@ -7,6 +7,7 @@ import {
   type JSX,
   Match,
   on,
+  onCleanup,
   Show,
   Switch,
 } from "solid-js";
@@ -77,6 +78,8 @@ export function Sidebar(props: {
   onRemoveProject: (id: ProjectId) => void;
   onNewProject: () => void;
   onAccounts: () => void;
+  /** A move from one account to the other crosses organizations, so Claude rereads the chat. */
+  crosses: (from: AccountId | undefined, to: Account) => boolean;
   /** Opens the one search over open tabs and every account's chats. */
   onSearch?: () => void;
   /** Setup is running, so only its own tabs show and nothing here can leave it. */
@@ -86,6 +89,8 @@ export function Sidebar(props: {
   onCollapse?: () => void;
   /** Where a tab dragged out of the list goes; absent, rows don't drag. */
   onDragTab?: (id: TabId) => TabDragEvents | undefined;
+  /** Whether a row's menu is open, so the window's shortcuts wait for it as for any layer. */
+  onMenuOpen?: (open: boolean) => void;
 }) {
   const [renaming, setRenaming] = createSignal<TabId>();
   const [folded, setFolded] = createSignal<ReadonlySet<ProjectId>>(new Set());
@@ -94,6 +99,12 @@ export function Sidebar(props: {
     at: MenuPlace;
     chosen?: Account;
   }>();
+  createEffect(() => {
+    props.onMenuOpen?.(menu() !== undefined);
+  });
+  onCleanup(() => {
+    props.onMenuOpen?.(false);
+  });
   // A removed account's tab cannot resume there; only moving the chat applies.
   const resumable = (id: TabId) => props.ended(id) && !props.removed(id);
   const targetsOf = (tab: TreeTab) =>
@@ -302,6 +313,7 @@ export function Sidebar(props: {
               setMenu(undefined);
               props.onAccounts();
             }}
+            crosses={(to) => props.crosses(open().tab.launch.account?.id, to)}
             onDismiss={() => {
               setMenu(undefined);
             }}

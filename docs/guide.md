@@ -14,7 +14,7 @@ The first launch opens a short walkthrough:
    for import. A new account needs only a name; its folder is `~/.claude-<name>` unless you pick
    another with **Change…**. **Add** opens Claude Code under the new account, and its own first run
    signs it in. Each account shows its email and plan, read from `claude auth status`.
-3. **New tabs.** Which account new tabs use.
+3. **New tabs use.** The one account new tabs and Start a task start on.
 
 Setup ends with **Finish**, once there is an account, or with **Skip setup** at its top right.
 Nothing else leaves it: the sidebar shows only setup's own tabs (such as the installer),
@@ -22,17 +22,38 @@ the app's shortcuts do nothing, and a `cerberus open` request waits until setup 
 app part way through reopens setup at the same step. After a skip, the start page says what is
 missing (Claude Code, or an account) and **Finish setup** reopens it there.
 
+### Accounts and chats
+
+An account is one Claude sign-in, kept in its own folder (`~/.claude`, `~/.claude-work`). Claude Code
+saves each chat in the folder of the account it ran on, so a chat id resumes only there. Cerberus
+remembers which account has each chat: Find chat, `claude --resume <id>` in a shell tab, and a
+restart all open a chat on its own account.
+
+**Move to `<account>`** copies a chat into another account's folder and resumes it there, for
+example when one account hits its limit. The copy left behind is never deleted. Between accounts of
+two organizations, Claude can't reuse the chat's earlier thinking, so it rereads the chat and the
+first replies are slower.
+
 **Accounts** (the person button at the bottom of the sidebar) adds, renames or removes accounts,
-and sets the account new tabs use, the shell the **Shell** button opens, where **New project**
-opens its folder picker, and whether alerts and shell suggestions are on.
+and sets **New tabs use** (the account New tab and Start a task pick unless you choose another
+there), the shell the **Shell** button opens, where **New project** opens its folder picker, and
+whether alerts and shell suggestions are on.
 
 - **Colours.** Click an account's dot to pick its colour from eight. Every dot for that account
   follows: the sidebar, the account pill, the new tab box and the menus. A new account gets the
   first colour no other account shows; an account from before colours keeps the one it had.
-- **Removing an account** only forgets it; its folder stays on disk. When saved tabs use it,
-  Cerberus names them and asks first. On yes, their programs close and the tabs stay in the
-  sidebar, dimmed, with **Move to `<account>`…** to move each chat to another account.
-  The last account can't be removed.
+- **One account per sign-in.** A folder already added is refused with "Already added as Work.",
+  and a folder signed in to the same login as an account you have with "Same login as Work. Use
+  that account." An account added before this check shows "Same login as `<name>`" on its row;
+  remove it when you're ready. An older accounts file with two accounts on one folder keeps the
+  first, and their tabs go to it.
+- **Removing an account** only forgets it; its folder stays on disk. When tabs use it, Cerberus
+  names them and asks where they go (**Move them to**, the **New tabs use** account first). **Move
+  and remove** moves each chat there, starts each shell there, then removes the account. The last
+  account can't be removed.
+- **A tab whose account is gone** says "Work was removed. This chat is saved." with **Move to
+  `<account>`** (the New tabs use account) and **Other account…**. If an account you have uses the
+  same folder, the tab goes to it by itself.
 
 ## Projects and tabs
 
@@ -214,11 +235,16 @@ the chat resumes with the tab's usual start. A `claude -p` run is a command, not
 followed. Tracking follows the tab's own account: a `claude` you start with another
 `CLAUDE_CONFIG_DIR` set in the shell is not followed.
 
-A chat started this way has no Cerberus message helper, so it can't send messages to other
-accounts. The first time such a chat shows, a popup over the tab says so, with **Reopen as Claude
-tab** and **Not now**; after that the bar above the tab offers the same. Reopening closes the shell
-and that `claude` (asking first while it is working) and starts the same chat again as a Claude
-Code tab, with messages.
+Shell tabs put Cerberus's own `claude` first on their PATH. It runs the real `claude` with
+your arguments and the tab's Cerberus settings, so the chat has messages and live cards like any
+Claude Code tab, and it types nothing. PowerShell and zsh put it first again after your profile.
+`claude --resume <id>` for a chat on another account opens that chat in a new tab on its account;
+the shell prints "It's on Work. Opened it in a new tab."
+
+A `claude` started another way (by full path, or from a shell that puts its own folder first)
+has no message helper. The bar above the tab says "Started by hand: messages need a Claude tab."
+with **Reopen as Claude tab**, which closes the shell and that `claude` (asking first while it is
+working) and starts the same chat again as a Claude Code tab.
 
 A reload of the window would end every tab's program, so an installed Cerberus blocks it: the
 window's own right-click menu (text boxes and the app's menus keep theirs), F5, Ctrl+R and
@@ -493,6 +519,10 @@ as it is. An account's button runs the same move as above, without a second conf
 click is it). Once the moved chat is
 ready, `continue` is typed into it for you to send, so Claude carries on with the request that hit
 the limit. The limit banner's **Move to** types it too; a move from the tab's menu doesn't.
+
+A move between accounts of two organizations adds "Other organization: Claude rereads the chat,
+so it starts slower." to its confirm and to the limit popup: Claude can't reuse the chat's earlier
+thinking there. Moving back restores it.
 
 Cerberus never switches accounts by itself: using several accounts to get around usage limits
 automatically is against Anthropic's Usage Policy, so every move waits for your click.

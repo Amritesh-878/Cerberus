@@ -132,6 +132,23 @@ impl Finder {
         }
     }
 
+    /// The same search without one folder, so the `claude` wrapper never finds itself.
+    pub fn without(mut self, skip: &Path) -> Self {
+        let key = |dir: &Path| {
+            let text = dir.to_string_lossy();
+            let text = text.trim_end_matches(['/', '\\']);
+            // Windows folder names ignore case; elsewhere they don't.
+            if cfg!(windows) {
+                text.to_lowercase()
+            } else {
+                text.to_owned()
+            }
+        };
+        let skip = key(skip);
+        self.dirs.retain(|dir| key(dir) != skip);
+        self
+    }
+
     /// Resolves a name the way `cmd` does: a path as given, else each PATH dir with each PATHEXT.
     pub fn find(&self, name: &str) -> Option<PathBuf> {
         let given = Path::new(name);
@@ -372,6 +389,19 @@ mod tests {
             agy_dirs: vec![PathBuf::from(r"C:\Users\u\AppData\Local\agy\bin")],
             is_file: Box::new(move |p| files.contains(p)),
         }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn without_skips_the_wrapper_folder_in_any_case_or_trailing_slash() {
+        let f = finder(
+            &[r"C:\App\Bin\", r"C:\real"],
+            &[r"C:\App\Bin\claude.exe", r"C:\real\claude.exe"],
+        );
+
+        let found = f.without(Path::new(r"c:\app\bin")).find("claude");
+
+        assert_eq!(found, Some(PathBuf::from(r"C:\real\claude.exe")));
     }
 
     #[cfg(windows)]

@@ -255,6 +255,32 @@ impl ChatFinder {
     }
 }
 
+/// The chat with this id in any account, as Find chat lists it; a moved chat's newest copy is the one in use.
+pub fn locate(sources: &[Source], id: &str, open: &HashMap<String, TabId>) -> Option<Found> {
+    let (path, account, stamp) = list(sources)
+        .into_iter()
+        .filter(|(path, _, _)| {
+            path.file_stem()
+                .and_then(|s| s.to_str())
+                .is_some_and(|stem| stem.eq_ignore_ascii_case(id))
+        })
+        .max_by_key(|f| f.2.modified)?;
+    let meta = meta(&fs::read(&path).ok()?);
+    let id = path.file_stem()?.to_str()?.to_owned();
+    Some(Found {
+        account,
+        title: meta.title.unwrap_or_else(|| "Untitled chat".to_owned()),
+        folder_exists: meta.folder.as_ref().is_some_and(|f| Path::new(f).is_dir()),
+        folder: meta.folder,
+        last: meta.last.unwrap_or(stamp.modified),
+        hits: 0,
+        exact: 0,
+        snippet: None,
+        open_in: open.get(&id).copied(),
+        id,
+    })
+}
+
 /// The first chat id in `text`, shaped as Claude Code writes them (8-4-4-4-12 hex digits), lower-cased.
 pub fn session_id_in(text: &str) -> Option<String> {
     let shaped = |word: &str| {

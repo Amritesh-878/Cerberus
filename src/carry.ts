@@ -34,6 +34,11 @@ export function limitShortcut(
   return targets.find((target) => target.signedIn)?.account;
 }
 
+/** Whether the tab has a saved chat; one never sent a message has nothing to move. */
+export function tabHasChat(tab: TabId): Promise<boolean> {
+  return invoke<boolean>("tab_has_chat", { tab });
+}
+
 export function continueOnAccount(
   tab: TabId,
   account: AccountId,

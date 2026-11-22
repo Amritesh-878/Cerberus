@@ -366,10 +366,7 @@ fn account_config(
     accounts: &Accounts,
     account: Option<AccountId>,
 ) -> Result<PathBuf, AccountsError> {
-    Ok(accounts
-        .claude_config_dir(account)?
-        .unwrap_or_else(|| accounts.home().to_path_buf())
-        .join(".claude.json"))
+    Ok(accounts.config_file(&accounts.claude_home(account)?))
 }
 
 #[tauri::command]

@@ -121,6 +121,24 @@ test("a chat hitting its limit gets one popup per window, offering only accounts
   expect(env.writes).toEqual([]);
 });
 
+test("the popup names an offered account in another organization, since Claude rereads the chat there", async () => {
+  const env = limitCore([0]);
+  const root = await renderApp(() => SAVED, {
+    ...env.core,
+    account_logins: () => [
+      { id: 0, sameAs: null, organization: 0 },
+      { id: 1, sameAs: null, organization: 1 },
+    ],
+  });
+  await open(root, "planner");
+
+  await hitLimit(env);
+
+  expect(popup()?.textContent).toContain(
+    "Other organization (personal): Claude rereads the chat, so it starts slower.",
+  );
+});
+
 test("Continue moves the chat, and continue is typed as a paste only once the new chat is idle, never sent", async () => {
   const env = limitCore([0]);
   const root = await renderApp(() => SAVED, env.core);

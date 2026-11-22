@@ -21,8 +21,8 @@ const FOLLOW: Duration = Duration::from_millis(500);
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "chat", rename_all = "camelCase")]
 pub enum HandChat {
-    /// `cwd` is the chat's folder, so the tab resumes it there; `None` when the file names no folder that exists.
-    Started { cwd: Option<String> },
+    /// `cwd`: the chat's folder to resume in, `None` if none exists; `wrapped`: it came through Cerberus's `claude`, with the tab's links.
+    Started { cwd: Option<String>, wrapped: bool },
     /// `saved` when the chat can be resumed, so the tab keeps it as its ended chat.
     Ended { saved: bool },
 }
@@ -157,7 +157,10 @@ pub fn watch_shell(
             let Some((pid, follower)) = &mut following else {
                 if let Some((pid, file)) = spotter.spot(shell.probes.below) {
                     let cwd = folder(&file);
-                    report.chat(&HandChat::Started { cwd: cwd.clone() });
+                    report.chat(&HandChat::Started {
+                        cwd: cwd.clone(),
+                        wrapped: false,
+                    });
                     let watched = Watched {
                         config_dir: shell.config_dir.clone(),
                         pid,

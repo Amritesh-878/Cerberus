@@ -2,11 +2,17 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use tauri::{AppHandle, Emitter, Manager, State};
 
+use crate::accounts::Accounts;
+use crate::findchat;
 use crate::open::shell::{arguments, checked, own_arguments, say};
 use crate::open::{
     BAD_USAGE, Checked, Command, MISSED, Spec, Target, opening, parse, pipe, resolve, usage_for,
 };
-use crate::saved::Saved;
+use crate::saved::{Saved, TabId};
+use crate::wrapper;
+
+/// Asks the page to open a chat found on another account, as Find chat would.
+const CHAT_ELSEWHERE: &str = "chat-elsewhere";
 
 /// The last tab asked for, held until the page takes it, so a request made while it loads is kept.
 #[derive(Default)]
@@ -74,6 +80,9 @@ pub fn on_second_launch(app: &AppHandle, args: Vec<String>, _cwd: String) {
 }
 
 fn answer(app: &AppHandle, args: &[String]) -> (i32, String) {
+    if let Some(answer) = wrapper_answer(app, args) {
+        return answer;
+    }
     let Some(Command::Open(spec)) = parse(args) else {
         let tree = || Some(app.try_state::<Saved>()?.load().ok()?.tree);
         return (BAD_USAGE, usage_for(args, tree));
@@ -85,6 +94,47 @@ fn answer(app: &AppHandle, args: &[String]) -> (i32, String) {
         }
         Err(why) => (MISSED, why),
     }
+}
+
+/// A shell tab's `claude` wrapper: notes that it started, or opens a chat its account doesn't have; `None` for anything else.
+fn wrapper_answer(app: &AppHandle, args: &[String]) -> Option<(i32, String)> {
+    let [kind, tab, value] = args else {
+        return None;
+    };
+    let tab: TabId = tab.parse().ok()?;
+    if kind == wrapper::STARTED {
+        app.state::<wrapper::Wrapped>()
+            .started(tab, value.parse().ok()?);
+        return Some((0, String::new()));
+    }
+    if kind != wrapper::RESUME {
+        return None;
+    }
+    // Not found anywhere: the wrapper runs `claude` itself, which says so.
+    let Some(found) = findchat::app::owner_of(app, value) else {
+        return Some((MISSED, String::new()));
+    };
+    let name = found
+        .account
+        .and_then(|id| {
+            app.state::<Accounts>()
+                .load()
+                .ok()?
+                .accounts
+                .into_iter()
+                .find(|a| a.id == id)
+        })
+        .map(|a| a.name);
+    let said = match (found.open_in, name) {
+        (Some(_), _) => "It's open in another tab. Switched to it.".to_owned(),
+        (None, Some(name)) => format!("It's on {name}. Opened it in a new tab."),
+        (None, None) => "Opened it in a new tab.".to_owned(),
+    };
+    if let Err(e) = app.emit(CHAT_ELSEWHERE, found) {
+        return Some((MISSED, format!("could not open the chat: {e}")));
+    }
+    focus(app);
+    Some((0, said))
 }
 
 /// Lets `cerberus open` resolve against the live tree, which can be up to a save delay ahead of the file.

@@ -126,6 +126,7 @@ fn parse(bytes: &[u8]) -> Result<Profiles, AccountsError> {
     } = serde_json::from_value(saved).map_err(corrupt)?;
     profiles.next_id = next_id;
     profiles.forget_unknown_colors();
+    profiles.fix_duplicates();
     profiles.validate().map_err(|e| match e {
         AccountsError::Corrupt(_) => e,
         other => AccountsError::Corrupt(other.to_string()),
@@ -268,12 +269,61 @@ mod tests {
     }
 
     #[test]
-    fn a_file_that_breaks_the_rules_is_corrupt() {
+    fn a_repeated_name_gets_a_number_on_load_instead_of_breaking_the_file() {
         let dir = TestDir::new();
         let text = r#"{"version":3,"nextId":2,"accounts":[
             {"id":0,"name":"a","configDir":"C:\\h\\.claude"},
             {"id":1,"name":"A","configDir":"C:\\h\\.claude-2"}
         ],"defaultAccount":0,"shell":null,"startFolder":null}"#;
+
+        let loaded = write_raw(&dir, text).load().unwrap();
+
+        let names: Vec<_> = loaded.accounts.iter().map(|a| a.name.as_str()).collect();
+        assert_eq!(names, ["a", "A 2"]);
+    }
+
+    #[test]
+    fn a_second_account_on_one_folder_is_retired_on_load_and_the_first_stays_default() {
+        let dir = TestDir::new();
+        let text = r#"{"version":3,"nextId":2,"accounts":[
+            {"id":0,"name":"Work","configDir":"C:\\h\\.claude-work"},
+            {"id":1,"name":"Work copy","configDir":"C:\\h\\.claude-work\\"}
+        ],"defaultAccount":1,"shell":null,"startFolder":null}"#;
+
+        let loaded = write_raw(&dir, text).load().unwrap();
+
+        assert_eq!(
+            loaded.accounts.iter().map(|a| a.id).collect::<Vec<_>>(),
+            [0]
+        );
+        assert_eq!(loaded.retired.iter().map(|a| a.id).collect::<Vec<_>>(), [1]);
+        assert_eq!(loaded.default_account, Some(0));
+    }
+
+    #[test]
+    fn a_default_on_a_retired_copy_moves_to_the_account_kept_for_that_folder() {
+        let dir = TestDir::new();
+        let text = r#"{"version":3,"nextId":3,"accounts":[
+            {"id":0,"name":"Personal","configDir":"C:\\h\\.claude"},
+            {"id":1,"name":"Work","configDir":"C:\\h\\.claude-work"},
+            {"id":2,"name":"Work copy","configDir":"C:\\h\\.claude-work"}
+        ],"defaultAccount":2,"shell":null,"startFolder":null}"#;
+
+        let loaded = write_raw(&dir, text).load().unwrap();
+
+        assert_eq!(
+            loaded.default_account,
+            Some(1),
+            "Work, not the first account"
+        );
+    }
+
+    #[test]
+    fn an_account_id_past_the_next_one_is_corrupt() {
+        let dir = TestDir::new();
+        let text = r#"{"version":3,"nextId":1,"accounts":[
+            {"id":4,"name":"a","configDir":"C:\\h\\.claude"}
+        ],"defaultAccount":4,"shell":null,"startFolder":null}"#;
 
         let result = write_raw(&dir, text).load();
 

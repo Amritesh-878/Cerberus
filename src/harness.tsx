@@ -110,6 +110,10 @@ export async function renderApp(
           return profiles();
         case "detect_accounts":
           return [];
+        case "account_logins":
+          return [];
+        case "tab_has_chat":
+          return true;
         case "services_view":
           return { folded: false, services: [] };
         case "live_view":

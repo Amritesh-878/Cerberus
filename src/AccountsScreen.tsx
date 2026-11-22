@@ -2,6 +2,8 @@ import { createSignal, For, Show } from "solid-js";
 
 import { AccountsStep } from "./AccountsStep";
 import {
+  type Account,
+  type AccountId,
   pickFolder,
   preselectedAccount,
   type Profiles,
@@ -27,6 +29,7 @@ export function AccountsScreen(props: {
   onAlerts: (on: boolean) => void;
   onProfiles: (profiles: Profiles) => void;
   onOpen: (tab: Tab) => void;
+  onMoveTabs: (from: AccountId, to: Account) => Promise<void>;
   onClose: () => void;
 }) {
   return (
@@ -38,6 +41,7 @@ export function AccountsScreen(props: {
         statuses={props.statuses}
         onProfiles={props.onProfiles}
         onOpen={props.onOpen}
+        onMoveTabs={props.onMoveTabs}
       />
       <h3>New tabs</h3>
       <section class="defaults">
@@ -102,7 +106,7 @@ export function DefaultAccountPicker(props: {
   return (
     <>
       <label>
-        Which account should new tabs use?
+        New tabs use
         <select
           onChange={(event) => {
             setDefaultAccount(Number(event.currentTarget.value))

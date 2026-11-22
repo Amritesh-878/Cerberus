@@ -4,6 +4,7 @@ import { backdropDismiss } from "./backdrop";
 import {
   type Account,
   type AccountId,
+  OTHER_ORGANIZATION,
   type Profiles,
   savedColor,
 } from "./accounts";
@@ -88,6 +89,8 @@ export function TabMenu(props: {
   onStartTask?: () => void;
   /** Last in the menu, so a signed-out account can be signed in from there. */
   onAccounts?: () => void;
+  /** The move to this account crosses organizations, so Claude rereads the chat. */
+  crosses?: (account: Account) => boolean;
   onDismiss: () => void;
 }) {
   // Read once: the shortcut opens the menu already at its confirm step.
@@ -100,8 +103,10 @@ export function TabMenu(props: {
   let box: HTMLDivElement | undefined;
 
   // An ended tab's shell may be running a claude started by hand, which the move would close.
+  // A move to another organization asks too, so its note is read before the move.
   const pick = (account: Account) => {
-    if (props.running || props.ended) setConfirming(account);
+    if (props.running || props.ended || props.crosses?.(account) === true)
+      setConfirming(account);
     else props.onContinue(account);
   };
   // Kept inside the window, flipping above the click when there is no room below.
@@ -307,9 +312,14 @@ export function TabMenu(props: {
                   ? `Close the shell and move the chat to ${account().name}?`
                   : `Move this chat to ${account().name}?`}
               </p>
-              <p class="menu-confirm-note">
-                Stops anything it started. A service keeps a server running.
-              </p>
+              <Show when={props.running || props.ended}>
+                <p class="menu-confirm-note">
+                  Stops anything it started. A service keeps a server running.
+                </p>
+              </Show>
+              <Show when={props.crosses?.(account())}>
+                <p class="menu-confirm-note">{OTHER_ORGANIZATION}</p>
+              </Show>
               <div class="confirm-actions">
                 <button
                   type="button"

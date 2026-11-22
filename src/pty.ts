@@ -35,7 +35,8 @@ export interface Size {
 
 /** A `claude` started by hand in a shell tab: `cwd` is its folder when the core found one, and `saved` says its chat can be resumed. */
 export type HandChat =
-  { chat: "started"; cwd: string | null } | { chat: "ended"; saved: boolean };
+  | { chat: "started"; cwd: string | null; wrapped: boolean }
+  | { chat: "ended"; saved: boolean };
 
 export interface SessionHandlers {
   output: (bytes: Uint8Array) => void;

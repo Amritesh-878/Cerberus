@@ -80,7 +80,7 @@ export function TaskDialog(props: {
   const [picked, setPicked] = createSignal<string>();
   const taskFile = () => picked() ?? files()?.[0]?.path;
   const [account, setAccount] = createSignal<AccountId | null>(
-    untrack(() => taskAccount(tasks, props.tab, props.profiles)),
+    untrack(() => taskAccount(props.profiles)),
   );
 
   const [inWorktree, setInWorktree] = createSignal(false);

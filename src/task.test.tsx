@@ -152,7 +152,7 @@ function type(el: HTMLInputElement | HTMLTextAreaElement, text: string): void {
 
 const project = (saves: SavedTree[]) => saves.at(-1)?.projects[0];
 
-test("the dialog lists the guessed task folder's files newest first, the newest picked, on the tab's account", async () => {
+test("the dialog lists the guessed task folder's files newest first, the newest picked, on the default account", async () => {
   const env = taskCore();
   const root = await renderApp(() => SAVED, env.core);
 
@@ -174,7 +174,7 @@ test("the dialog lists the guessed task folder's files newest first, the newest 
   const pressed = dialog().querySelector(
     '.choices button[aria-pressed="true"]',
   );
-  expect(pressed?.textContent).toBe("personal");
+  expect(pressed?.textContent).toBe("work");
 });
 
 test("Open adds a sub-tab named for the task and types its prompt only once the chat is idle, never with Enter", async () => {
@@ -190,7 +190,7 @@ test("Open adds a sub-tab named for the task and types its prompt only once the 
   expect(sidebarTitles(root)).toEqual(["planner", "  TASK-025 · Start a task"]);
   const coder = env.pty.spawned.at(-1);
   expect(field(field(coder, "request"), "cwd")).toBe(CODE);
-  expect(field(coder, "account")).toBe(0);
+  expect(field(coder, "account")).toBe(1);
   const index = env.pty.spawned.length - 1;
 
   emit(env.pty.spawned, index, { state: "working" });
@@ -206,7 +206,7 @@ test("Open adds a sub-tab named for the task and types its prompt only once the 
   expect(project(env.saves)?.tasks).toEqual({
     folder: null,
     prompt: null,
-    account: 0,
+    account: 1,
   });
 });
 

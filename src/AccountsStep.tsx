@@ -2,9 +2,14 @@ import { createResource, createSignal, For, Show } from "solid-js";
 
 import {
   type Account,
+  type AccountId,
+  accountLogins,
   addAccount,
+  crossesOrganization,
   detectAccounts,
+  OTHER_ORGANIZATION,
   pickFolder,
+  preselectedAccount,
   type Profiles,
   removeAccount,
   renameAccount,
@@ -25,9 +30,17 @@ export function AccountsStep(props: {
   statuses: Statuses;
   onProfiles: (profiles: Profiles) => void;
   onOpen: (tab: Tab) => void;
+  /** Moves every tab on an account to another; absent where no tabs can exist yet. */
+  onMoveTabs?: (from: AccountId, to: Account) => Promise<void>;
 }) {
   const [error, setError] = createSignal<string>();
   const [detected] = createResource(() => props.profiles, detectAccounts);
+  // Read again with every change, since a removal or sign-in changes who shares a login.
+  const [logins] = createResource(() => props.profiles, accountLogins);
+  const twinOf = (account: Account) => {
+    const first = logins()?.find((l) => l.id === account.id)?.sameAs;
+    return props.profiles.accounts.find((a) => a.id === first);
+  };
   const [editing, setEditing] = createSignal<number>();
   // Held apart from the account, since every saved change brings new account objects.
   const [draft, setDraft] = createSignal("");
@@ -40,6 +53,42 @@ export function AccountsStep(props: {
   const [asking, setAsking] = createSignal<{ id: number; tabs: string[] }>();
   // Shown on the row it is about, since a refusal names that account.
   const [rowError, setRowError] = createSignal<{ id: number; text: string }>();
+  // Where the removed account's tabs go: picked in the confirm, else the default account.
+  const [moveTo, setMoveTo] = createSignal<AccountId>();
+  const [movingOff, setMovingOff] = createSignal<AccountId>();
+  const others = (account: Account) =>
+    props.profiles.accounts.filter((a) => a.id !== account.id);
+  const target = (account: Account) => {
+    const ids = others(account).map((a) => a.id);
+    const picked = moveTo();
+    const fallback = preselectedAccount(props.profiles);
+    const id =
+      picked !== undefined && ids.includes(picked)
+        ? picked
+        : fallback !== null && ids.includes(fallback)
+          ? fallback
+          : ids[0];
+    return others(account).find((a) => a.id === id);
+  };
+  const moveAndRemove = (account: Account) => {
+    const to = target(account);
+    if (!props.onMoveTabs || !to) {
+      remove(account, true);
+      return;
+    }
+    setMovingOff(account.id);
+    props
+      .onMoveTabs(account.id, to)
+      .then(() => {
+        remove(account, true);
+      })
+      .catch((e: unknown) => {
+        setRowError({ id: account.id, text: String(e) });
+      })
+      .finally(() => {
+        setMovingOff(undefined);
+      });
+  };
 
   const remove = (account: Account, confirmed: boolean) => {
     removeAccount(account.id, confirmed)
@@ -147,6 +196,13 @@ export function AccountsStep(props: {
                         {statusText(props.statuses.get(account.id))}
                       </span>
                     </span>
+                    <Show when={twinOf(account)}>
+                      {(twin) => (
+                        <span class="account-twin">
+                          Same login as {twin().name}
+                        </span>
+                      )}
+                    </Show>
                     <span class="program">{account.configDir}</span>
                   </span>
                 }
@@ -222,19 +278,63 @@ export function AccountsStep(props: {
                         : `${String(ask().tabs.length)} tabs use`}{" "}
                       {account.name}: {ask().tabs.join(", ")}.
                     </p>
-                    <p class="hint">
-                      Removing it stops them. The tabs stay, ready to move to
-                      another account. Nothing is deleted.
-                    </p>
+                    <Show
+                      when={props.onMoveTabs && target(account)}
+                      fallback={
+                        <p class="hint">
+                          Removing it stops them. The tabs stay, ready to move
+                          to another account. Nothing is deleted.
+                        </p>
+                      }
+                    >
+                      {(to) => (
+                        <>
+                          <label class="move-to">
+                            Move them to
+                            <select
+                              onChange={(event) => {
+                                setMoveTo(Number(event.currentTarget.value));
+                              }}
+                            >
+                              <For each={others(account)}>
+                                {(other) => (
+                                  <option
+                                    value={other.id}
+                                    selected={other.id === to().id}
+                                  >
+                                    {other.name}
+                                  </option>
+                                )}
+                              </For>
+                            </select>
+                          </label>
+                          <p class="hint">
+                            Its folder stays. Nothing is deleted.
+                          </p>
+                          <Show
+                            when={crossesOrganization(
+                              logins(),
+                              account.id,
+                              to().id,
+                            )}
+                          >
+                            <p class="hint">{OTHER_ORGANIZATION}</p>
+                          </Show>
+                        </>
+                      )}
+                    </Show>
                     <span class="row-confirm-actions">
                       <button
                         type="button"
                         class="danger"
+                        disabled={movingOff() === account.id}
                         onClick={() => {
-                          remove(account, true);
+                          moveAndRemove(account);
                         }}
                       >
-                        Remove {account.name}
+                        {props.onMoveTabs && target(account)
+                          ? `Move and remove ${account.name}`
+                          : `Remove ${account.name}`}
                       </button>
                       <button
                         type="button"

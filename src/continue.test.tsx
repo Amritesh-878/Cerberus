@@ -167,6 +167,58 @@ test("a running chat asks first, and Cancel leaves it alone", async () => {
   expect(app.pty.killed).toEqual([]);
 });
 
+/** The confirm for moving work's chat to personal, with each account in the organization given. */
+async function moveConfirm(organizations: number[]): Promise<string> {
+  const app = core();
+  const root = await renderApp(() => SAVED, {
+    ...app.core,
+    account_logins: () =>
+      SAVED.accounts.map((a, at) => ({
+        id: a.id,
+        sameAs: null,
+        organization: organizations[at] ?? null,
+      })),
+  });
+  await open(root, "Claude Code · work");
+  await openMenu(root, "Claude Code · work");
+  click(root.querySelector(".tab-menu") ?? root, "Move to personal…");
+  await settle();
+  return root.querySelector(".menu-confirm")?.textContent ?? "";
+}
+
+test("a move to another organization says Claude rereads the chat", async () => {
+  expect(await moveConfirm([0, 1])).toContain(
+    "Other organization: Claude rereads the chat, so it starts slower.",
+  );
+});
+
+test("a tab that isn't running still asks before a move to another organization", async () => {
+  const app = core();
+  const root = await renderApp(() => SAVED, {
+    ...app.core,
+    account_logins: () => [
+      { id: 0, sameAs: null, organization: 0 },
+      { id: 1, sameAs: null, organization: 1 },
+    ],
+  });
+
+  await openMenu(root, "Claude Code · work");
+  click(root.querySelector(".tab-menu") ?? root, "Move to personal…");
+  await settle();
+
+  expect(app.continued).toEqual([]);
+  const confirm = root.querySelector(".menu-confirm")?.textContent ?? "";
+  expect(confirm).toContain("Other organization");
+  expect(confirm).not.toContain("Stops anything it started");
+  click(root.querySelector(".menu-confirm") ?? root, "Move");
+  await settle();
+  expect(app.continued).toEqual([{ tab: 2, account: 0 }]);
+});
+
+test("a move within one organization says nothing about it", async () => {
+  expect(await moveConfirm([0, 0])).not.toContain("Other organization");
+});
+
 test("confirming stops the chat, moves it and starts it again on the new account", async () => {
   const app = core();
   const root = await renderApp(() => SAVED, app.core);
@@ -392,9 +444,9 @@ test("with one account the account pill offers Start a task and Accounts, which 
   expect(root.querySelector("main h1")?.textContent).toBe("Accounts");
 });
 
-function removing(confirmedRemoves: unknown[]) {
+function removing(confirmedRemoves: unknown[], options: Options = {}) {
   let profiles = SAVED;
-  const app = core();
+  const app = core(options);
   return {
     app,
     profiles: () => profiles,
@@ -424,7 +476,7 @@ function accountRow(root: HTMLElement, name: string): HTMLElement {
   return found;
 }
 
-test("removing an account with tabs asks first, then closes their programs and keeps the tabs", async () => {
+test("removing an account with tabs asks where they go, moves them there, then removes it", async () => {
   const asked: unknown[] = [];
   const fake = removing(asked);
   const root = await renderApp(fake.profiles, fake.core);
@@ -434,59 +486,95 @@ test("removing an account with tabs asks first, then closes their programs and k
 
   click(accountRow(root, "work"), "Remove");
   await settle();
-  expect(root.querySelector(".row-confirm")?.textContent).toContain(
+  const confirm = () => root.querySelector<HTMLElement>(".row-confirm") ?? root;
+  expect(confirm().textContent).toContain(
     "1 tab uses work: alpha / Claude Code · work.",
   );
-  expect(fake.app.pty.killed).toEqual([]);
-  click(root.querySelector(".row-confirm") ?? root, "Remove work");
+  // The default is the account being removed, so the other one is offered.
+  expect(confirm().querySelector("select")?.value).toBe("0");
+  click(confirm(), "Move and remove work");
+  await settle();
   await settle();
 
+  expect(fake.app.continued).toEqual([{ tab: 2, account: 0 }]);
   expect(asked).toEqual([false, true]);
-  expect(fake.app.pty.killed).toEqual([1]);
-  expect(
-    [...root.querySelectorAll(".tab-row.removed .tab-title")].map(
-      (t) => t.textContent,
-    ),
-  ).toEqual(["Claude Code · work", "shell"]);
-  await open(root, "Claude Code · work");
-  expect(root.querySelector(".removed-note")?.textContent).toContain(
-    "work was removed. The chat is saved.",
-  );
-  expect(fake.app.pty.spawned).toHaveLength(1);
+  expect(root.querySelectorAll(".tab-row.removed")).toHaveLength(0);
 });
 
-/** Removes "work" from the Accounts page, then shows its Claude tab with its Move menu open. */
-async function removedTabMenu(fake: ReturnType<typeof removing>) {
-  const root = await renderApp(fake.profiles, fake.core);
+/** Removes "work" from the Accounts page, moving its tabs to personal. */
+async function removeWork(fake: ReturnType<typeof removing>, extra = {}) {
+  const root = await renderApp(fake.profiles, { ...fake.core, ...extra });
   await open(root, "Claude Code · work");
   click(root, "Accounts");
   await settle();
   click(accountRow(root, "work"), "Remove");
   await settle();
-  click(root.querySelector(".row-confirm") ?? root, "Remove work");
+  click(root.querySelector(".row-confirm") ?? root, "Move and remove work");
   await settle();
+  await settle();
+  return root;
+}
+
+test("a chat that fails to move during a removal stays saved on its tab and says so", async () => {
+  const fake = removing([], { fails: "the other account has it open" });
+  const root = await removeWork(fake);
+
+  expect(fake.app.continued).toEqual([{ tab: 2, account: 0 }]);
+  // Not started afresh on personal: the tab keeps its chat for a later move.
+  expect(
+    fake.app.pty.spawned.filter((s) => field(s, "account") === 0),
+  ).toHaveLength(0);
+  expect(
+    document.querySelector(".notice-popup, [role=alertdialog]")?.textContent,
+  ).toContain("Claude Code · work couldn't move");
   await open(root, "Claude Code · work");
-  click(
-    root.querySelector(".removed-note") ?? root,
-    "Move to another account…",
+  expect(root.querySelector(".removed-note")?.textContent).toContain(
+    "This chat is saved.",
   );
-  await settle();
+});
+
+test("a Claude tab with no saved chat just starts on the account its old one's tabs go to", async () => {
+  const fake = removing([]);
+  await removeWork(fake, { tab_has_chat: () => false });
+
+  expect(fake.app.continued).toEqual([]);
+  expect(field(fake.app.pty.spawned.at(-1), "account")).toBe(0);
+});
+
+/** "work" was removed in an earlier run: its tabs open on a removed account, the Claude tab's chat ended with it. */
+function removedEarlier() {
+  const app = core();
+  return {
+    app,
+    profiles: () => ({
+      ...SAVED,
+      accounts: SAVED.accounts.filter((a) => a.id !== 1),
+      retired: SAVED.accounts.filter((a) => a.id === 1),
+    }),
+    core: {
+      ...app.core,
+      tree_load: () => ({ tree: TREE, notice: null, ended: [2] }),
+    },
+  };
+}
+
+/** The removed account's Claude tab, shown with its row menu open. */
+async function removedTabMenu(fake: ReturnType<typeof removedEarlier>) {
+  const root = await renderApp(fake.profiles, fake.core);
+  await open(root, "Claude Code · work");
+  await openMenu(root, "Claude Code · work");
   expect(root.querySelector(".tab-menu")).not.toBeNull();
   return root;
 }
 
 test("a removed account's tab menu closes on Escape and on its backdrop, so the window takes clicks again", async () => {
-  const root = await removedTabMenu(removing([]));
+  const root = await removedTabMenu(removedEarlier());
 
   press("Escape");
   await settle();
   expect(document.querySelector(".popover-backdrop")).toBeNull();
 
-  click(
-    root.querySelector(".removed-note") ?? root,
-    "Move to another account…",
-  );
-  await settle();
+  await openMenu(root, "Claude Code · work");
   const backdrop = document.querySelector(".popover-backdrop");
   if (!backdrop) throw new Error("no backdrop");
   pressAndRelease(backdrop, backdrop);
@@ -512,8 +600,27 @@ test("a shortcut under an open menu opens no second layer, and Escape then clear
   ).toHaveLength(0);
 });
 
+test("a shortcut under an open row menu opens no second layer either", async () => {
+  const root = await renderApp(() => SAVED, core().core);
+  await open(root, "Claude Code · work");
+  await openMenu(root, "Claude Code · work");
+
+  press("F", { ctrlKey: true, shiftKey: true });
+  press("?", { ctrlKey: true, shiftKey: true, code: "Slash" });
+  await settle();
+  expect(
+    document.querySelectorAll(".popover-backdrop, .sheet-backdrop"),
+  ).toHaveLength(1);
+
+  press("Escape");
+  await settle();
+  expect(
+    document.querySelectorAll(".popover-backdrop, .sheet-backdrop"),
+  ).toHaveLength(0);
+});
+
 test("a removed account's tab moves to the account picked in its menu", async () => {
-  const fake = removing([]);
+  const fake = removedEarlier();
   const root = await removedTabMenu(fake);
 
   click(root.querySelector(".tab-menu") ?? root, "Move to personal…");
@@ -521,6 +628,53 @@ test("a removed account's tab moves to the account picked in its menu", async ()
 
   expect(document.querySelector(".popover-backdrop")).toBeNull();
   expect(fake.app.continued).toEqual([{ tab: 2, account: 0 }]);
+});
+
+test("a removed account's Claude tab moves its chat to the default account in one click", async () => {
+  const fake = removedEarlier();
+  const root = await renderApp(fake.profiles, fake.core);
+  await open(root, "Claude Code · work");
+  const note = () => root.querySelector<HTMLElement>(".removed-note") ?? root;
+  expect(note().textContent).toContain("work was removed. This chat is saved.");
+
+  click(note(), "Move to personal");
+  await settle();
+
+  expect(fake.app.continued).toEqual([{ tab: 2, account: 0 }]);
+});
+
+test("a tab on a removed account whose folder another account uses goes to it, with no note", async () => {
+  const app = core();
+  const [personal, work] = SAVED.accounts;
+  if (!personal || !work) throw new Error("fixture changed");
+  // The same folder spelled with a trailing separator.
+  const back = { id: 5, name: "work again", configDir: `${work.configDir}/` };
+  const root = await renderApp(
+    () => ({ ...SAVED, accounts: [personal, back], retired: [work] }),
+    app.core,
+  );
+
+  await open(root, "Claude Code · work again");
+
+  expect(root.querySelector(".removed-note")).toBeNull();
+  expect(field(app.pty.spawned.at(-1), "account")).toBe(5);
+});
+
+test("an account signed in to the same login as another says so on its row", async () => {
+  const root = await renderApp(() => SAVED, {
+    ...core().core,
+    account_logins: () => [
+      { id: 0, sameAs: null, organization: 0 },
+      { id: 1, sameAs: 0, organization: 0 },
+    ],
+  });
+  click(root, "Accounts");
+  await settle();
+
+  expect(accountRow(root, "work").textContent).toContain(
+    "Same login as personal",
+  );
+  expect(accountRow(root, "personal").textContent).not.toContain("Same login");
 });
 
 test("Cancel keeps an account its tabs use, and their programs run on", async () => {
@@ -615,24 +769,19 @@ test("a confirm from the account pill moves the tab it was opened for, even afte
   expect(app.continued).toEqual([{ tab: 2, account: 0 }]);
 });
 
-test("a shell left on a removed account restarts on another, with no chat to move", async () => {
-  const fake = removing([]);
+test("a shell left on a removed account moves to the default in one click, with no chat to move", async () => {
+  const fake = removedEarlier();
   const root = await renderApp(fake.profiles, fake.core);
-  click(root, "Accounts");
-  await settle();
-  click(accountRow(root, "work"), "Remove");
-  await settle();
-  click(root.querySelector(".row-confirm") ?? root, "Remove work");
-  await settle();
 
   await open(root, "shell");
   expect(root.querySelector(".removed-note")?.textContent).toContain(
-    "work was removed. The shell closed.",
+    "work was removed.",
   );
-  click(root.querySelector(".removed-note") ?? root, "Restart on personal");
+  click(root.querySelector(".removed-note") ?? root, "Move to personal");
   await settle();
 
   expect(fake.app.pty.spawned.map((s) => field(s, "account"))).toEqual([0]);
+  expect(fake.app.continued).toEqual([]);
   expect(root.querySelector(".removed-note")).toBeNull();
 });
 
