@@ -226,6 +226,8 @@ export function App() {
     fromLimit?: boolean;
   }>();
   const [sheet, setSheet] = createSignal(false);
+  // The sidebar's own row menu, a layer like the tab menu above.
+  const [sidebarMenu, setSidebarMenu] = createSignal(false);
   const sidebarWidth = createSavedWidth({
     saved: () => profiles()?.sidebarWidth,
     fallback: SIDEBAR_DEFAULT,
@@ -1108,6 +1110,7 @@ export function App() {
   const layerOpen = () =>
     otherDialog() ||
     pillMenu() !== undefined ||
+    sidebarMenu() ||
     opening() !== undefined ||
     limitShown() !== undefined;
   // A Claude tab in a project with a planner above it, or that is one, can start a task.
@@ -1420,6 +1423,7 @@ export function App() {
                 showPage("accounts");
                 setDrawer(false);
               }}
+              onMenuOpen={setSidebarMenu}
               crosses={(from, to) => crossesOrganization(logins(), from, to.id)}
               onSearch={() => {
                 setFinding(true);

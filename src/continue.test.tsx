@@ -537,6 +537,25 @@ test("a shortcut under an open menu opens no second layer, and Escape then clear
   ).toHaveLength(0);
 });
 
+test("a shortcut under an open row menu opens no second layer either", async () => {
+  const root = await renderApp(() => SAVED, core().core);
+  await open(root, "Claude Code · work");
+  await openMenu(root, "Claude Code · work");
+
+  press("F", { ctrlKey: true, shiftKey: true });
+  press("?", { ctrlKey: true, shiftKey: true, code: "Slash" });
+  await settle();
+  expect(
+    document.querySelectorAll(".popover-backdrop, .sheet-backdrop"),
+  ).toHaveLength(1);
+
+  press("Escape");
+  await settle();
+  expect(
+    document.querySelectorAll(".popover-backdrop, .sheet-backdrop"),
+  ).toHaveLength(0);
+});
+
 test("a removed account's tab moves to the account picked in its menu", async () => {
   const fake = removedEarlier();
   const root = await removedTabMenu(fake);
