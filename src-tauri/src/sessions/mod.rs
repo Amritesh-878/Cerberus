@@ -1,3 +1,4 @@
+pub mod agy;
 pub mod carry;
 mod limit;
 pub mod procs;
@@ -11,6 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::pty::Exit;
 
+pub use crate::sessions::agy::{WatchedAgy, agy_home, is_agy, plan_agy_resume, watch_agy};
 pub use crate::sessions::watch::{TabState, Watched, watch};
 
 // Claude Code shortens a longer slug and appends a hash of the full path.

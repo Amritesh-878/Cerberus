@@ -22,7 +22,8 @@ use crate::saved::{EnvEdit, EnvError, Loaded, Saved, SavedTree, TabId, TreeError
 use crate::sessions::procs::Probes;
 use crate::sessions::shell::{HandChat, Keeper, Report, Shell, watch_shell};
 use crate::sessions::{
-    Resume, TabState, Watched, add_dir_args, chat_ended, is_claude, plan_resume, watch,
+    Resume, TabState, Watched, WatchedAgy, add_dir_args, agy_home, chat_ended, is_agy, is_claude,
+    plan_agy_resume, plan_resume, watch, watch_agy,
 };
 use crate::suggestions::Suggestions;
 use crate::wrapper;
@@ -83,17 +84,22 @@ pub async fn pty_spawn(
         let mut claude_home = is_claude(&request.program)
             .then(|| accounts.claude_home(account))
             .transpose()?;
+        let mut agy_home = is_agy(&request.program).then(|| agy_home(accounts.home()));
         let cwd = request
             .cwd
             .clone()
             .unwrap_or_else(|| accounts.home().to_string_lossy().into_owned());
         let saved = app.state::<Saved>();
         let mut resume = Resume::New;
+        let saved_session = tab.and_then(|t| saved.session_of(t));
         if let Some(home) = &claude_home {
-            let session = tab.and_then(|t| saved.session_of(t));
             let ended = tab.is_some_and(|t| saved.is_ended(t));
             (request.args, resume) =
-                plan_resume(&request.args, home, &cwd, session.as_deref(), ended);
+                plan_resume(&request.args, home, &cwd, saved_session.as_deref(), ended);
+        } else if let Some(home) = &agy_home {
+            let ended = tab.is_some_and(|t| saved.is_ended(t));
+            (request.args, resume) =
+                plan_agy_resume(&request.args, home, saved_session.as_deref(), ended);
         }
         if resume == Resume::Ended {
             let shell = pick_shell(
@@ -105,8 +111,10 @@ pub async fn pty_spawn(
                 .ok_or(SpawnError::NoShell)?;
             (request.program, request.args) = (program, args);
             claude_home = None;
+            agy_home = None;
         }
         let runs_claude = claude_home.is_some();
+        let runs_agy = agy_home.is_some();
         // A shell is watched on the tab's own account only, for a `claude` the user starts in it.
         let shell_home = (kind_of(&request.program) == Kind::Shell)
             .then(|| accounts.claude_home(account).ok())
@@ -187,8 +195,8 @@ pub async fn pty_spawn(
                 if let Some(token) = &exit_live_token {
                     exit_live.closed(token);
                 }
-                // Only a flag that was kept makes the tab a shell; otherwise its next start would run `claude` again.
-                let ended = chat_ended(runs_claude, exit)
+                // Only a flag that was kept makes the tab a shell; otherwise its next start would run the AI CLI again.
+                let ended = chat_ended(runs_claude || runs_agy, exit)
                     && tab.is_some_and(|tab| ended_saved.set_ended(tab, true));
                 if let Some(tab) = tab {
                     exit_running.ended(tab);
@@ -253,6 +261,34 @@ pub async fn pty_spawn(
                     }
                 }
                 Err(e) => eprintln!("could not watch tab {tab:?}: {e}"),
+            }
+        } else if let (Some(agy_home), Some(_pid)) = (agy_home, pid) {
+            let watched = WatchedAgy {
+                agy_home,
+                cwd,
+                started_ms,
+                initial_session: (resume == Resume::Resuming)
+                    .then_some(saved_session)
+                    .flatten(),
+            };
+            let saved = Saved::clone(&saved);
+            let on_session = move |session: &str| {
+                if let Some(tab) = tab {
+                    saved.set_session(tab, session);
+                }
+            };
+            let on_state = move |state: TabState| {
+                if let Ok(body) = state.body() {
+                    let _ = state_events.send(body);
+                }
+            };
+            match watch_agy(watched, stopped, on_session, on_state) {
+                Ok(watcher) => {
+                    if let Some(tab) = tab {
+                        running.watching(tab, watcher);
+                    }
+                }
+                Err(e) => eprintln!("could not watch agy tab {tab:?}: {e}"),
             }
         } else if let (Some(config_dir), Some(pid), Some(tab)) = (shell_home, pid, tab) {
             let shell = Shell {
