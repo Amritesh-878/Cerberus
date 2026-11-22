@@ -301,6 +301,24 @@ mod tests {
     }
 
     #[test]
+    fn a_default_on_a_retired_copy_moves_to_the_account_kept_for_that_folder() {
+        let dir = TestDir::new();
+        let text = r#"{"version":3,"nextId":3,"accounts":[
+            {"id":0,"name":"Personal","configDir":"C:\\h\\.claude"},
+            {"id":1,"name":"Work","configDir":"C:\\h\\.claude-work"},
+            {"id":2,"name":"Work copy","configDir":"C:\\h\\.claude-work"}
+        ],"defaultAccount":2,"shell":null,"startFolder":null}"#;
+
+        let loaded = write_raw(&dir, text).load().unwrap();
+
+        assert_eq!(
+            loaded.default_account,
+            Some(1),
+            "Work, not the first account"
+        );
+    }
+
+    #[test]
     fn an_account_id_past_the_next_one_is_corrupt() {
         let dir = TestDir::new();
         let text = r#"{"version":3,"nextId":1,"accounts":[

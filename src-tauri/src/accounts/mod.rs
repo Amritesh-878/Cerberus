@@ -348,12 +348,13 @@ impl Profiles {
     fn fix_duplicates(&mut self) {
         let mut kept: Vec<Account> = Vec::new();
         for mut account in std::mem::take(&mut self.accounts) {
-            if kept
+            if let Some(twin) = kept
                 .iter()
-                .any(|k| same_dir(&k.config_dir, &account.config_dir))
+                .find(|k| same_dir(&k.config_dir, &account.config_dir))
             {
+                // The default stays on the folder it named, so new tabs keep using the same chats.
                 if self.default_account == Some(account.id) {
-                    self.default_account = None;
+                    self.default_account = Some(twin.id);
                 }
                 self.retired.push(account);
                 continue;
