@@ -523,6 +523,23 @@ test("a removed account's tab moves to the account picked in its menu", async ()
   expect(fake.app.continued).toEqual([{ tab: 2, account: 0 }]);
 });
 
+test("an account signed in to the same login as another says so on its row", async () => {
+  const root = await renderApp(() => SAVED, {
+    ...core().core,
+    account_logins: () => [
+      { id: 0, sameAs: null, organization: 0 },
+      { id: 1, sameAs: 0, organization: 0 },
+    ],
+  });
+  click(root, "Accounts");
+  await settle();
+
+  expect(accountRow(root, "work").textContent).toContain(
+    "Same login as personal",
+  );
+  expect(accountRow(root, "personal").textContent).not.toContain("Same login");
+});
+
 test("Cancel keeps an account its tabs use, and their programs run on", async () => {
   const asked: unknown[] = [];
   const fake = removing(asked);

@@ -110,6 +110,8 @@ export async function renderApp(
           return profiles();
         case "detect_accounts":
           return [];
+        case "account_logins":
+          return [];
         case "services_view":
           return { folded: false, services: [] };
         case "live_view":

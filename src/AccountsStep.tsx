@@ -2,6 +2,7 @@ import { createResource, createSignal, For, Show } from "solid-js";
 
 import {
   type Account,
+  accountLogins,
   addAccount,
   detectAccounts,
   pickFolder,
@@ -28,6 +29,12 @@ export function AccountsStep(props: {
 }) {
   const [error, setError] = createSignal<string>();
   const [detected] = createResource(() => props.profiles, detectAccounts);
+  // Read again with every change, since a removal or sign-in changes who shares a login.
+  const [logins] = createResource(() => props.profiles, accountLogins);
+  const twinOf = (account: Account) => {
+    const first = logins()?.find((l) => l.id === account.id)?.sameAs;
+    return props.profiles.accounts.find((a) => a.id === first);
+  };
   const [editing, setEditing] = createSignal<number>();
   // Held apart from the account, since every saved change brings new account objects.
   const [draft, setDraft] = createSignal("");
@@ -147,6 +154,13 @@ export function AccountsStep(props: {
                         {statusText(props.statuses.get(account.id))}
                       </span>
                     </span>
+                    <Show when={twinOf(account)}>
+                      {(twin) => (
+                        <span class="account-twin">
+                          Same login as {twin().name}
+                        </span>
+                      )}
+                    </Show>
                     <span class="program">{account.configDir}</span>
                   </span>
                 }

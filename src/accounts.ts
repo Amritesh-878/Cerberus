@@ -141,6 +141,35 @@ export function accountState(
   return isRemoved(profiles, id) ? "removed" : statusText(status);
 }
 
+/** What the core knows of an account's login; the ids themselves stay in the core. */
+export interface LoginFacts {
+  id: AccountId;
+  /** The first account signed in to the same login. */
+  sameAs: AccountId | null;
+  /** Accounts with one number share an organization; `null` when unknown. */
+  organization: number | null;
+}
+
+export function accountLogins(): Promise<LoginFacts[]> {
+  return invoke<LoginFacts[]>("account_logins");
+}
+
+/** A move between two organizations makes Claude reread the chat; unknown is never called a crossing. */
+export function crossesOrganization(
+  logins: LoginFacts[] | undefined,
+  from: AccountId | undefined,
+  to: AccountId,
+): boolean {
+  const org = (id: AccountId | undefined) =>
+    logins?.find((l) => l.id === id)?.organization ?? null;
+  const [a, b] = [org(from), org(to)];
+  return a !== null && b !== null && a !== b;
+}
+
+/** The fine print every move across organizations carries. */
+export const OTHER_ORGANIZATION =
+  "Other organization: Claude rereads the chat, so it starts slower.";
+
 export function setDefaultAccount(id: AccountId): Promise<Profiles> {
   return invoke<Profiles>("set_default_account", { id });
 }
