@@ -273,6 +273,31 @@ test("a card folds from its title and the folded set is saved", async () => {
   expect(core.profiles().panel.collapsed).toEqual(["skills"]);
 });
 
+test("a click on a card's title folds it in a webview that retargets captured clicks", async () => {
+  const core = panelCore(withPanel({ open: true }));
+  const root = await renderApp(core.profiles, core.core);
+  await open(root, "planner");
+  const head = card(root, "Skills").querySelector<HTMLElement>(".card-head");
+  const title = head?.querySelector<HTMLButtonElement>(".card-title");
+  if (!head || !title) throw new Error("no title");
+  const captures: number[] = [];
+  head.setPointerCapture = (pointer) => {
+    captures.push(pointer);
+  };
+  head.hasPointerCapture = () => captures.length > 0;
+  // WebView2 sends the release and click after a captured press to the capturing element.
+  const target = () => (captures.length > 0 ? head : title);
+  const pointer = { bubbles: true, clientY: 20, button: 0, buttons: 1 };
+
+  title.dispatchEvent(new PointerEvent("pointerdown", pointer));
+  target().dispatchEvent(new PointerEvent("pointerup", pointer));
+  target().click();
+  await settle();
+
+  expect(captures).toEqual([]);
+  expect(card(root, "Skills").classList.contains("folded")).toBe(true);
+});
+
 test("a saved folded card and width come back on start", async () => {
   const core = panelCore(
     withPanel({ open: true, width: 360, collapsed: ["skills"] }),
@@ -636,8 +661,6 @@ test("dragging a card's header moves it, saves the order, and Reset card order p
   }
   const head = card(root, "Usage").querySelector<HTMLElement>(".card-head");
   if (!head) throw new Error("no head");
-  head.setPointerCapture = () => undefined;
-  head.hasPointerCapture = () => false;
   const at = (type: string, y: number) => {
     head.dispatchEvent(
       new PointerEvent(type, {
@@ -671,4 +694,36 @@ test("dragging a card's header moves it, saves the order, and Reset card order p
   expect(core.saved.at(-1)?.order).toEqual([]);
   expect(card(root, "Usage").style.order).toBe("4");
   expect(root.querySelector(".panel-reset")).toBeNull();
+});
+
+test("a card drag released outside the window ends at the next move and moves nothing", async () => {
+  const core = panelCore(withPanel({ open: true }));
+  const root = await renderApp(core.profiles, core.core);
+  await open(root, "planner");
+  for (const section of root.querySelectorAll<HTMLElement>(
+    ".panel-cards > .card",
+  )) {
+    const top = 100 * Number(section.style.order);
+    section.getBoundingClientRect = () => new DOMRect(0, top, 300, 100);
+  }
+  const head = card(root, "Usage").querySelector<HTMLElement>(".card-head");
+  if (!head) throw new Error("no head");
+  const at = (type: string, y: number, buttons: number) => {
+    head.dispatchEvent(
+      new PointerEvent(type, { bubbles: true, clientY: y, button: 0, buttons }),
+    );
+  };
+  const saves = core.saved.length;
+
+  at("pointerdown", 450, 1);
+  at("pointermove", 140, 1);
+  await settle();
+  // Back in the window with the button already up: the release was missed.
+  at("pointermove", 140, 0);
+  at("pointerup", 140, 0);
+  await settle();
+
+  expect(root.querySelector(".card.drop-before, .card.dragging")).toBeNull();
+  expect(core.saved.length).toBe(saves);
+  expect(card(root, "Usage").style.order).toBe("4");
 });
