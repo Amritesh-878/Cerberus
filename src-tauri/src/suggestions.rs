@@ -157,6 +157,12 @@ fi
 const FORGET: &str = "builtin unset CERBERUS_USER_ZDOTDIR _cerberus_wrapper\n";
 
 /// Each file runs yours from your `ZDOTDIR` (else `HOME`), then points zsh back here for the next one.
+// After your .zshrc, which may put another `claude` first, so the tab's own wrapper stays in front.
+const ZSH_WRAPPER_FIRST: &str = r#"if [[ -n ${CERBERUS_BIN-} ]]; then
+  path=("$CERBERUS_BIN" ${path:#$CERBERUS_BIN})
+fi
+"#;
+
 fn zsh_startup_file(name: &str) -> String {
     let mut text = format!(
         r#"# Written by Cerberus for its shell tabs: runs your own {name} from your ZDOTDIR or HOME.
@@ -183,6 +189,7 @@ CERBERUS_USER_ZDOTDIR=${{ZDOTDIR:-$HOME}}
     match name {
         // Restored before the plugin, so zsh reads your .zlogin and .zlogout from your own folder.
         ".zshrc" => {
+            text.push_str(ZSH_WRAPPER_FIRST);
             text.push_str(RESTORE);
             text.push_str(&format!(
                 r#"if ! (( $+functions[_zsh_autosuggest_start] )); then

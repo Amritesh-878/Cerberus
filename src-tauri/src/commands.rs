@@ -25,6 +25,7 @@ use crate::sessions::{
     Resume, TabState, Watched, add_dir_args, chat_ended, is_claude, plan_resume, watch,
 };
 use crate::suggestions::Suggestions;
+use crate::wrapper;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -127,19 +128,30 @@ pub async fn pty_spawn(
             (request.args, request.env) = (setup.args, setup.env);
         }
         let bridge = Bridge::clone(&app.state::<Bridge>());
-        let token = claude_home
-            .as_deref()
-            .zip(tab)
-            .and_then(|(home, tab)| link_messages(&app, &accounts, &mut request, home, tab));
         let live = Live::clone(&app.state::<Live>());
-        let live_token =
-            claude_home
-                .as_deref()
-                .zip(tab)
-                .zip(account)
-                .and_then(|((home, tab), account)| {
+        let bin = app.state::<wrapper::Bin>().0.clone();
+        let (token, live_token) = match (claude_home.as_deref(), shell_home.as_deref(), tab) {
+            (Some(home), _, Some(tab)) => (
+                link_messages(&app, &accounts, &mut request, home, tab),
+                account.and_then(|account| {
                     link_live(&live, &accounts, &mut request, (tab, account), (home, &cwd))
-                });
+                }),
+            ),
+            (None, Some(home), Some(tab)) => match &bin {
+                Some(bin) => {
+                    let shell = ShellLink {
+                        home,
+                        tab,
+                        account,
+                        bin,
+                        cwd: &cwd,
+                    };
+                    link_shell(&app, &accounts, &live, &mut request, &shell)
+                }
+                None => (None, None),
+            },
+            _ => (None, None),
+        };
         let (exit_live, exit_live_token) = (live.clone(), live_token.clone());
         let (output_bridge, output_token) = (bridge.clone(), token.clone());
         let (exit_bridge, exit_token) = (bridge.clone(), token.clone());
@@ -258,6 +270,7 @@ pub async fn pty_spawn(
                 events: state_events,
                 app: app.clone(),
                 id,
+                link: token.map(|token| (bridge, token)),
             };
             // Without a watcher the shell still works; a `claude` started in it is just not followed.
             match watch_shell(shell, stopped, report) {
@@ -276,12 +289,24 @@ struct TabReport {
     events: Channel<InvokeResponseBody>,
     app: AppHandle,
     id: SessionId,
+    /// The shell's bridge link, which a wrapped `claude` uses as its own.
+    link: Option<(Bridge, String)>,
 }
 
 impl Report for TabReport {
     fn chat(&mut self, chat: &HandChat) {
         self.keeper.chat(chat);
-        if let Ok(body) = chat.clone().body() {
+        let chat = match chat {
+            HandChat::Started { cwd, .. } => HandChat::Started {
+                cwd: cwd.clone(),
+                wrapped: self
+                    .app
+                    .state::<wrapper::Wrapped>()
+                    .runs(self.keeper.tab, Probes::SYSTEM.is_running),
+            },
+            ended => ended.clone(),
+        };
+        if let Ok(body) = chat.body() {
             let _ = self.events.send(body);
         }
     }
@@ -291,6 +316,9 @@ impl Report for TabReport {
     }
 
     fn state(&mut self, state: TabState) {
+        if let Some((bridge, token)) = &self.link {
+            bridge.working(token, state == TabState::Working);
+        }
         if let Ok(body) = state.body() {
             let _ = self.events.send(body);
         }
@@ -318,6 +346,65 @@ fn link_messages(
     request.args = messages.args(&request.args);
     request.env.extend(ticket.env);
     Some(ticket.token)
+}
+
+/// A shell tab whose `claude` goes through the wrapper.
+struct ShellLink<'a> {
+    home: &'a std::path::Path,
+    tab: TabId,
+    account: Option<AccountId>,
+    bin: &'a std::path::Path,
+    cwd: &'a str,
+}
+
+/// Gives a shell tab what a Claude tab gets at its start, held for the wrapper: links in its env, flags in a variable.
+fn link_shell(
+    app: &AppHandle,
+    accounts: &Accounts,
+    live: &Live,
+    request: &mut SpawnRequest,
+    shell: &ShellLink,
+) -> (Option<String>, Option<String>) {
+    // Stands in for the `claude` the wrapper starts, so the links' flags land here and not on the shell.
+    let mut claude = SpawnRequest {
+        program: String::new(),
+        args: Vec::new(),
+        cwd: None,
+        cols: 0,
+        rows: 0,
+        claude_config_dir: None,
+        env: Vec::new(),
+        dirs: Vec::new(),
+        tab_env: Vec::new(),
+    };
+    let token = link_messages(app, accounts, &mut claude, shell.home, shell.tab);
+    let live_token = shell.account.and_then(|account| {
+        link_live(
+            live,
+            accounts,
+            &mut claude,
+            (shell.tab, account),
+            (shell.home, shell.cwd),
+        )
+    });
+    // The tab's own PATH, when it sets one, is the one the wrapper goes in front of.
+    let path = request
+        .tab_env
+        .iter()
+        .find(|var| var.name.eq_ignore_ascii_case("PATH"))
+        .map(|var| std::ffi::OsString::from(&var.value))
+        .or_else(|| std::env::var_os("PATH"));
+    let pipe = crate::open::pipe::name(&app.config().identifier);
+    request.env.extend(claude.env);
+    request.env.extend(wrapper::shell_env(
+        shell.bin,
+        shell.tab,
+        pipe,
+        &claude.args,
+        path,
+    ));
+    request.args = wrapper::powershell_args(&request.program, std::mem::take(&mut request.args));
+    (token, live_token)
 }
 
 /// With live cards on, gives the tab its status line settings and token; off leaves the spawn as it was.

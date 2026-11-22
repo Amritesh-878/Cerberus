@@ -1,5 +1,5 @@
 pub mod launch;
-mod pipe;
+pub(crate) mod pipe;
 mod shell;
 
 use std::{fmt, io};

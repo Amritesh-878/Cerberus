@@ -26,6 +26,7 @@ mod suggestions;
 mod tasks;
 #[cfg(windows)]
 mod winsec;
+mod wrapper;
 
 use std::sync::Arc;
 
@@ -44,7 +45,14 @@ use crate::saved::Saved;
 use crate::services::Services;
 use crate::suggestions::Suggestions;
 
-pub use crate::open::console;
+/// The console command: `cerberus open`, or the `claude` wrapper when a shell tab runs it under that name.
+pub fn console() -> std::process::ExitCode {
+    if wrapper::called_as_wrapper() {
+        wrapper::run()
+    } else {
+        open::console()
+    }
+}
 
 /// The `cerberus-mcp` helper's whole life: MCP on stdio until its `claude` closes it.
 pub fn mcp_server() {
@@ -86,12 +94,18 @@ pub fn run() {
         .manage(PrCache::default())
         .manage(panel::Roots::default())
         .manage(ChatFinder::default())
+        .manage(wrapper::Wrapped::default())
         .setup(move |app| {
             let paths = app.path();
             let config_dir = paths.app_config_dir()?;
             app.manage(Accounts::new(&config_dir, paths.home_dir()?));
             app.manage(Suggestions::new(&paths.app_data_dir()?));
             app.manage(Messages::prepare(&paths.app_data_dir()?));
+            // Without it shell tabs start as before, and a `claude` typed in one gets the quiet bar.
+            let bin = wrapper::install(&paths.app_data_dir()?)
+                .inspect_err(|e| eprintln!("the claude wrapper is off: {e}"))
+                .ok();
+            app.manage(wrapper::Bin(bin));
             // Without its pipe the bridge is off, and every tab starts as it did before.
             let bridge =
                 Bridge::start(messages::AppHooks(app.handle().clone())).unwrap_or_else(|e| {
