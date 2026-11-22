@@ -657,17 +657,17 @@ fn a_shell_tabs_link_stays_quiet_while_no_claude_has_been_typed() {
     let (tx, snapshots) = mpsc::channel();
     let bridge = Bridge::start(TestHooks(Mutex::new(tx))).unwrap();
 
+    let born = Instant::now();
     bridge.register_shell(5, Path::new("acc-a")).unwrap();
 
-    // Past the wait a plain tab is marked off; the snapshot that wait sends shows no note.
-    thread::sleep(HELLO_WAIT);
-    let deadline = Instant::now() + WAIT;
-    let mut last = None;
-    while let Ok(snapshot) = snapshots.recv_timeout(Duration::from_millis(300)) {
-        last = Some(snapshot.notes);
-        assert!(Instant::now() < deadline);
+    // Every snapshot up to and including the one the hello wait sends, past which a plain tab is off, shows no note.
+    loop {
+        let snapshot = snapshots.recv_timeout(WAIT).unwrap();
+        assert!(snapshot.notes.is_empty(), "{:?}", snapshot.notes);
+        if born.elapsed() >= HELLO_WAIT {
+            break;
+        }
     }
-    assert_eq!(last, Some(Vec::new()));
 }
 
 #[test]
