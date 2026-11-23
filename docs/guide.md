@@ -398,7 +398,7 @@ JSON on to it unchanged, and keeps its `padding` and `refreshInterval`. On Windo
 Claude Code runs status lines in PowerShell; there Cerberus leaves your status line alone, and the
 Context card says the chat can't report.
 
-**Warn when an account passes N% of its 5-hour limit** (Accounts, under Claude tabs; 85% by
+**Warn when an account passes N% of its 5-hour limit** (Accounts, under Claude tabs; 90% by
 default) shows a banner over the chat and, with desktop alerts on, a notification: "work is at 87%,
 resets 6:40 pm". It comes once per account per 5-hour window. The banner lists **Move to
 <account>** for each signed-in account below the line; a click opens the usual move confirm

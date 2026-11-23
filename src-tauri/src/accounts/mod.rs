@@ -1274,15 +1274,15 @@ mod tests {
     }
 
     #[test]
-    fn live_cards_start_on_at_85_and_the_threshold_stays_in_range() {
+    fn live_cards_start_on_at_90_and_the_threshold_stays_in_range() {
         let home = TestDir::new();
         let accounts = Accounts::new(&home.path().join("app"), home.path().to_path_buf());
 
         let fresh = accounts.load().unwrap();
         assert!(fresh.live);
-        assert_eq!(fresh.warn_at, 85);
+        assert_eq!(fresh.warn_at, 90);
         assert!(!accounts.set_live(false).unwrap().live);
-        assert_eq!(accounts.set_warn_at(90).unwrap().warn_at, 90);
+        assert_eq!(accounts.set_warn_at(85).unwrap().warn_at, 85);
         assert_eq!(accounts.set_warn_at(10).unwrap().warn_at, 50);
         assert_eq!(accounts.set_warn_at(100).unwrap().warn_at, 99);
         let saved = accounts.load().unwrap();

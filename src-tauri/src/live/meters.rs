@@ -8,7 +8,7 @@ use crate::accounts::{AccountId, KeptUsage, UsageWindow};
 use crate::live::event::{Status, Window};
 use crate::saved::TabId;
 
-pub const DEFAULT_WARN_AT: u8 = 85;
+pub const DEFAULT_WARN_AT: u8 = 90;
 // Reports of one 5-hour window may round its reset differently; the next window is hours away.
 const SAME_WINDOW_S: u64 = 10 * 60;
 // Replies before an account with no numbers counts as one that doesn't report them, not one still loading.
