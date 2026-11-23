@@ -47,7 +47,7 @@ mod tests {
     }
 
     /// Commands that only touch memory, so they may run inline on a worker; any other plain `fn` command would block one.
-    const INLINE: [&str; 9] = [
+    const INLINE: [&str; 10] = [
         "bridge_discard",
         "bridge_snapshot",
         "chat_find_close",
@@ -57,6 +57,7 @@ mod tests {
         "services_view",
         "task_default_prompt",
         "task_worktree_defaults",
+        "wrapper_failure",
     ];
 
     fn plain_commands(dir: &Path, found: &mut Vec<String>) {
