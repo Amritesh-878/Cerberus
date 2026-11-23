@@ -672,8 +672,29 @@ export function App() {
     const next = repointed(now, current);
     if (next !== now) setTree(next);
   });
-  // Who shares a login or an organization, read again whenever the accounts change.
-  const [logins] = createResource(profiles, accountLogins);
+  // A tab starting may follow a `/login` in its folder, so its account's sign-in and login are read again then.
+  const [loginsChecked, setLoginsChecked] = createSignal(0);
+  let runsSeen = new Map<TabId, number>();
+  createEffect(() => {
+    const now = new Map(startedIds().map((id) => [id, runOf(id)]));
+    const started = new Set<AccountId>();
+    for (const [id, run] of now) {
+      if (run === 0 || runsSeen.get(id) === run) continue;
+      const account = untrack(() => tabById(id)?.launch.account?.id);
+      if (account != null) started.add(account);
+    }
+    runsSeen = now;
+    if (started.size === 0) return;
+    untrack(() => {
+      statuses.refresh([...started]);
+      setLoginsChecked((n) => n + 1);
+    });
+  });
+  // Who shares a login or an organization, from each folder's own file as it is now, not as when it was added.
+  const [logins] = createResource(() => {
+    const current = profiles();
+    return current && { current, checked: loginsChecked() };
+  }, accountLogins);
   const defaultTarget = () => {
     const current = profiles();
     if (!current) return undefined;
