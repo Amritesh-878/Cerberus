@@ -40,6 +40,10 @@ struct Fixture {
 }
 
 fn start(warn_at: u8) -> Fixture {
+    start_in(warn_at, Shell::Posix)
+}
+
+fn start_in(warn_at: u8, shell: Shell) -> Fixture {
     let dir = TestDir::new();
     let (tx, views) = mpsc::channel();
     let warnings = Arc::default();
@@ -49,7 +53,7 @@ fn start(warn_at: u8) -> Fixture {
         warn_at,
     };
     let helper = PathBuf::from("/app/cerberus-live");
-    let live = Live::start(dir.path(), helper, Shell::Posix, sink).unwrap();
+    let live = Live::start(dir.path(), helper, shell, sink).unwrap();
     Fixture {
         live,
         views,
@@ -285,6 +289,57 @@ fn hook(env: &Env, input: &str) {
     assert!(
         out.is_empty(),
         "a hook prints nothing, so it changes nothing in Claude Code"
+    );
+}
+
+#[test]
+fn replies_from_a_tab_that_keeps_its_own_status_line_never_mark_the_plan_silent() {
+    let fx = start_in(85, Shell::PowerShell);
+    let project = fx.dir.path().join("work/.claude");
+    std::fs::create_dir_all(&project).unwrap();
+    std::fs::write(
+        project.join("settings.json"),
+        json!({"statusLine": {"type": "command", "command": "my-line"}}).to_string(),
+    )
+    .unwrap();
+    let theirs = fx
+        .live
+        .register(4, 1, &fx.dir.path().join("work"), fx.dir.path())
+        .unwrap();
+    let ours = fx
+        .live
+        .register(7, 2, fx.dir.path(), fx.dir.path())
+        .unwrap();
+    // The views from registering are stale.
+    while fx.views.try_recv().is_ok() {}
+    let silent =
+        |view: &View, account| view.meters.iter().any(|m| m.account == account && m.silent);
+    // Each reply changes the view once, so waiting for it keeps the replies in order.
+    let replies = |ticket: &Ticket| {
+        let mut last = None;
+        for _ in 0..3 {
+            hook(&env_of(ticket), crate::live::hooks::tests::FAKE_STOP);
+            last = Some(fx.views.recv_timeout(Duration::from_secs(5)).unwrap());
+        }
+        last.unwrap()
+    };
+
+    let after_theirs = replies(&theirs);
+    let after_ours = replies(&ours);
+
+    assert!(
+        after_theirs
+            .tabs
+            .iter()
+            .any(|t| t.tab == 4 && t.kept_theirs)
+    );
+    assert!(
+        !silent(&after_theirs, 1),
+        "that tab can't report usage, so its replies prove nothing"
+    );
+    assert!(
+        silent(&after_ours, 2),
+        "a tab with Cerberus's line still counts"
     );
 }
 
