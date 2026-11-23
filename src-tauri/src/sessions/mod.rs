@@ -159,7 +159,8 @@ pub fn on_disk_case(folder: &str) -> String {
         });
         match found {
             Some(found) => real.push(found),
-            None => return folder.to_owned(),
+            // A short 8.3 name or a missing part isn't listed under its own spelling, so it stays as typed.
+            None => real.push(name),
         }
     }
     let real = real.to_string_lossy().into_owned();
@@ -376,15 +377,16 @@ mod tests {
         let real = dir.path().join("Cerberus").join("Code");
         fs::create_dir_all(&real).unwrap();
         let typed = dir.path().join("cerberus").join("CODE");
-        let missing = dir.path().join("cerberus").join("gone");
+        let missing = dir.path().join("cerberus").join("GONE");
 
         let found = on_disk_case(&typed.to_string_lossy());
 
+        // The test folder itself may hold a short 8.3 name, which also stays as typed.
         assert_eq!(found, real.to_string_lossy());
         assert_eq!(
             on_disk_case(&missing.to_string_lossy()),
-            missing.to_string_lossy(),
-            "a folder that isn't there stays as given"
+            dir.path().join("Cerberus").join("GONE").to_string_lossy(),
+            "a part that isn't there stays as typed, the rest takes the disk's case"
         );
     }
 
