@@ -188,8 +188,20 @@ fn start(mut command: Command) -> ExitCode {
     }
 }
 
-/// The wrapper's folder, or `None` when it could not be put in place and shell tabs start as before.
-pub struct Bin(pub Option<PathBuf>);
+/// The wrapper's folder, or why it could not be put in place, in which case shell tabs start as before.
+pub struct Bin(pub Result<PathBuf, String>);
+
+impl Bin {
+    pub fn dir(&self) -> Option<&Path> {
+        self.0.as_deref().ok()
+    }
+}
+
+/// Why `claude` typed in a shell tab runs without the tab's links, for Accounts to say; `None` when the wrapper is in place.
+#[tauri::command]
+pub fn wrapper_failure(bin: tauri::State<'_, Bin>) -> Option<String> {
+    bin.0.as_ref().err().cloned()
+}
 
 /// Shell tabs whose `claude` came through the wrapper, by the wrapper's pid while it runs.
 #[derive(Default)]
@@ -277,16 +289,32 @@ pub fn powershell_args(program: &str, args: Vec<String>) -> Vec<String> {
     args
 }
 
+/// The console command's names beside the app, first found wins: the Windows installer renames it to `cerberus.com`.
+#[cfg(windows)]
+const CLI_NAMES: [&str; 2] = ["cerberus-cli.exe", "cerberus.com"];
+#[cfg(unix)]
+const CLI_NAMES: [&str; 1] = ["cerberus-cli"];
+
 /// Puts the wrapper in `<data dir>/bin` beside nothing else, and returns that folder for shell tabs' PATH.
 pub fn install(data_dir: &Path) -> io::Result<PathBuf> {
-    let cli =
-        env::current_exe()?.with_file_name(format!("cerberus-cli{}", env::consts::EXE_SUFFIX));
-    if !cli.is_file() {
-        return Err(io::Error::new(
-            io::ErrorKind::NotFound,
-            "cerberus-cli is not beside the app",
-        ));
-    }
+    let exe = env::current_exe()?;
+    let app_dir = exe
+        .parent()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "the app has no folder"))?;
+    install_beside(app_dir, data_dir)
+}
+
+fn install_beside(app_dir: &Path, data_dir: &Path) -> io::Result<PathBuf> {
+    let cli = CLI_NAMES
+        .iter()
+        .map(|name| app_dir.join(name))
+        .find(|path| path.is_file())
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("{} is not in {}", CLI_NAMES.join(" or "), app_dir.display()),
+            )
+        })?;
     let bin = data_dir.join(BIN);
     fs::create_dir_all(&bin)?;
     place(
@@ -395,6 +423,65 @@ mod tests {
 
         assert!(held);
         assert!(!other);
+    }
+
+    /// An install folder holding the app and the console command under `cli`, and an empty app data folder.
+    fn installed(cli: Option<&str>) -> (PathBuf, PathBuf, PathBuf) {
+        let root = std::env::temp_dir().join(format!(
+            "cerberus-install-{}-{}",
+            std::process::id(),
+            cli.unwrap_or("none")
+        ));
+        let _ = fs::remove_dir_all(&root);
+        let app = root.join("Cerberus");
+        let data = root.join("data");
+        fs::create_dir_all(&app).unwrap();
+        fs::write(
+            app.join(format!("cerberus{}", env::consts::EXE_SUFFIX)),
+            "app",
+        )
+        .unwrap();
+        if let Some(cli) = cli {
+            fs::write(app.join(cli), "the console command").unwrap();
+        }
+        (root, app, data)
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn the_installer_s_cerberus_com_becomes_the_wrapper() {
+        let (root, app, data) = installed(Some("cerberus.com"));
+
+        let bin = install_beside(&app, &data).unwrap();
+        let copied = fs::read_to_string(bin.join("claude.exe"));
+        let _ = fs::remove_dir_all(&root);
+
+        assert_eq!(copied.unwrap(), "the console command");
+    }
+
+    #[test]
+    fn a_build_s_cerberus_cli_becomes_the_wrapper() {
+        let cli = format!("cerberus-cli{}", env::consts::EXE_SUFFIX);
+        let (root, app, data) = installed(Some(&cli));
+
+        let bin = install_beside(&app, &data).unwrap();
+        let wrapper = bin.join(format!("claude{}", env::consts::EXE_SUFFIX));
+        let placed = wrapper.exists();
+        let _ = fs::remove_dir_all(&root);
+
+        assert!(placed);
+    }
+
+    #[test]
+    fn no_console_command_says_which_names_it_looked_for() {
+        let (root, app, data) = installed(None);
+
+        let error = install_beside(&app, &data).unwrap_err().to_string();
+        let _ = fs::remove_dir_all(&root);
+
+        assert!(error.contains("cerberus-cli"), "{error}");
+        #[cfg(windows)]
+        assert!(error.contains("cerberus.com"), "{error}");
     }
 
     fn strings(list: &[&str]) -> Vec<String> {

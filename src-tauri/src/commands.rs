@@ -129,7 +129,10 @@ pub async fn pty_spawn(
         }
         let bridge = Bridge::clone(&app.state::<Bridge>());
         let live = Live::clone(&app.state::<Live>());
-        let bin = app.state::<wrapper::Bin>().0.clone();
+        let bin = app
+            .state::<wrapper::Bin>()
+            .dir()
+            .map(std::path::Path::to_path_buf);
         let (token, live_token) = match (claude_home.as_deref(), shell_home.as_deref(), tab) {
             (Some(home), _, Some(tab)) => (
                 link_messages(&app, &accounts, &mut request, home, (tab, false)),

@@ -177,6 +177,11 @@ export function crossesOrganization(
 export const OTHER_ORGANIZATION =
   "Other organization: Claude rereads the chat, so it starts slower.";
 
+/** Why the `claude` wrapper for shell tabs isn't in place, or `null` when it is. */
+export function wrapperFailure(): Promise<string | null> {
+  return invoke<string | null>("wrapper_failure");
+}
+
 export function setDefaultAccount(id: AccountId): Promise<Profiles> {
   return invoke<Profiles>("set_default_account", { id });
 }

@@ -112,6 +112,8 @@ export async function renderApp(
           return [];
         case "account_logins":
           return [];
+        case "wrapper_failure":
+          return null;
         case "tab_has_chat":
           return true;
         case "services_view":

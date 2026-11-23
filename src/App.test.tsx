@@ -133,6 +133,31 @@ test("the walkthrough's last step asks only which account new tabs use", async (
   expect(section?.querySelectorAll("select, input")).toHaveLength(1);
 });
 
+test("the accounts screen says when typing claude in a shell tab won't have messages, and why", async () => {
+  const root = await renderApp(() => SAVED, {
+    wrapper_failure: () =>
+      String.raw`cerberus-cli.exe or cerberus.com is not in C:\Cerberus`,
+  });
+
+  click(root, "Accounts");
+  await settled();
+  await settled();
+
+  expect(root.querySelector(".setting-warning")?.textContent).toBe(
+    String.raw`Typing claude in a shell tab won't have messages: cerberus-cli.exe or cerberus.com is not in C:\Cerberus`,
+  );
+});
+
+test("the accounts screen says nothing about shell tabs when the wrapper is in place", async () => {
+  const root = await renderApp(() => SAVED);
+
+  click(root, "Accounts");
+  await settled();
+  await settled();
+
+  expect(root.querySelector(".setting-warning")).toBeNull();
+});
+
 test("the accounts screen sets where the folder picker opens", async () => {
   let saved: Profiles = SAVED;
   const root = await renderApp(() => saved, {
