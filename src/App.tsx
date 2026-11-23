@@ -1083,7 +1083,7 @@ export function App() {
   // Each open pane's way to type into its program, for the panel's prefills.
   const typers = new Map<TabId, (text: string) => void>();
   const senders = new Map<TabId, Sender>();
-  // A folder added to a running chat waits here until the chat is idle with nothing typed, then goes as `/add-dir` (DEC-002 addendum).
+  // A folder added to a running chat waits here until the chat is idle with nothing typed, then goes as `/add-dir`, the one command sent with Enter.
   const addDirs = new Map<TabId, string>();
   const sendAddDir = (id: TabId) => {
     const folder = addDirs.get(id);

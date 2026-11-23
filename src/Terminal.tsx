@@ -145,7 +145,7 @@ export function TerminalView(props: {
   onChat?: (chat: HandChat) => void;
   /** Hands over a function that types into this pane without Enter; the returned function takes it back. */
   onTyper?: (type: (text: string) => void) => () => void;
-  /** Hands over the one way to send a local command with Enter (DEC-002's `/add-dir`), and whether the input is empty. */
+  /** Hands over the one way to send a local command with Enter (only `/add-dir`), and whether the input is empty. */
   onSender?: (sender: Sender) => () => void;
 }) {
   let host: HTMLDivElement | undefined;
