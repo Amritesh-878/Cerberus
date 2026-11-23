@@ -103,6 +103,12 @@ function copySelection(term: Terminal): void {
   });
 }
 
+/** Sends one local command with Enter; only for Claude Code's own `/add-dir`, never a prompt. */
+export interface Sender {
+  empty: () => boolean;
+  send: (command: string) => void;
+}
+
 export function TerminalView(props: {
   tab: number;
   spec: SpawnSpec;
@@ -121,6 +127,8 @@ export function TerminalView(props: {
   onChat?: (chat: HandChat) => void;
   /** Hands over a function that types into this pane without Enter; the returned function takes it back. */
   onTyper?: (type: (text: string) => void) => () => void;
+  /** Hands over the one way to send a local command with Enter (DEC-002's `/add-dir`), and whether the input is empty. */
+  onSender?: (sender: Sender) => () => void;
 }) {
   let host: HTMLDivElement | undefined;
   const [notice, setNotice] = createSignal<string>();
@@ -255,13 +263,27 @@ export function TerminalView(props: {
       session.write(input);
     };
     element.addEventListener("paste", onPaste, true);
+    // Anything typed since the last Enter or Ctrl+C is still in Claude Code's input, so nothing may be sent over it.
+    let typed = false;
     const untype = props.onTyper?.((text) => {
+      typed = true;
       session.write(asPaste(text));
       term.focus();
+    });
+    const unsend = props.onSender?.({
+      empty: () => !typed,
+      send: (command) => {
+        session.write(`${asPaste(command)}\r`);
+      },
     });
 
     const subscriptions = [
       term.onData((data) => {
+        const cleared = data.includes("\r") || data.includes("\x03");
+        // Escape sequences (focus, cursor reports, arrows) move nothing into the input.
+        typed = cleared
+          ? false
+          : typed || (data.length > 0 && !data.startsWith("\x1b"));
         session.write(data);
       }),
       term.onResize((size) => {
@@ -288,6 +310,7 @@ export function TerminalView(props: {
     onCleanup(() => {
       disposed = true;
       untype?.();
+      unsend?.();
       clearTimeout(noticeTimer);
       observer.disconnect();
       refit.cancel();

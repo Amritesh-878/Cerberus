@@ -53,6 +53,7 @@ import {
 } from "./board";
 import { type FoundChat, projectFor, resumeFound } from "./chatSearch";
 import {
+  addDirCommand,
   applyEnvironment,
   type EnvironmentChange,
   tabMoveFolder,
@@ -126,7 +127,7 @@ import {
   updateService,
 } from "./services";
 import { ServicesRailIcon, ServicesSection } from "./ServicesSection";
-import { TerminalView } from "./Terminal";
+import { type Sender, TerminalView } from "./Terminal";
 import {
   addProject,
   addTab,
@@ -1060,6 +1061,18 @@ export function App() {
 
   // Each open pane's way to type into its program, for the panel's prefills.
   const typers = new Map<TabId, (text: string) => void>();
+  const senders = new Map<TabId, Sender>();
+  // A folder added to a running chat waits here until the chat is idle with nothing typed, then goes as `/add-dir` (DEC-002 addendum).
+  const addDirs = new Map<TabId, string>();
+  const sendAddDir = (id: TabId) => {
+    const folder = addDirs.get(id);
+    const sender = senders.get(id);
+    if (folder === undefined || !sender || lastState.get(id) !== "idle") return;
+    if (!sender.empty()) return;
+    addDirs.delete(id);
+    sender.send(addDirCommand(folder));
+    setAlert(id, `Added ${folder} to the chat`);
+  };
   // A started task's prompt, typed once its chat is ready.
   const prefills = new Prefills();
   // Each chat's limit popup, once per limit window, one shown at a time.
@@ -1349,10 +1362,10 @@ export function App() {
     setTree,
     runOf,
     setRun,
-    typeInto: (id: TabId, text: string) => {
-      if (tabById(id)?.launch.program === "claude" && isRunning(id)) {
-        typers.get(id)?.(text);
-      }
+    addDir: (id: TabId, folder: string) => {
+      if (tabById(id)?.launch.program !== "claude" || !isRunning(id)) return;
+      addDirs.set(id, folder);
+      sendAddDir(id);
     },
     setAlert,
   };
@@ -1840,7 +1853,10 @@ export function App() {
                                 prefills.reported(id, state, typers.get(id));
                                 limitReported(id, state);
                                 lastState.set(id, state.state);
-                                if (state.state === "idle") checkHandoff(id);
+                                if (state.state === "idle") {
+                                  checkHandoff(id);
+                                  sendAddDir(id);
+                                }
                                 notify(id, state);
                                 setBoard((b) =>
                                   reported(b, id, state, shown()),
@@ -1859,6 +1875,13 @@ export function App() {
                                 return () => {
                                   if (typers.get(id) === type)
                                     typers.delete(id);
+                                };
+                              }}
+                              onSender={(sender) => {
+                                senders.set(id, sender);
+                                return () => {
+                                  if (senders.get(id) === sender)
+                                    senders.delete(id);
                                 };
                               }}
                             />

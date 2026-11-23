@@ -32,7 +32,7 @@ export function tabMoveFolder(tab: TabId, folder: string): Promise<void> {
   return invoke("tab_move_folder", { tab, folder });
 }
 
-/** Typed into a running chat for the user to send: control characters dropped, so never an Enter. */
+/** The `/add-dir` line, control characters dropped, so the only Enter is the one the sender adds. */
 export function addDirCommand(folder: string): string {
   return `/add-dir ${folder.replace(/\p{Cc}/gu, "")}`;
 }
@@ -59,8 +59,8 @@ export interface EnvironmentDeps {
   setTree: (tree: Tree) => void;
   runOf: (id: TabId) => number;
   setRun: (id: TabId, run: number) => void;
-  /** Types into the tab's running Claude Code chat; does nothing for a shell or a stopped chat. */
-  typeInto: (id: TabId, text: string) => void;
+  /** Sends `/add-dir <folder>` to the tab's running Claude Code chat once it is idle with an empty input; nothing for a shell or a stopped chat. */
+  addDir: (id: TabId, folder: string) => void;
   setAlert: (id: TabId, alert: string | undefined) => void;
 }
 
@@ -79,7 +79,7 @@ export async function applyEnvironment(
   if (!plan.restart) {
     deps.setTree(setFolders(deps.tree(), id, change.cwd, change.dirs));
     const first = plan.added[0];
-    if (first !== undefined) deps.typeInto(id, addDirCommand(first));
+    if (first !== undefined) deps.addDir(id, first);
     return;
   }
   const run = deps.runOf(id);

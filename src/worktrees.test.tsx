@@ -6,6 +6,7 @@ import {
   button,
   cleanup,
   click,
+  emit,
   field,
   open,
   ptyCore,
@@ -221,7 +222,7 @@ test("a repo the chat wrote into shows in Changes, marked, with its branch and O
   ]);
 });
 
-test("Add to the tab saves the written repo as the tab's folder and types /add-dir, never Enter", async () => {
+test("Add to the tab saves the written repo as the tab's folder and sends /add-dir once the chat is idle", async () => {
   const core = worktreeCore();
   const root = await renderApp(() => PROFILES, core.core);
   await open(root, "planner");
@@ -235,7 +236,10 @@ test("Add to the tab saves the written repo as the tab's folder and types /add-d
   await settle();
 
   expect(core.saves.at(-1)?.tabs.find((t) => t.id === 3)?.dirs).toEqual([WT]);
-  expect(core.writes).toEqual([`\x1b[200~/add-dir ${WT}\x1b[201~`]);
+  expect(core.writes).toEqual([]);
+  emit(core.pty.spawned, 0, { state: "idle" });
+  await settle();
+  expect(core.writes).toEqual([`\x1b[200~/add-dir ${WT}\x1b[201~\r`]);
 });
 
 test("the worktree list shows each branch, PR state, uncommitted work and the tabs in it, with stale ones marked", async () => {
