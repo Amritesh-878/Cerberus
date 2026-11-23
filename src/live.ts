@@ -39,7 +39,7 @@ export function meterLevel(
 /** How a usage window reads now: its numbers, reset since (Claude Code starts a new one on the next reply), or nothing known. */
 export type WindowState =
   | { kind: "unknown" }
-  | { kind: "reset" }
+  | { kind: "reset"; resetsAt: number }
   | { kind: "known"; used: number; resetsAt: number; asOf: number | null };
 
 export function windowState(
@@ -48,7 +48,7 @@ export function windowState(
 ): WindowState {
   if (!window) return { kind: "unknown" };
   if (window.reset === true || window.resetsAt <= nowS)
-    return { kind: "reset" };
+    return { kind: "reset", resetsAt: window.resetsAt };
   return {
     kind: "known",
     used: window.used,
@@ -135,6 +135,8 @@ export interface Meter {
   account: AccountId;
   fiveHour: LiveWindow | null;
   sevenDay: LiveWindow | null;
+  /** Replied several times since the app started with no usage numbers: its plan doesn't report them. */
+  silent?: boolean;
 }
 
 export interface LiveWarning {

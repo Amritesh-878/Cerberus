@@ -391,9 +391,13 @@ impl Core {
     fn hooked(&self, token: &str, event: &Event) {
         {
             let mut state = self.state();
-            let Some(&Link { tab, .. }) = state.links.get(token) else {
+            let Some(&Link { tab, account }) = state.links.get(token) else {
                 return;
             };
+            // Only the Stop hook lists tasks, so this is a finished reply.
+            if matches!(event, Event::Tasks(_)) {
+                state.meters.replied(account);
+            }
             let Some((_, work)) = state.work.get_mut(&tab) else {
                 return;
             };

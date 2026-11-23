@@ -150,7 +150,9 @@ function WindowLine(props: {
         when={known()}
         fallback={
           <span class="usage-unknown">
-            {props.state.kind === "reset" ? "reset" : "unknown"}
+            {props.state.kind === "reset"
+              ? `Reset at ${resetText(props.state.resetsAt)} · updates after a reply`
+              : "unknown"}
           </span>
         }
       >
@@ -220,26 +222,33 @@ export function UsageCard(props: {
                   })()}
                 </span>
               </div>
-              <WindowLine
-                name="5h"
-                state={windowState(meterOf(account)?.fiveHour, now())}
-                warnAt={props.profiles.warnAt}
-                color={accountColor(
-                  account.id,
-                  savedColor(props.profiles, account.id),
-                )}
-                nowS={now()}
-              />
-              <WindowLine
-                name="7d"
-                state={windowState(meterOf(account)?.sevenDay, now())}
-                warnAt={props.profiles.warnAt}
-                color={accountColor(
-                  account.id,
-                  savedColor(props.profiles, account.id),
-                )}
-                nowS={now()}
-              />
+              <Show
+                when={meterOf(account)?.silent !== true}
+                fallback={
+                  <p class="usage-silent">This plan doesn't report usage</p>
+                }
+              >
+                <WindowLine
+                  name="5h"
+                  state={windowState(meterOf(account)?.fiveHour, now())}
+                  warnAt={props.profiles.warnAt}
+                  color={accountColor(
+                    account.id,
+                    savedColor(props.profiles, account.id),
+                  )}
+                  nowS={now()}
+                />
+                <WindowLine
+                  name="7d"
+                  state={windowState(meterOf(account)?.sevenDay, now())}
+                  warnAt={props.profiles.warnAt}
+                  color={accountColor(
+                    account.id,
+                    savedColor(props.profiles, account.id),
+                  )}
+                  nowS={now()}
+                />
+              </Show>
             </div>
           )}
         </For>
