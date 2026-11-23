@@ -46,6 +46,20 @@ export function asPaste(text: string): string {
   return `\x1b[200~${clean}\x1b[201~`;
 }
 
+const PASTE_START = "\x1b[200~";
+const PASTE_END = "\x1b[201~";
+
+/** Whether a program's input line still holds text once `data` reaches it: Enter and Ctrl+C empty it; a key or a paste fills it. */
+export function holdsText(before: boolean, data: string): boolean {
+  // A bracketed paste's line breaks are text, not Enter.
+  if (data.startsWith(PASTE_START) && data.endsWith(PASTE_END)) {
+    return before || data.length > PASTE_START.length + PASTE_END.length;
+  }
+  if (data.includes("\r") || data.includes("\x03")) return false;
+  // Other escape sequences (focus, cursor reports, arrows) move nothing into the input.
+  return before || (data.length > 0 && !data.startsWith("\x1b"));
+}
+
 /** Input to send in place of a paste, or `undefined` to let xterm paste the text. */
 export function pasteInput(
   pasted: PastedData,

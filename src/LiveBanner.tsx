@@ -3,14 +3,13 @@ import { createSignal, For, onCleanup, Show } from "solid-js";
 import { type AccountId, type Profiles, savedColor } from "./accounts";
 import { AccountDot } from "./icons";
 import { type LiveWarning, warningText } from "./live";
-import type { TabId } from "./tree";
 
 /** The low-limit warnings whose popup was put off: Show opens it again over its tab, Dismiss ends it for the window. */
 export function LiveBanner(props: {
   warnings: LiveWarning[];
   profiles: Profiles;
-  /** The tab's title, or `undefined` once it is closed and has nothing to move. */
-  tabTitle: (tab: TabId) => string | undefined;
+  /** The warned tab's title, or `undefined` when Show could open no move options for it. */
+  showable: (warning: LiveWarning) => string | undefined;
   onShow: (warning: LiveWarning) => void;
   onDismiss: (account: AccountId) => void;
 }) {
@@ -32,7 +31,7 @@ export function LiveBanner(props: {
           />
           <span>{warningText(nameOf(warning.account), warning)}</span>
           <span class="spacer" />
-          <Show when={props.tabTitle(warning.tab)}>
+          <Show when={props.showable(warning)}>
             {(title) => (
               <button
                 type="button"

@@ -17,6 +17,7 @@ import type { LiveState } from "./board";
 import { terminalFont } from "./font";
 import {
   asPaste,
+  holdsText,
   PLATFORM,
   pasteInput,
   type TabKind,
@@ -276,6 +277,8 @@ export function TerminalView(props: {
       ? undefined
       : start(props.input);
 
+    // Anything typed or pasted since the last Enter or Ctrl+C is still in Claude Code's input, so nothing may be sent over it.
+    let typed = false;
     // Capture phase, so an image paste never reaches xterm's own text-paste handler.
     const onPaste = (event: ClipboardEvent) => {
       const input =
@@ -284,11 +287,11 @@ export function TerminalView(props: {
       if (!input) return;
       event.preventDefault();
       event.stopPropagation();
+      // The program reads the image off the clipboard into its input.
+      typed = true;
       session?.write(input);
     };
     element.addEventListener("paste", onPaste, true);
-    // Anything typed since the last Enter or Ctrl+C is still in Claude Code's input, so nothing may be sent over it.
-    let typed = false;
     const untype = props.onTyper?.((text) => {
       typed = true;
       session?.write(asPaste(text));
@@ -318,11 +321,7 @@ export function TerminalView(props: {
 
     const subscriptions = [
       term.onData((data) => {
-        const cleared = data.includes("\r") || data.includes("\x03");
-        // Escape sequences (focus, cursor reports, arrows) move nothing into the input.
-        typed = cleared
-          ? false
-          : typed || (data.length > 0 && !data.startsWith("\x1b"));
+        typed = holdsText(typed, data);
         session?.write(data);
       }),
       term.onResize((size) => {

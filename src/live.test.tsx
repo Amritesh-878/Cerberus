@@ -339,6 +339,50 @@ test("a warning with no signed-in account below the line offers no move", async 
   expect(() => button(popup() ?? root, "Move to personal")).toThrow();
 });
 
+test("a warning while the window is behind another waits for the focus, with a desktop notification", async () => {
+  const live = liveCore();
+  const root = await renderApp(live.profiles, live.core);
+  await open(root, "planner");
+  await emitEvent("tauri://blur");
+
+  await warn(WARNING);
+
+  expect(popup()).toBeNull();
+  expect(desktop.sent).toHaveLength(1);
+  await emitEvent("tauri://focus");
+  await settle();
+  expect(popup()?.textContent).toContain("Move planner to:");
+});
+
+test("a warning for an account its tab no longer uses opens nothing and offers no Show", async () => {
+  const live = liveCore();
+  const root = await renderApp(live.profiles, live.core);
+  await open(root, "planner");
+
+  // The planner is on work (1); the warning is about personal (0).
+  await warn({ ...WARNING, account: 0, offers: [1] });
+
+  expect(popup()).toBeNull();
+  const bar = root.querySelector<HTMLElement>(".live-warning");
+  expect(bar?.textContent).toContain("personal is at 87%");
+  expect(() => button(bar ?? root, "Show")).toThrow();
+});
+
+test("a full window's bar offers no Show, since its popup is the limit popup", async () => {
+  const live = liveCore();
+  const root = await renderApp(live.profiles, live.core);
+  await open(root, "planner");
+  await warn({ ...WARNING, used: 100 });
+
+  click(popup() ?? root, "Not now");
+  await settle();
+
+  expect(popup()).toBeNull();
+  const bar = root.querySelector<HTMLElement>(".live-warning");
+  expect(bar?.textContent).toContain("work is at 100%");
+  expect(() => button(bar ?? root, "Show")).toThrow();
+});
+
 test("a warning for a tab not on screen waits for it, with a desktop notification meanwhile", async () => {
   const live = liveCore();
   const root = await renderApp(live.profiles, live.core);

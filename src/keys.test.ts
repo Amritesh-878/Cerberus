@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import {
   asPaste,
+  holdsText,
   isReloadKey,
   type KeyChord,
   keyHelp,
@@ -75,6 +76,22 @@ test("typed text is one bracketed paste that can never press Enter or end itself
   expect(typed).toBe("\x1b[200~one\ntwo\nthree[201~\nfour\ttab\x1b[201~");
   expect(typed).not.toContain("\r");
   expect(asPaste("/compact")).toBe("\x1b[200~/compact\x1b[201~");
+});
+
+describe("holdsText", () => {
+  test.each([
+    ["a key", false, "h", true],
+    ["Enter", true, "\r", false],
+    ["Ctrl+C", true, "\x03", false],
+    ["an arrow", false, "\x1b[A", false],
+    ["a focus report", true, "\x1b[I", true],
+    ["a bracketed paste", false, "\x1b[200~hello\x1b[201~", true],
+    ["a pasted line break", false, "\x1b[200~one\rtwo\x1b[201~", true],
+    ["a pasted line break after typing", true, "\x1b[200~a\rb\x1b[201~", true],
+    ["an empty paste", false, "\x1b[200~\x1b[201~", false],
+  ])("after %s", (_name, before, data, after) => {
+    expect(holdsText(before, data)).toBe(after);
+  });
 });
 
 test("the platform comes from the user agent", () => {

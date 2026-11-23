@@ -216,6 +216,30 @@ test("/add-dir waits while the chat works or its input holds text, and goes at t
   expect(env.writes).toEqual(["h", "\r", SENT_PLANS]);
 });
 
+test("folders added in two saves while the chat works each reach it, one per idle, in order", async () => {
+  const env = envCore([PLANS, BETA]);
+  const root = await renderApp(() => PROFILES, env.core);
+  await open(root, "planner");
+  emit(env.pty.spawned, 0, { state: "working" });
+  await settle();
+  for (let save = 0; save < 2; save++) {
+    click(root, "Edit environment");
+    await settle();
+    click(dialog(), "Add folder…");
+    await settle();
+    click(dialog(), "Save");
+    await settle();
+  }
+  expect(env.writes, "working").toEqual([]);
+
+  emit(env.pty.spawned, 0, { state: "idle" });
+  await settle();
+  expect(env.writes).toEqual([SENT_PLANS]);
+  emit(env.pty.spawned, 0, { state: "working" }, { state: "idle" });
+  await settle();
+  expect(env.writes).toEqual([SENT_PLANS, SENT_PLANS.replace(PLANS, BETA)]);
+});
+
 test("adding two folders says the first is sent and the rest wait for a restart", async () => {
   const env = envCore([PLANS, BETA]);
   const root = await renderApp(() => PROFILES, env.core);

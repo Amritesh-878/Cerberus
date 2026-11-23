@@ -402,8 +402,8 @@ Context card says the chat can't report.
 
 **Warn when an account passes N% of its 5-hour limit** (Accounts, under Claude tabs; 90% by
 default) shows a popup over the tab that crossed it: "work is at 87%, resets 6:40 pm". It comes
-once per account per 5-hour window. When that tab isn't on screen, the popup waits for it and,
-with desktop alerts on, a notification says so. Like the limit popup below, it has one **Move to
+once per account per 5-hour window. When that tab isn't on screen, or the window isn't focused, the
+popup waits for it and, with desktop alerts on, a notification says so. Like the limit popup below, it has one **Move to
 <account>** button for each signed-in account below the line, the first as the default, and
 **Not now**. An account's button moves the chat in one click; nothing moves without it. **Not now**
 leaves a small bar over the chat: **Show** opens the popup again, and **Dismiss** hides it until

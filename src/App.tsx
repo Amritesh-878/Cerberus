@@ -90,7 +90,7 @@ import {
   warningText,
 } from "./live";
 import { LiveBanner } from "./LiveBanner";
-import { createNotifier, sendWarning } from "./notify";
+import { createNotifier, createWindowFocus, sendWarning } from "./notify";
 import { type Anchor, onScreen, type Side } from "./place";
 import { followOpenRequests } from "./open";
 import { Panel } from "./Panel";
@@ -592,11 +592,13 @@ export function App() {
     showPage(undefined);
     setDrawer(false);
   };
+  const windowFocused = createWindowFocus();
   const notify = createNotifier({
     tree,
     board,
     shown,
     alertsOn: alertsSetting.on,
+    focused: windowFocused,
     open: (id) => {
       setOpening(undefined);
       select(id);
@@ -618,7 +620,7 @@ export function App() {
   const live = createLiveFeed((warning) => {
     waitWarning(warning);
     // The popup is over that tab already, unless the window is behind another.
-    const seen = shown() === warning.tab && document.hasFocus();
+    const seen = shown() === warning.tab && windowFocused();
     if (!alertsSetting.on() || seen) return;
     const name =
       profiles()?.accounts.find((a) => a.id === warning.account)?.name ??
@@ -1084,13 +1086,15 @@ export function App() {
   const typers = new Map<TabId, (text: string) => void>();
   const senders = new Map<TabId, Sender>();
   // A folder added to a running chat waits here until the chat is idle with nothing typed, then goes as `/add-dir`, the one command sent with Enter.
-  const addDirs = new Map<TabId, string>();
+  // In the order added; one goes per idle report, so the next never lands on the chat while it handles the last.
+  const addDirs = new Map<TabId, string[]>();
   const sendAddDir = (id: TabId) => {
-    const folder = addDirs.get(id);
+    const [folder, ...rest] = addDirs.get(id) ?? [];
     const sender = senders.get(id);
     if (folder === undefined || !sender || lastState.get(id) !== "idle") return;
     if (!sender.empty()) return;
-    addDirs.delete(id);
+    if (rest.length > 0) addDirs.set(id, rest);
+    else addDirs.delete(id);
     sender.send(addDirCommand(folder));
     setAlert(id, `Added ${folder} to the chat`);
   };
@@ -1158,8 +1162,15 @@ export function App() {
   // The low-limit popup over the shown tab, with the core's latest numbers; a full window has the limit popup instead.
   const warnShown = createMemo(() => {
     const id = shown();
-    if (id === undefined || limitShown() !== undefined) return undefined;
-    const waiting = warnWaiting().find((w) => w.tab === id);
+    // Behind another window it would open unseen, so it waits for the focus too.
+    if (id === undefined || limitShown() !== undefined || !windowFocused())
+      return undefined;
+    if (moving().has(id)) return undefined;
+    // A warning names an account; a tab moved off it since has nothing to move away from.
+    const account = tabById(id)?.launch.account?.id;
+    const waiting = warnWaiting().find(
+      (w) => w.tab === id && w.account === account,
+    );
     if (!waiting) return undefined;
     const now =
       live().warnings.find((w) => w.account === waiting.account) ?? waiting;
@@ -1403,7 +1414,8 @@ export function App() {
     setRun,
     addDir: (id: TabId, folder: string) => {
       if (tabById(id)?.launch.program !== "claude" || !isRunning(id)) return;
-      addDirs.set(id, folder);
+      const queued = addDirs.get(id) ?? [];
+      if (!queued.includes(folder)) addDirs.set(id, [...queued, folder]);
       sendAddDir(id);
     },
     setAlert,
@@ -1757,7 +1769,14 @@ export function App() {
                   (w) => w.account !== warnShown()?.account,
                 )}
                 profiles={loaded()}
-                tabTitle={(id) => tabById(id)?.title}
+                showable={(warning) => {
+                  // A full window's popup is the limit popup, told once; a moved tab no longer uses the account.
+                  const tab = tabById(warning.tab);
+                  return warning.used < 100 &&
+                    tab?.launch.account?.id === warning.account
+                    ? tab.title
+                    : undefined;
+                }}
                 onShow={(warning) => {
                   waitWarning(warning);
                   select(warning.tab);
