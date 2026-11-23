@@ -296,8 +296,17 @@ impl Saved {
         })
     }
 
-    pub fn save(&self, tree: SavedTree) -> Result<(), TreeError> {
+    pub fn save(&self, mut tree: SavedTree) -> Result<(), TreeError> {
         tree.validate()?;
+        // Kept in the disk's own case, so a chat's project folder name matches the tab's folder.
+        for tab in &mut tree.tabs {
+            if let Some(cwd) = &mut tab.cwd {
+                *cwd = crate::sessions::on_disk_case(cwd);
+            }
+        }
+        for project in &mut tree.projects {
+            project.folder = crate::sessions::on_disk_case(&project.folder);
+        }
         let live = self.live()?;
         {
             let mut snapshot = lock(&live.snapshot);

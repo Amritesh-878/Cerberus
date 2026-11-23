@@ -83,6 +83,8 @@ pub async fn pty_spawn(
         let mut claude_home = is_claude(&request.program)
             .then(|| accounts.claude_home(account))
             .transpose()?;
+        // In the disk's case, since Claude Code names a chat's project after the folder exactly as started.
+        request.cwd = request.cwd.as_deref().map(crate::sessions::on_disk_case);
         let cwd = request
             .cwd
             .clone()
