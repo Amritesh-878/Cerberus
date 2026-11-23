@@ -201,20 +201,22 @@ test("a Continue on from the tab's menu types nothing after the move", async () 
   expect(env.writes).toEqual([]);
 });
 
-test("a move from the low-limit banner types continue too, once its confirm is clicked", async () => {
+test("a move from the low-limit popup types continue too, in one click", async () => {
   const env = limitCore([0]);
   const root = await renderApp(() => SAVED, env.core);
   await open(root, "planner");
-  await emitEvent("live", {
-    tabs: [],
-    meters: [],
-    warnings: [{ account: 1, tab: 2, used: 90, resetsAt: RESET, offers: [0] }],
-  });
+  const warning = {
+    account: 1,
+    tab: 2,
+    used: 90,
+    resetsAt: RESET,
+    offers: [0],
+  };
+  await emitEvent("live", { tabs: [], meters: [], warnings: [warning] });
+  await emitEvent("live-warning", warning);
   await settle();
 
-  click(root.querySelector(".live-warning") ?? root, "Move to personal");
-  await settle();
-  click(root.querySelector(".menu-confirm") ?? root, "Move");
+  click(popup() ?? root, "Move to personal");
   await settle();
   await settle();
   emit(env.pty.spawned, env.pty.spawned.length - 1, { state: "idle" });

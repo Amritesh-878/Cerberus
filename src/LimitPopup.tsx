@@ -9,13 +9,15 @@ import {
 import { backdropDismiss } from "./backdrop";
 import { AccountDot } from "./icons";
 import { type LimitHit, limitText, signedInOffers } from "./limits";
-import { percentText } from "./live";
+import { percentText, warningText } from "./live";
 import { keepInside } from "./ShortcutsSheet";
 import type { Statuses } from "./statuses";
 
-/** A chat hit its limit: one click moves it to an account below the line, and nothing moves without that click. */
+/** A chat hit its limit, or nears it: one click moves it to an account below the line, and nothing moves without that click. */
 export function LimitPopup(props: {
   hit: LimitHit;
+  /** Set for the low-limit warning: the share of the 5-hour window used, still under the limit. */
+  used?: number;
   /** The chat's tab title, named in the question. */
   title: string;
   profiles: Profiles;
@@ -70,7 +72,12 @@ export function LimitPopup(props: {
               id={props.hit.account}
               color={savedColor(props.profiles, props.hit.account)}
             />
-            {limitText(name(), props.hit.resetsAt)}
+            {props.used === undefined
+              ? limitText(name(), props.hit.resetsAt)
+              : warningText(name(), {
+                  used: props.used,
+                  resetsAt: props.hit.resetsAt ?? 0,
+                })}
           </h2>
         </div>
         <p id="limit-text" class="limit-text">

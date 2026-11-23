@@ -83,7 +83,12 @@ import {
   noteText,
   typeIn,
 } from "./messaging";
-import { createLiveFeed, dismissWarning, warningText } from "./live";
+import {
+  createLiveFeed,
+  dismissWarning,
+  type LiveWarning,
+  warningText,
+} from "./live";
 import { LiveBanner } from "./LiveBanner";
 import { createNotifier, sendWarning } from "./notify";
 import { type Anchor, onScreen, type Side } from "./place";
@@ -223,8 +228,6 @@ export function App() {
     at: MenuPlace;
     tab: TabId;
     chosen?: Account;
-    /** Opened from the low-limit banner, so the moved chat gets `continue` typed. */
-    fromLimit?: boolean;
   }>();
   const [sheet, setSheet] = createSignal(false);
   // The sidebar's own row menu, a layer like the tab menu above.
@@ -599,8 +602,24 @@ export function App() {
       select(id);
     },
   });
+  // Low-limit warnings whose popup waits for its tab to be shown; the core warns once per account per window.
+  const [warnWaiting, setWarnWaiting] = createSignal<readonly LiveWarning[]>(
+    [],
+  );
+  const waitWarning = (warning: LiveWarning) => {
+    setWarnWaiting((all) => [
+      ...all.filter((w) => w.account !== warning.account),
+      warning,
+    ]);
+  };
+  const warnDone = (account: AccountId) => {
+    setWarnWaiting((all) => all.filter((w) => w.account !== account));
+  };
   const live = createLiveFeed((warning) => {
-    if (!alertsSetting.on()) return;
+    waitWarning(warning);
+    // The popup is over that tab already, unless the window is behind another.
+    const seen = shown() === warning.tab && document.hasFocus();
+    if (!alertsSetting.on() || seen) return;
     const name =
       profiles()?.accounts.find((a) => a.id === warning.account)?.name ??
       "An account";
@@ -638,15 +657,17 @@ export function App() {
     if (moving().has(id)) return Promise.resolve(false);
     setMovingTab(id, account.name);
     const initialRun = runOf(id);
+    // The pane stays, paused, so the chat resumes in the same terminal with its scroll kept.
     batch(() => {
-      setRun(id, 0);
       setBoard((b) => cleared(b, id));
       setAlert(id, undefined);
       if (!quiet) select(id);
     });
     const restart = () => {
-      setMovingTab(id, undefined);
-      setRun(id, initialRun + 1);
+      batch(() => {
+        setMovingTab(id, undefined);
+        setRun(id, initialRun + 1);
+      });
     };
     return continueOnAccount(id, account.id).then(
       () => {
@@ -1134,6 +1155,23 @@ export function App() {
       },
     ),
   );
+  // The low-limit popup over the shown tab, with the core's latest numbers; a full window has the limit popup instead.
+  const warnShown = createMemo(() => {
+    const id = shown();
+    if (id === undefined || limitShown() !== undefined) return undefined;
+    const waiting = warnWaiting().find((w) => w.tab === id);
+    if (!waiting) return undefined;
+    const now =
+      live().warnings.find((w) => w.account === waiting.account) ?? waiting;
+    return now.used < 100 && now.resetsAt > Date.now() / 1000 ? now : undefined;
+  });
+  // Dismissed for the rest of its window: its popup and its bar both go.
+  const endWarning = (account: AccountId) => {
+    warnDone(account);
+    dismissWarning(account).catch((error: unknown) => {
+      console.error("could not dismiss the warning:", error);
+    });
+  };
   // The tab whose Start a task dialog is open.
   const [startingTask, setStartingTask] = createSignal<TabId>();
   // A modal dialog other than the limit popup is open.
@@ -1154,7 +1192,8 @@ export function App() {
     pillMenu() !== undefined ||
     sidebarMenu() ||
     opening() !== undefined ||
-    limitShown() !== undefined;
+    limitShown() !== undefined ||
+    warnShown() !== undefined;
   // A Claude tab in a project with a planner above it, or that is one, can start a task.
   const canStartTask = (id: TabId) => {
     const tab = tabById(id);
@@ -1714,23 +1753,16 @@ export function App() {
                 )}
               </Show>
               <LiveBanner
-                warnings={live().warnings}
+                warnings={live().warnings.filter(
+                  (w) => w.account !== warnShown()?.account,
+                )}
                 profiles={loaded()}
-                statuses={statuses}
                 tabTitle={(id) => tabById(id)?.title}
-                onContinue={(id, account, box) => {
-                  setPillMenu({
-                    at: { x: box.left, y: box.bottom },
-                    tab: id,
-                    chosen: account,
-                    fromLimit: true,
-                  });
+                onShow={(warning) => {
+                  waitWarning(warning);
+                  select(warning.tab);
                 }}
-                onDismiss={(account) => {
-                  dismissWarning(account).catch((error: unknown) => {
-                    console.error("could not dismiss the warning:", error);
-                  });
-                }}
+                onDismiss={endWarning}
               />
               <Show when={handBarShown()} keyed>
                 {(id) => (
@@ -1799,8 +1831,7 @@ export function App() {
                           }}
                         >
                           <Show
-                            when={onRemoved(id) ? 0 : runOf(id)}
-                            keyed
+                            when={!onRemoved(id) && runOf(id) !== 0}
                             fallback={
                               <Show
                                 when={moving().get(id)}
@@ -1837,6 +1868,9 @@ export function App() {
                             <TerminalView
                               tab={id}
                               spec={tab().launch.spec}
+                              run={runOf(id)}
+                              paused={moving().has(id)}
+                              note={`Moving to ${moving().get(id) ?? ""}…`}
                               kind={tabKind(
                                 tab().launch.program,
                                 ended().has(id),
@@ -2160,6 +2194,41 @@ export function App() {
                 />
               )}
             </Show>
+            <Show
+              when={(() => {
+                if (otherDialog()) return undefined;
+                const warning = warnShown();
+                const title = warning && tabById(warning.tab)?.title;
+                return warning && title !== undefined
+                  ? { warning, title }
+                  : undefined;
+              })()}
+            >
+              {(open) => (
+                <LimitPopup
+                  hit={{ ...open().warning, source: "meter" }}
+                  used={open().warning.used}
+                  title={open().title}
+                  profiles={loaded()}
+                  statuses={statuses}
+                  onContinue={(account) => {
+                    const { tab, account: from } = open().warning;
+                    endWarning(from);
+                    void continueOn(tab, account, true);
+                  }}
+                  onNotNow={() => {
+                    warnDone(open().warning.account);
+                  }}
+                  crosses={(account) =>
+                    crossesOrganization(
+                      logins(),
+                      open().warning.account,
+                      account.id,
+                    )
+                  }
+                />
+              )}
+            </Show>
             <Show when={handoffFailed()}>
               {(reason) => (
                 <NoticePopup
@@ -2284,11 +2353,7 @@ export function App() {
                     at={open.at}
                     onContinue={(account) => {
                       setPillMenu(undefined);
-                      void continueOn(
-                        open.tab,
-                        account,
-                        open.fromLimit === true,
-                      );
+                      void continueOn(open.tab, account);
                     }}
                     onResume={() => {
                       setPillMenu(undefined);

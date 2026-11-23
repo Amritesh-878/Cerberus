@@ -3,7 +3,15 @@ import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
-import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
+import {
+  createEffect,
+  createSignal,
+  on,
+  onCleanup,
+  onMount,
+  Show,
+  untrack,
+} from "solid-js";
 
 import type { LiveState } from "./board";
 import { terminalFont } from "./font";
@@ -34,6 +42,9 @@ const MISSING_NOTICE_MS = 10_000;
 const RESUMING = "Resuming chat…";
 const MISSING = "The saved chat is gone. This is a new one.";
 const ENDED = "The chat ended. Resume chat is in the tab's menu.";
+// Mouse and focus reports, bracketed paste and a hidden cursor, which a stopped program may leave on; the screen stays.
+const PROGRAM_MODES_OFF =
+  "\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1004l\x1b[?2004l\x1b[?25h\x1b[0m";
 
 /** The rows on screen as text, top to bottom. */
 function visibleLines(term: Terminal): string[] {
@@ -111,7 +122,14 @@ export interface Sender {
 
 export function TerminalView(props: {
   tab: number;
+  /** Read at each start, so a restart runs the tab as it is then. */
   spec: SpawnSpec;
+  /** A new number starts the tab's program again in this same terminal, which keeps what it showed. */
+  run: number;
+  /** The program is stopped while its chat moves; its exit shows nothing, and the next `run` starts it again. */
+  paused?: boolean;
+  /** Shown over the terminal while it is paused. */
+  note?: string;
   /** Read on each key and paste, so it follows a chat that ends or starts in the tab. */
   kind: TabKind;
   imagePasteKey: string | null;
@@ -170,9 +188,12 @@ export function TerminalView(props: {
       return false;
     });
 
-    // Read once: a pane keeps its tab and program spec for its whole life.
-    const spec = props.spec;
+    // Read once: a pane keeps its tab for its whole life.
     const tab = props.tab;
+    // Only the latest program's events count; one stopped for a move or a restart says nothing more.
+    let paused = untrack(() => props.paused ?? false);
+    const heard = (from: PtySession) =>
+      !disposed && !paused && from === session;
     let noticeTimer: ReturnType<typeof setTimeout> | undefined;
     const showNotice = (text: string, ms: number) => {
       clearTimeout(noticeTimer);
@@ -183,18 +204,18 @@ export function TerminalView(props: {
     };
     // Starts the tab's program in this pane; after an ended chat the core runs the shell instead.
     const resizer = settledResize((size) => {
-      session.resize(size);
+      session?.resize(size);
     }, PTY_RESIZE_SETTLE_MS);
     const start = (firstInput: string | null): PtySession => {
       let input = firstInput;
       const size = { cols: term.cols, rows: term.rows };
       resizer.started(size);
       const current = new PtySession(
-        spec,
+        untrack(() => props.spec),
         size,
         {
           output: (bytes) => {
-            if (disposed) return;
+            if (!heard(current)) return;
             term.write(bytes, () => {
               current.drawn(bytes.length);
               // After the first draw, so it follows xterm's answer to ConPTY's cursor query.
@@ -203,12 +224,12 @@ export function TerminalView(props: {
             });
           },
           exit: (code, ended) => {
-            if (disposed) return;
+            if (!heard(current)) return;
             if (ended) {
               props.onEnded();
               // Read once the chat's last bytes are drawn, and start the shell after, so its prompt is never cleared.
               term.write("", () => {
-                if (disposed) return;
+                if (!heard(current)) return;
                 term.write(endedScreen(visibleLines(term)));
                 session = start(null);
               });
@@ -220,12 +241,12 @@ export function TerminalView(props: {
             props.onExit();
           },
           state: (state) => {
-            if (disposed) return;
+            if (!heard(current)) return;
             if (notice() === RESUMING) setNotice(undefined);
             props.onState(state);
           },
           chat: (chat) => {
-            if (disposed) return;
+            if (!heard(current)) return;
             // A new chat in the shell makes the old one's notice stale.
             if (chat.chat === "started" && notice() === ENDED)
               setNotice(undefined);
@@ -235,10 +256,10 @@ export function TerminalView(props: {
         tab,
       );
       current.started.catch((error: unknown) => {
-        if (!disposed) term.write(`\x1b[31m${String(error)}\x1b[0m\r\n`);
+        if (heard(current)) term.write(`\x1b[31m${String(error)}\x1b[0m\r\n`);
       });
       void current.resume.then((resume) => {
-        if (disposed || resume === "new") return;
+        if (!heard(current) || resume === "new") return;
         if (resume === "ended") {
           props.onEnded();
           showNotice(ENDED, MISSING_NOTICE_MS);
@@ -250,7 +271,10 @@ export function TerminalView(props: {
       });
       return current;
     };
-    let session = start(props.input);
+    // A pane shown while its chat moves waits for the move, so it never starts the chat where it was.
+    let session: PtySession | undefined = paused
+      ? undefined
+      : start(props.input);
 
     // Capture phase, so an image paste never reaches xterm's own text-paste handler.
     const onPaste = (event: ClipboardEvent) => {
@@ -260,22 +284,37 @@ export function TerminalView(props: {
       if (!input) return;
       event.preventDefault();
       event.stopPropagation();
-      session.write(input);
+      session?.write(input);
     };
     element.addEventListener("paste", onPaste, true);
     // Anything typed since the last Enter or Ctrl+C is still in Claude Code's input, so nothing may be sent over it.
     let typed = false;
     const untype = props.onTyper?.((text) => {
       typed = true;
-      session.write(asPaste(text));
+      session?.write(asPaste(text));
       term.focus();
     });
     const unsend = props.onSender?.({
       empty: () => !typed,
       send: (command) => {
-        session.write(`${asPaste(command)}\r`);
+        session?.write(`${asPaste(command)}\r`);
       },
     });
+    // A pause stops the program and keeps the screen and its scroll; the next run starts the tab's program under it.
+    createEffect(
+      on(
+        () => [props.run, props.paused ?? false] as const,
+        ([, pause]) => {
+          session?.kill();
+          paused = pause;
+          if (pause) return;
+          typed = false;
+          term.write(PROGRAM_MODES_OFF);
+          session = start(untrack(() => props.input));
+        },
+        { defer: true },
+      ),
+    );
 
     const subscriptions = [
       term.onData((data) => {
@@ -284,7 +323,7 @@ export function TerminalView(props: {
         typed = cleared
           ? false
           : typed || (data.length > 0 && !data.startsWith("\x1b"));
-        session.write(data);
+        session?.write(data);
       }),
       term.onResize((size) => {
         resizer.call(size);
@@ -319,7 +358,7 @@ export function TerminalView(props: {
       subscriptions.forEach((subscription) => {
         subscription.dispose();
       });
-      session.kill();
+      session?.kill();
       term.dispose();
     });
   });
@@ -332,7 +371,14 @@ export function TerminalView(props: {
           host = el;
         }}
       />
-      <Show when={notice()}>
+      <Show when={props.paused && props.note}>
+        {(text) => (
+          <p class="terminal-notice" role="status">
+            {text()}
+          </p>
+        )}
+      </Show>
+      <Show when={!props.paused && notice()}>
         {(text) => (
           <button
             type="button"
