@@ -49,15 +49,19 @@ export function asPaste(text: string): string {
 const PASTE_START = "\x1b[200~";
 const PASTE_END = "\x1b[201~";
 
-/** Whether a program's input line still holds text once `data` reaches it: Enter and Ctrl+C empty it; a key or a paste fills it. */
+// What follows ESC in the terminal's own reports: focus in and out, cursor position, device attributes, SGR mouse.
+const TERMINAL_REPORT = /^\[(?:I|O|\d+;\d+R|[?>][\d;]*c|<\d+;\d+;\d+[Mm])$/;
+
+/** Whether a program's input line may hold text once `data` reaches it: only Enter and Ctrl+C surely empty it. */
 export function holdsText(before: boolean, data: string): boolean {
   // A bracketed paste's line breaks are text, not Enter.
   if (data.startsWith(PASTE_START) && data.endsWith(PASTE_END)) {
     return before || data.length > PASTE_START.length + PASTE_END.length;
   }
   if (data.includes("\r") || data.includes("\x03")) return false;
-  // Other escape sequences (focus, cursor reports, arrows) move nothing into the input.
-  return before || (data.length > 0 && !data.startsWith("\x1b"));
+  // The terminal answering the program types nothing; any key may (Up recalls a prompt, Esc restores a queued one).
+  const report = data.startsWith("\x1b") && TERMINAL_REPORT.test(data.slice(1));
+  return before || (data.length > 0 && !report);
 }
 
 /** Input to send in place of a paste, or `undefined` to let xterm paste the text. */

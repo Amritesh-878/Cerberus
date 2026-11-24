@@ -220,7 +220,8 @@ says so. Shell tabs start fresh in their folder.
 **Ended chats.** When a chat ends by itself, for example with `/exit`, its tab becomes a shell in
 the same folder and account, with Claude Code's "Resume this session with" line still above the
 prompt. It stays a shell after a restart. **Resume chat** in its right-click menu brings the chat
-back. Closing Cerberus, a crash, or moving the chat never counts as ended.
+back. Closing Cerberus, a crash, or moving the chat never counts as ended. Resuming, a move, and
+any other restart of an open tab keep its terminal: what it showed stays above, in its scrollback.
 
 **`claude` typed in a shell tab.** Run `claude` (or `claude --resume <id>`) in a shell tab, or in
 the shell of an ended chat, and within a second or two the tab becomes a Claude Code tab: its icon,
