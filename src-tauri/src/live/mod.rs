@@ -5,6 +5,8 @@ pub mod files;
 pub mod helper;
 mod hooks;
 mod meters;
+#[cfg(test)]
+mod replay;
 mod settings;
 #[cfg(test)]
 mod tests;

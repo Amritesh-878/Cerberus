@@ -32,14 +32,14 @@ impl Sink for FakeSink {
     }
 }
 
-struct Fixture {
-    live: Live,
-    views: Receiver<View>,
+pub(super) struct Fixture {
+    pub(super) live: Live,
+    pub(super) views: Receiver<View>,
     warnings: Arc<Mutex<Vec<Warning>>>,
-    dir: TestDir,
+    pub(super) dir: TestDir,
 }
 
-fn start(warn_at: u8) -> Fixture {
+pub(super) fn start(warn_at: u8) -> Fixture {
     start_in(warn_at, Shell::Posix)
 }
 
@@ -62,7 +62,7 @@ fn start_in(warn_at: u8, shell: Shell) -> Fixture {
     }
 }
 
-fn env_of(ticket: &Ticket) -> Env {
+pub(super) fn env_of(ticket: &Ticket) -> Env {
     let get = |name| {
         ticket
             .env
@@ -78,7 +78,7 @@ fn env_of(ticket: &Ticket) -> Env {
 }
 
 /// Runs the helper as Claude Code would, and returns what it printed.
-fn status_line(env: &Env, input: &str, pass: bool) -> Vec<u8> {
+pub(super) fn status_line(env: &Env, input: &str, pass: bool) -> Vec<u8> {
     let mut args = vec!["status".to_owned()];
     if pass {
         args.push(helper::PASS.to_owned());
@@ -88,7 +88,7 @@ fn status_line(env: &Env, input: &str, pass: bool) -> Vec<u8> {
     out
 }
 
-fn next_view_where(views: &Receiver<View>, done: impl Fn(&View) -> bool) -> View {
+pub(super) fn next_view_where(views: &Receiver<View>, done: impl Fn(&View) -> bool) -> View {
     loop {
         let view = views.recv_timeout(Duration::from_secs(5)).unwrap();
         if done(&view) {
@@ -286,7 +286,7 @@ fn off_registers_nothing() {
     assert_eq!(live.view(), View::default());
 }
 
-fn hook(env: &Env, input: &str) {
+pub(super) fn hook(env: &Env, input: &str) {
     let mut out = Vec::new();
     helper::run(&[helper::HOOK.to_owned()], input.as_bytes(), &mut out, env);
     assert!(
