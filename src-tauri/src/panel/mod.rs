@@ -279,25 +279,16 @@ fn sweep_projects(app: &AppHandle, only: Option<ProjectId>) {
     let Ok(loaded) = app.state::<Saved>().load() else {
         return;
     };
+    let folders: Vec<PathBuf> = loaded
+        .tree
+        .projects
+        .iter()
+        .filter(|p| only.map_or(p.tasks.clean_merged, |id| id == p.id))
+        .map(|p| PathBuf::from(&p.folder))
+        .filter(|folder| folder.is_dir())
+        .collect();
     let log = app.state::<CleanLog>();
-    let mut swept: Vec<String> = Vec::new();
-    for project in &loaded.tree.projects {
-        let asked = only.map_or(project.tasks.clean_merged, |id| id == project.id);
-        let folder = PathBuf::from(&project.folder);
-        if !asked || !folder.is_dir() {
-            continue;
-        }
-        let prs = prs_of(app, &git, &folder);
-        let Some((repo, lines)) = cleanup::sweep(&git, &folder, &prs, &tabs) else {
-            continue;
-        };
-        // Two projects in one repo sweep it once.
-        if swept.contains(&repo) {
-            continue;
-        }
-        log.add(&repo, lines);
-        swept.push(repo);
-    }
+    cleanup::sweep_all(&log, &git, &folders, |f| prs_of(app, &git, f), &tabs);
 }
 
 /// Sweeps the projects that asked now and then hourly, on a thread of its own.

@@ -16,7 +16,11 @@ const MOST_LINES: usize = 20;
 
 /// The lines automatic removals leave in each repo's Worktrees list, oldest first, by the repo's main folder.
 #[derive(Default)]
-pub struct CleanLog(Mutex<HashMap<String, Vec<String>>>);
+pub struct CleanLog {
+    lines: Mutex<HashMap<String, Vec<String>>>,
+    /// Held for a whole sweep, so the timed one and a switch turned on take turns.
+    turn: Mutex<()>,
+}
 
 impl CleanLog {
     pub fn add(&self, repo: &str, lines: Vec<String>) {
@@ -24,7 +28,7 @@ impl CleanLog {
             return;
         }
         // A panic elsewhere leaves the map whole, so poisoning is no reason to lose lines.
-        let mut all = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut all = self.lines.lock().unwrap_or_else(PoisonError::into_inner);
         let kept = all.entry(repo.to_owned()).or_default();
         kept.extend(lines);
         let over = kept.len().saturating_sub(MOST_LINES);
@@ -32,7 +36,7 @@ impl CleanLog {
     }
 
     pub fn lines(&self, repo: &str) -> Vec<String> {
-        let all = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        let all = self.lines.lock().unwrap_or_else(PoisonError::into_inner);
         all.get(repo).cloned().unwrap_or_default()
     }
 }
@@ -46,6 +50,31 @@ pub fn merged_ones(rows: &[Worktree]) -> Vec<(PathBuf, u64)> {
             Some((PathBuf::from(&w.path), pr.number))
         })
         .collect()
+}
+
+/// Sweeps each folder's repo once, holding the log's turn throughout, and keeps the lines.
+pub fn sweep_all(
+    log: &CleanLog,
+    git: &Git,
+    folders: &[PathBuf],
+    prs_of: impl Fn(&Path) -> Vec<Pr>,
+    tabs: &[TabFolders],
+) {
+    let _turn = log.turn.lock().unwrap_or_else(PoisonError::into_inner);
+    let mut swept: Vec<String> = Vec::new();
+    for folder in folders {
+        // Two projects in one repo sweep it once.
+        let Some(main) = worktrees::main_of(git, folder) else {
+            continue;
+        };
+        if swept.contains(&main) {
+            continue;
+        }
+        swept.push(main);
+        if let Some((repo, lines)) = sweep(git, folder, &prs_of(folder), tabs) {
+            log.add(&repo, lines);
+        }
+    }
 }
 
 /// Removes the folder's repo's merged worktrees; the repo's main folder and a line per removal, or `None` when git can't list them.
@@ -188,6 +217,88 @@ mod tests {
         let dir = TestDir::new();
 
         assert_eq!(sweep(&git(), dir.path(), &[], &[]), None);
+    }
+
+    #[test]
+    fn two_projects_in_one_repo_sweep_it_once_and_keep_its_line() {
+        let dir = TestDir::new();
+        let repo = repo_with(&dir, &["merged", "other"]);
+        let merged_tip = tip(&dir.path().join("merged"));
+        let asked = std::cell::Cell::new(0);
+        let log = CleanLog::default();
+
+        sweep_all(
+            &log,
+            &git(),
+            &[repo.clone(), dir.path().join("other")],
+            |_| {
+                asked.set(asked.get() + 1);
+                vec![pr(21, "MERGED", "merged", &merged_tip)]
+            },
+            &[],
+        );
+
+        assert_eq!(
+            asked.get(),
+            1,
+            "the second project's repo was not swept again"
+        );
+        let main = worktrees::main_of(&git(), &repo).unwrap();
+        assert_eq!(log.lines(&main), ["Removed merged, merged in #21"]);
+    }
+
+    #[test]
+    fn a_sweep_waits_for_the_one_already_running() {
+        let dir = TestDir::new();
+        let repo = repo_with(&dir, &["merged"]);
+        let log = std::sync::Arc::new(CleanLog::default());
+        let (entered, first_in) = std::sync::mpsc::channel();
+        let (release, held) = std::sync::mpsc::channel::<()>();
+        let first = {
+            let (log, repo) = (std::sync::Arc::clone(&log), repo.clone());
+            std::thread::spawn(move || {
+                sweep_all(
+                    &log,
+                    &git(),
+                    &[repo],
+                    |_| {
+                        entered.send("first").unwrap();
+                        held.recv().unwrap();
+                        Vec::new()
+                    },
+                    &[],
+                );
+            })
+        };
+        assert_eq!(first_in.recv().unwrap(), "first");
+        let (entered, second_in) = std::sync::mpsc::channel();
+        let second = {
+            let log = std::sync::Arc::clone(&log);
+            std::thread::spawn(move || {
+                sweep_all(
+                    &log,
+                    &git(),
+                    &[repo],
+                    |_| {
+                        entered.send("second").unwrap();
+                        Vec::new()
+                    },
+                    &[],
+                );
+            })
+        };
+
+        assert!(
+            second_in.recv_timeout(Duration::from_millis(500)).is_err(),
+            "the second sweep began while the first held its turn"
+        );
+        release.send(()).unwrap();
+        first.join().unwrap();
+        assert_eq!(
+            second_in.recv_timeout(Duration::from_secs(20)).unwrap(),
+            "second"
+        );
+        second.join().unwrap();
     }
 
     #[test]
