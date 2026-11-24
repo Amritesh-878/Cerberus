@@ -5,8 +5,11 @@ import {
   type AccountId,
   accountLogins,
   addAccount,
+  chatDeletion,
   crossesOrganization,
+  deletionText,
   detectAccounts,
+  keepChats,
   OTHER_ORGANIZATION,
   pickFolder,
   preselectedAccount,
@@ -53,6 +56,22 @@ export function AccountsStep(props: {
   const [asking, setAsking] = createSignal<{ id: number; tabs: string[] }>();
   // Shown on the row it is about, since a refusal names that account.
   const [rowError, setRowError] = createSignal<{ id: number; text: string }>();
+  const [deletion, { mutate: setDeletion }] = createResource(
+    () => props.profiles,
+    chatDeletion,
+  );
+  const deletesOf = (account: Account) =>
+    deletion()?.find((d) => d.id === account.id);
+  const keep = (account: Account) => {
+    keepChats(account.id)
+      .then((left) => {
+        setRowError(undefined);
+        setDeletion(left);
+      })
+      .catch((e: unknown) => {
+        setRowError({ id: account.id, text: String(e) });
+      });
+  };
   // Where the removed account's tabs go: picked in the confirm, else the default account.
   const [moveTo, setMoveTo] = createSignal<AccountId>();
   const [movingOff, setMovingOff] = createSignal<AccountId>();
@@ -204,6 +223,22 @@ export function AccountsStep(props: {
                       )}
                     </Show>
                     <span class="program">{account.configDir}</span>
+                    <Show when={deletesOf(account)}>
+                      {(deletes) => (
+                        <span class="account-deletes">
+                          {deletionText(deletes().days)}{" "}
+                          <button
+                            type="button"
+                            class="link-button"
+                            onClick={() => {
+                              keep(account);
+                            }}
+                          >
+                            Keep them
+                          </button>
+                        </span>
+                      )}
+                    </Show>
                   </span>
                 }
               >

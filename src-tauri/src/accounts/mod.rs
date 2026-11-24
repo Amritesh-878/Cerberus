@@ -1,4 +1,5 @@
 mod detect;
+mod keeping;
 mod login;
 mod palette;
 mod removal;
@@ -14,6 +15,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize, Serializer};
 
 pub use crate::accounts::detect::Candidate;
+pub use crate::accounts::keeping::{Deletes, KeepError};
 pub use crate::accounts::login::LoginFacts;
 pub use crate::accounts::removal::Removal;
 pub use crate::accounts::status::{AuthState, AuthStatus};
@@ -74,6 +76,8 @@ pub enum AccountsError {
     UnknownShell(String),
     #[error("not a colour Cerberus knows: {0}")]
     UnknownColor(String),
+    #[error(transparent)]
+    Keep(#[from] KeepError),
 }
 
 impl Serialize for AccountsError {
@@ -693,6 +697,30 @@ impl Accounts {
 
     pub fn home(&self) -> &Path {
         &self.home
+    }
+
+    /// Accounts whose chats Claude Code deletes within a year, from that one key of each folder's settings.
+    pub fn chat_deletion(&self) -> Result<Vec<Deletes>, AccountsError> {
+        let profiles = self.load()?;
+        Ok(profiles
+            .accounts
+            .iter()
+            .filter_map(|a| {
+                let file = self.claude_home(Some(a.id)).ok()?.join("settings.json");
+                let days = keeping::kept_days(&file)?;
+                (days < keeping::SHOWN_UNDER).then_some(Deletes { id: a.id, days })
+            })
+            .collect())
+    }
+
+    /// Sets the account's chats to be kept, after the user's click; other settings stay as they were.
+    pub fn keep_chats(&self, id: AccountId) -> Result<Vec<Deletes>, AccountsError> {
+        let folder = self.claude_home(Some(id))?;
+        if !folder.is_dir() {
+            return Err(AccountsError::NoSuchDir(shown(&folder)));
+        }
+        keeping::keep(&folder.join("settings.json"))?;
+        self.chat_deletion()
     }
 
     pub fn status(&self, id: AccountId) -> Result<AuthStatus, AccountsError> {

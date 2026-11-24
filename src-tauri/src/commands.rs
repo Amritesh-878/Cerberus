@@ -7,8 +7,8 @@ use tauri::ipc::{Channel, InvokeResponseBody, IpcResponse};
 use tauri::{AppHandle, Manager, State};
 
 use crate::accounts::{
-    AccountId, Accounts, AccountsError, AuthState, AuthStatus, Candidate, LoginFacts, PanelPrefs,
-    Profiles, Removal, SetupStep,
+    AccountId, Accounts, AccountsError, AuthState, AuthStatus, Candidate, Deletes, LoginFacts,
+    PanelPrefs, Profiles, Removal, SetupStep,
 };
 use crate::blocking::blocking;
 use crate::bridge::Bridge;
@@ -633,6 +633,17 @@ pub async fn set_account_color(
 #[tauri::command]
 pub async fn account_logins(app: AppHandle) -> Result<Vec<LoginFacts>, AccountsError> {
     blocking(move || app.state::<Accounts>().logins()).await
+}
+
+/// Accounts whose chats Claude Code deletes within a year, and after how many days.
+#[tauri::command]
+pub async fn chat_deletion(app: AppHandle) -> Result<Vec<Deletes>, AccountsError> {
+    blocking(move || app.state::<Accounts>().chat_deletion()).await
+}
+
+#[tauri::command]
+pub async fn keep_chats(app: AppHandle, id: AccountId) -> Result<Vec<Deletes>, AccountsError> {
+    blocking(move || app.state::<Accounts>().keep_chats(id)).await
 }
 
 #[tauri::command]

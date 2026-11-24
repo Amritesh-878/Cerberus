@@ -161,6 +161,25 @@ export function accountLogins(): Promise<LoginFacts[]> {
   return invoke<LoginFacts[]>("account_logins");
 }
 
+/** An account whose chats Claude Code deletes, `days` after their last use. */
+export interface Deletes {
+  id: AccountId;
+  days: number;
+}
+
+export function chatDeletion(): Promise<Deletes[]> {
+  return invoke<Deletes[]>("chat_deletion");
+}
+
+/** Sets that account's chats to be kept; answers with the accounts still deleting theirs. */
+export function keepChats(id: AccountId): Promise<Deletes[]> {
+  return invoke<Deletes[]>("keep_chats", { id });
+}
+
+export function deletionText(days: number): string {
+  return `Claude Code deletes this account's chats after ${String(days)} ${days === 1 ? "day" : "days"}`;
+}
+
 /** A move between two organizations makes Claude reread the chat; unknown is never called a crossing. */
 export function crossesOrganization(
   logins: LoginFacts[] | undefined,
