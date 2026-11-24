@@ -299,6 +299,30 @@ test("a tab whose reply another chat read says so for a few seconds", async () =
   }
 });
 
+test("a second read of the same tab outlives the first one's timer", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  try {
+    const app = core({ pending: [], notes: [], senderGone: [] });
+    const root = await renderApp(() => SAVED, app.core);
+    await open(root, "coder");
+    const line = () => root.querySelector(".messages-note")?.textContent;
+
+    await emitEvent("bridge-read", {
+      tab: 6,
+      by: "personal · alpha / planner",
+    });
+    await vi.advanceTimersByTimeAsync(READ_SHOWN_MS - 1000);
+    await emitEvent("bridge-read", { tab: 6, by: "personal · alpha / other" });
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(line()).toBe("Read by personal · alpha / other");
+
+    await vi.advanceTimersByTimeAsync(READ_SHOWN_MS);
+    expect(line()).toBeUndefined();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 test("a new waiting message from the core shows in the popup", async () => {
   const app = core({ pending: [], notes: [], senderGone: [] });
   const root = await renderApp(() => SAVED, app.core);

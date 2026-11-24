@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { createSignal, onCleanup, onMount } from "solid-js";
+import { createStore } from "solid-js/store";
 
 /** A message from one tab to a tab on another account, waiting for the user. */
 export interface PendingMessage {
@@ -90,16 +91,25 @@ export function createMessaging() {
     notes: [],
     senderGone: [],
   });
-  // The latest read of each tab's reply, shown for a few seconds.
-  const [reads, setReads] = createSignal<ReadBy[]>([]);
+  // Who last read each tab's reply, by tab, shown for a few seconds.
+  const [readBy, setReadBy] = createStore<Record<number, string | undefined>>(
+    {},
+  );
   const timers = new Set<ReturnType<typeof setTimeout>>();
+  // A newer read of the same tab outlives an older read's timer.
+  let generation = 0;
+  const latest = new Map<number, number>();
   onMount(() => {
     const reading = listen<ReadBy>("bridge-read", (event) => {
-      const read = event.payload;
-      setReads((all) => [...all.filter((r) => r.tab !== read.tab), read]);
+      const { tab, by } = event.payload;
+      const mine = ++generation;
+      latest.set(tab, mine);
+      setReadBy(tab, by);
       const timer = setTimeout(() => {
         timers.delete(timer);
-        setReads((all) => all.filter((r) => r !== read));
+        if (latest.get(tab) !== mine) return;
+        latest.delete(tab);
+        setReadBy(tab, undefined);
       }, READ_SHOWN_MS);
       timers.add(timer);
     });
@@ -144,7 +154,7 @@ export function createMessaging() {
         : snapshot().notes.find((n) => n.tab === tab),
     /** "Read by <tab>" while another chat's read of this tab's reply is recent. */
     readBy: (tab: number | undefined): string | undefined => {
-      const by = reads().find((r) => r.tab === tab)?.by;
+      const by = tab === undefined ? undefined : readBy[tab];
       return by === undefined ? undefined : `Read by ${by}`;
     },
   };
