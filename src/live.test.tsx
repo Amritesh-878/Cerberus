@@ -109,6 +109,7 @@ const VIEW: LiveView = {
       tab: 3,
       account: 1,
       context: 42.5,
+      contextTokens: 85_000,
       model: "Opus 5.5",
       keptTheirs: false,
       outputs: [],

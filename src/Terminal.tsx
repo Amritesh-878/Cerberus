@@ -148,6 +148,8 @@ export function TerminalView(props: {
   onTyper?: (type: (text: string) => void) => () => void;
   /** Hands over the one way to send a local command with Enter (only `/add-dir`), and whether the input is empty. */
   onSender?: (sender: Sender) => () => void;
+  /** The user typed or pasted text into the program. */
+  onTyping?: () => void;
 }) {
   let host: HTMLDivElement | undefined;
   const [notice, setNotice] = createSignal<string>();
@@ -289,6 +291,7 @@ export function TerminalView(props: {
       event.stopPropagation();
       // The program reads the image off the clipboard into its input.
       typed = true;
+      props.onTyping?.();
       session?.write(input);
     };
     element.addEventListener("paste", onPaste, true);
@@ -322,6 +325,7 @@ export function TerminalView(props: {
     const subscriptions = [
       term.onData((data) => {
         typed = holdsText(typed, data);
+        if (typed) untrack(() => props.onTyping)?.();
         session?.write(data);
       }),
       term.onResize((size) => {

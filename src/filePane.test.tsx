@@ -74,6 +74,7 @@ function liveView(outputs: Output[]): LiveView {
         tab: 3,
         account: 1,
         context: null,
+        contextTokens: null,
         model: null,
         keptTheirs: false,
         outputs,

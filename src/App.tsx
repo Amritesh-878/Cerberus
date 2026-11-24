@@ -133,6 +133,7 @@ import {
 } from "./services";
 import { ServicesRailIcon, ServicesSection } from "./ServicesSection";
 import { type Sender, TerminalView } from "./Terminal";
+import { createCacheHints } from "./cacheHint";
 import {
   addProject,
   addTab,
@@ -1103,6 +1104,18 @@ export function App() {
     sender.send(addDirCommand(folder));
     setAlert(id, `Added ${folder} to the chat`);
   };
+  // Each idle chat's clock, for the hint that its prompt cache has expired.
+  const cacheHints = createCacheHints();
+  const typeCompact = (id: TabId) => {
+    const type = typers.get(id);
+    if (!type || senders.get(id)?.empty() === false) {
+      setAlert(id, "Clear the chat's input first, then Type /compact.");
+      return;
+    }
+    // Typed only: compacting is a turn, and only he sends it.
+    type("/compact");
+    cacheHints.typed(id);
+  };
   // A started task's prompt, typed once its chat is ready.
   const prefills = new Prefills();
   // Each chat's limit popup, once per limit window, one shown at a time.
@@ -1776,6 +1789,32 @@ export function App() {
                   </div>
                 )}
               </Show>
+              <Show
+                when={(() => {
+                  const id = shown();
+                  const tokens = live().tabs.find(
+                    (t) => t.tab === id,
+                  )?.contextTokens;
+                  return cacheHints.hint(id, tokens);
+                })()}
+              >
+                {(hint) => (
+                  <div class="tab-alert cache-hint" role="status">
+                    <span>{hint()}</span>
+                    <span class="spacer" />
+                    <button
+                      type="button"
+                      title="Types /compact into the chat's input. You press Enter."
+                      onClick={() => {
+                        const id = shown();
+                        if (id !== undefined) typeCompact(id);
+                      }}
+                    >
+                      Type /compact
+                    </button>
+                  </div>
+                )}
+              </Show>
               <LiveBanner
                 warnings={live().warnings.filter(
                   (w) => w.account !== warnShown()?.account,
@@ -1918,6 +1957,7 @@ export function App() {
                                 prefills.reported(id, state, typers.get(id));
                                 limitReported(id, state);
                                 lastState.set(id, state.state);
+                                cacheHints.reported(id, state);
                                 if (state.state === "idle") {
                                   checkHandoff(id);
                                   sendAddDir(id, true);
@@ -1941,6 +1981,9 @@ export function App() {
                                   if (typers.get(id) === type)
                                     typers.delete(id);
                                 };
+                              }}
+                              onTyping={() => {
+                                cacheHints.typed(id);
                               }}
                               onSender={(sender) => {
                                 senders.set(id, sender);

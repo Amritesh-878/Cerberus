@@ -277,6 +277,7 @@ mod tests {
             session: None,
             model: None,
             context: None,
+            context_size: None,
             five_hour: five.map(|used| Window {
                 used,
                 resets_at: RESET,

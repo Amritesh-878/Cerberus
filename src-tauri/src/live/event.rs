@@ -11,6 +11,8 @@ pub const MOST_INPUT: usize = 1024 * 1024;
 pub const MOST_LINE: u64 = 512 * 1024;
 const MOST_SESSION: usize = 128;
 const MOST_MODEL: usize = 64;
+// No model's window is near this; a larger size is garbage.
+const MOST_CONTEXT_SIZE: f64 = 100_000_000.0;
 // Unix seconds past this are milliseconds or garbage, not a reset time.
 const LATEST_RESET_S: f64 = 10_000_000_000.0;
 
@@ -42,6 +44,9 @@ pub struct Status {
     pub model: Option<String>,
     /// Share of the context window in use, 0 to 100.
     pub context: Option<f64>,
+    /// The context window's size in tokens.
+    #[serde(default)]
+    pub context_size: Option<u64>,
     pub five_hour: Option<Window>,
     pub seven_day: Option<Window>,
 }
@@ -80,6 +85,8 @@ struct ModelIn {
 struct ContextIn {
     #[serde(default, deserialize_with = "number")]
     used_percentage: Option<f64>,
+    #[serde(default, deserialize_with = "number")]
+    context_window_size: Option<f64>,
 }
 
 #[derive(Deserialize)]
@@ -128,14 +135,16 @@ pub fn status_from(input: &[u8], at: u64) -> Option<Status> {
     let parsed: StatusIn = serde_json::from_slice(input).ok()?;
     let limits = parsed.rate_limits;
     let model = parsed.model.and_then(|m| m.display_name.or(m.id));
+    let context = parsed.context_window;
     Some(Status {
         at,
         session: parsed.session_id.filter(|s| session_like(s)),
         model: model.as_deref().and_then(model_name),
-        context: parsed
-            .context_window
+        context: context
+            .as_ref()
             .and_then(|c| c.used_percentage)
             .map(percent),
+        context_size: context.and_then(|c| c.context_window_size).and_then(size),
         five_hour: limits.as_ref().and_then(|l| window(l.five_hour.as_ref())),
         seven_day: limits.as_ref().and_then(|l| window(l.seven_day.as_ref())),
     })
@@ -157,6 +166,7 @@ impl Status {
             session: self.session.filter(|s| session_like(s)),
             model: self.model.as_deref().and_then(model_name),
             context: self.context.filter(|c| c.is_finite()).map(percent),
+            context_size: self.context_size.and_then(|s| size(s as f64)),
             five_hour: window(self.five_hour),
             seven_day: window(self.seven_day),
         }
@@ -178,6 +188,20 @@ fn window(found: Option<&WindowIn>) -> Option<Window> {
 
 fn percent(n: f64) -> f64 {
     n.clamp(0.0, 100.0)
+}
+
+fn size(n: f64) -> Option<u64> {
+    // In range by the check, so the cast neither wraps nor saturates.
+    (1.0..=MOST_CONTEXT_SIZE).contains(&n).then_some(n as u64)
+}
+
+impl Status {
+    /// Tokens in the context window, from its share and its size.
+    pub fn context_tokens(&self) -> Option<u64> {
+        let (used, size) = (self.context?, self.context_size?);
+        // Both are small and in range, so the product is too.
+        Some((used / 100.0 * size as f64).round() as u64)
+    }
 }
 
 fn session_like(s: &str) -> bool {
@@ -234,6 +258,7 @@ pub(crate) mod tests {
                 session: Some("b1fe1f2e-f7e7-4e25-922d-0596af0123fb".into()),
                 model: Some("Opus 5.5".into()),
                 context: Some(42.5),
+                context_size: Some(200_000),
                 five_hour: Some(Window {
                     used: 87.2,
                     resets_at: 4_102_444_800
@@ -244,6 +269,7 @@ pub(crate) mod tests {
                 }),
             }
         );
+        assert_eq!(status.context_tokens(), Some(85_000));
         let line = serde_json::to_string(&Line {
             token: "t".into(),
             event: Event::Status(status),
@@ -296,6 +322,7 @@ pub(crate) mod tests {
             session: Some("x y".into()),
             model: Some(String::new()),
             context: Some(f64::NAN),
+            context_size: Some(0),
             five_hour: Some(Window {
                 used: -5.0,
                 resets_at: 1_762_700_400,
@@ -311,6 +338,7 @@ pub(crate) mod tests {
         assert_eq!(checked.session, None);
         assert_eq!(checked.model, None);
         assert_eq!(checked.context, None);
+        assert_eq!(checked.context_size, None);
         assert_eq!(checked.five_hour.map(|w| w.used), Some(0.0));
         assert_eq!(checked.seven_day, None);
     }

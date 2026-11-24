@@ -56,6 +56,8 @@ pub struct TabLive {
     pub account: AccountId,
     /// Share of the context window in use, 0 to 100; `None` until the first reply.
     pub context: Option<f64>,
+    /// Tokens in the context window, which the next reply rereads once the cache has expired.
+    pub context_tokens: Option<u64>,
     pub model: Option<String>,
     /// His own status line runs where Cerberus cannot wrap it, so this tab reports no context.
     pub kept_theirs: bool,
@@ -364,6 +366,7 @@ impl Core {
             };
             if let Some(shown) = state.tabs.get_mut(&tab) {
                 shown.context = status.context.or(shown.context);
+                shown.context_tokens = status.context_tokens().or(shown.context_tokens);
                 shown.model = status.model.clone().or(shown.model.take());
             }
             let before = state.meters.kept();

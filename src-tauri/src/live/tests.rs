@@ -111,6 +111,7 @@ fn a_status_line_update_reaches_the_tab_card_and_its_accounts_meter() {
     assert!(printed.is_empty(), "with no line of his own, nothing shows");
     assert_eq!(view.tabs[0].tab, 7);
     assert_eq!(view.tabs[0].context, Some(42.5));
+    assert_eq!(view.tabs[0].context_tokens, Some(85_000));
     assert_eq!(view.tabs[0].model.as_deref(), Some("Opus 5.5"));
     assert_eq!(view.meters[0].account, 2);
     assert_eq!(view.meters[0].five_hour.map(|w| w.used), Some(87.2));
