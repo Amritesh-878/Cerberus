@@ -739,6 +739,37 @@ fn after_a_delivery_wait_for_tab_waits_for_the_turn_it_starts() {
     assert!(world.helper(1).result().0.contains("is idle at its prompt"));
 }
 
+// macOS always types messages in, so inbox delivery is Windows only.
+#[cfg(windows)]
+#[test]
+fn a_turn_that_ends_before_the_message_shows_still_counts_as_finished() {
+    let mut world = World::new("2.1.317");
+    let token = world.tabs[&2].ticket.token.clone();
+    world.helper(1).send_to_tab("2", "quick one");
+    let deciding = approve_later(&world, "quick one", no_typing);
+    world.tabs[&2]
+        .inbox
+        .recv_timeout(WAIT)
+        .expect("nothing reached the inbox");
+    world.bridge.working(&token, true);
+    world.bridge.working(&token, false);
+    world.bridge.output(&token, ARRIVAL);
+    assert!(matches!(
+        deciding.join().unwrap().unwrap(),
+        Decided::Delivered { .. }
+    ));
+    world.helper(1).result();
+
+    world
+        .helper(1)
+        .call("wait_for_tab", &json!({"tab": "2", "timeout_s": 60}));
+
+    assert!(
+        world.helper(1).answered_within(Duration::from_millis(500)),
+        "its turn already ended, so it is idle now"
+    );
+}
+
 #[test]
 fn a_target_that_closes_fails_the_waiting_sender_plainly() {
     let mut world = World::new("2.1.317");

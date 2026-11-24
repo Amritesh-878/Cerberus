@@ -589,11 +589,13 @@ impl Bridge {
             id = pending.from
         );
         let (from, target) = (pending.from, pending.to);
+        // Stamped before delivery, since the turn it starts can begin before the tab shows the message.
+        let sent_at = Instant::now();
         let landed = land(core, (from, target), &from_label, &body, type_into);
         if matches!(landed, Landed::Seen | Landed::Unseen)
             && let Some(link) = core.state().by_tab_mut(target)
         {
-            link.delivered_at = Some(Instant::now());
+            link.delivered_at = Some(sent_at);
         }
         let (outcome, decided) = match landed {
             Landed::Seen => (
