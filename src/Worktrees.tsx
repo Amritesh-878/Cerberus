@@ -8,6 +8,7 @@ import {
   type Removed,
   removeWorktrees,
   type Worktree,
+  type WorktreeView,
 } from "./panelData";
 import { type MenuItem, RowMenu } from "./RowMenu";
 
@@ -18,6 +19,10 @@ export interface WorktreeActions {
   openFolder: (path: string) => void;
   /** Opens a new tab there beside the shown one; absent where the shown tab has no project. */
   openTab?: (path: string, kind: TabKind) => void;
+  /** The project's "Remove merged worktrees automatically"; absent where the shown tab has no project. */
+  cleanMerged?: boolean;
+  /** Saves that setting; turning it on also removes the merged ones now. */
+  setCleanMerged?: (on: boolean) => Promise<void>;
 }
 
 const PR_TEXT: Record<NonNullable<Worktree["pr"]>["state"], string> = {
@@ -89,7 +94,8 @@ export function WorktreeList(props: {
   tabTitle: (id: number) => string | undefined;
   actions: WorktreeActions;
 }) {
-  const [rows, setRows] = createSignal<Worktree[]>();
+  const [view, setView] = createSignal<WorktreeView>();
+  const rows = () => view()?.rows;
   const [error, setError] = createSignal<string>();
   const [menuFor, setMenuFor] = createSignal<string>();
   // The list the user is asked about, or the one worktree that cannot go.
@@ -99,7 +105,7 @@ export function WorktreeList(props: {
   const load = () =>
     panelWorktrees(props.tab, props.folder).then(
       (found) => {
-        setRows(found);
+        setView(found);
         setError(undefined);
       },
       (failed: unknown) => setError(String(failed)),
@@ -195,7 +201,31 @@ export function WorktreeList(props: {
           </button>
         </Show>
       </div>
+      <Show
+        when={
+          view()?.projectRepo === true &&
+          props.actions.cleanMerged !== undefined
+        }
+      >
+        <label class="worktrees-auto">
+          <input
+            type="checkbox"
+            checked={props.actions.cleanMerged === true}
+            disabled={busy()}
+            onChange={(event) => {
+              const save = props.actions.setCleanMerged;
+              if (!save) return;
+              setBusy(true);
+              save(event.currentTarget.checked)
+                .then(load, (failed: unknown) => setError(String(failed)))
+                .finally(() => setBusy(false));
+            }}
+          />
+          Remove merged worktrees automatically
+        </label>
+      </Show>
       <Show when={error()}>{(message) => <Note>{message()}</Note>}</Show>
+      <For each={view()?.cleaned ?? []}>{(line) => <Note>{line}</Note>}</For>
       <Show when={asking()}>
         {(list) => (
           <div class="worktree-confirm" role="alertdialog">

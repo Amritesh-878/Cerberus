@@ -2846,6 +2846,16 @@ button.card-row:focus-visible,
   margin-left: auto;
 }
 
+.worktrees-auto {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 2px 0 4px;
+  font-size: 12px;
+  color: var(--dim);
+  cursor: pointer;
+}
+
 .worktrees .faint {
   color: var(--faint);
 }

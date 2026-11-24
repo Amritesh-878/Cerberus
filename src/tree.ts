@@ -18,6 +18,8 @@ export interface ProjectTasks {
   prompt: string | null;
   /** The account the last task in this project opened on. */
   account: number | null;
+  /** Worktrees whose PR merged are removed at start and hourly; absent means off. */
+  cleanMerged?: boolean;
 }
 
 export interface TreeTab {

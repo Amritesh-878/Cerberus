@@ -119,7 +119,9 @@ const WORKTREES: Worktree[] = [
   }),
 ];
 
-function worktreeCore() {
+function worktreeCore(
+  options: { projectRepo?: boolean; cleaned?: () => string[] } = {},
+) {
   const pty = ptyCore();
   const calls: { cmd: string; args: unknown }[] = [];
   const writes: string[] = [];
@@ -153,7 +155,12 @@ function worktreeCore() {
       panel_connectors: () => ({ servers: [], unreadable: [] }),
       panel_skills: () => [],
       ...record("panel_written", () => written),
-      ...record("panel_worktrees", () => WORKTREES),
+      ...record("panel_worktrees", () => ({
+        rows: WORKTREES,
+        cleaned: options.cleaned?.() ?? [],
+        projectRepo: options.projectRepo ?? true,
+      })),
+      ...record("panel_clean_merged", () => null),
       ...record("panel_remove_worktrees", (args): Removed[] =>
         (field(args, "paths") as string[]).map((path) => ({
           path,
@@ -364,6 +371,69 @@ test("a worktree opens in VS Code, the file manager, or a new shell or Claude ta
   const claude = field(core.pty.spawned.at(-1), "request");
   expect(field(claude, "cwd")).toBe(MERGED);
   expect(field(claude, "program")).toBe(String.raw`C:\bin\claude.exe`);
+});
+
+const AUTO = "Remove merged worktrees automatically";
+
+function autoBox(root: HTMLElement): HTMLInputElement | undefined {
+  const label = [
+    ...changesCard(root).querySelectorAll<HTMLLabelElement>(".worktrees-auto"),
+  ].find((l) => l.textContent.includes(AUTO));
+  return label?.querySelector("input") ?? undefined;
+}
+
+test("the project's repo offers automatic removal, off at first; on saves it and removes the merged ones now", async () => {
+  let swept = false;
+  const core = worktreeCore({
+    cleaned: () => (swept ? ["Removed alpha-merged, merged in #12"] : []),
+  });
+  const root = await renderApp(() => PROFILES, core.core);
+  await open(root, "planner");
+  await showWorktrees(root);
+  const box = autoBox(root);
+  if (!box) throw new Error("no automatic removal switch");
+  expect(box.checked).toBe(false);
+
+  swept = true;
+  box.click();
+  await settle();
+  await settle();
+
+  expect(core.named("panel_clean_merged").map((c) => c.args)).toEqual([
+    { project: 1 },
+  ]);
+  expect(core.saves.at(-1)?.projects[0]?.tasks?.cleanMerged).toBe(true);
+  expect(autoBox(root)?.checked).toBe(true);
+  expect(changesCard(root).textContent).toContain(
+    "Removed alpha-merged, merged in #12",
+  );
+  expect(core.named("panel_worktrees")).toHaveLength(2);
+});
+
+test("turning automatic removal off saves it and removes nothing", async () => {
+  const core = worktreeCore();
+  const root = await renderApp(() => PROFILES, core.core);
+  await open(root, "planner");
+  await showWorktrees(root);
+
+  autoBox(root)?.click();
+  await settle();
+  autoBox(root)?.click();
+  await settle();
+
+  expect(core.named("panel_clean_merged")).toHaveLength(1);
+  expect(core.saves.at(-1)?.projects[0]?.tasks?.cleanMerged).toBe(false);
+});
+
+test("a repo that isn't the project's shows no automatic removal switch", async () => {
+  const core = worktreeCore({ projectRepo: false });
+  const root = await renderApp(() => PROFILES, core.core);
+  await open(root, "planner");
+
+  await showWorktrees(root);
+
+  expect(autoBox(root)).toBeUndefined();
+  expect(worktreeRow(root, "alpha-merged")).toBeDefined();
 });
 
 test("refusals and results read plainly", () => {
