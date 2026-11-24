@@ -1,10 +1,12 @@
 //! How long Claude Code keeps an account's chats: one key of the folder's `settings.json`, read and written alone.
 
+use std::fmt;
 use std::fs;
-use std::io;
-use std::path::Path;
+use std::io::{self, Write};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU32, Ordering};
 
-use serde::de::{Deserializer, IgnoredAny};
+use serde::de::{Deserializer, IgnoredAny, MapAccess, Visitor};
 use serde::{Deserialize, Serialize};
 
 pub const KEY: &str = "cleanupPeriodDays";
@@ -35,12 +37,8 @@ pub struct Deletes {
     pub days: u32,
 }
 
-// Only this key is kept; serde skips every other one unread into memory.
-#[derive(Deserialize)]
-struct Only {
-    #[serde(rename = "cleanupPeriodDays", default, deserialize_with = "days")]
-    days: Option<u32>,
-}
+/// The key's value, read with every other value skipped unkept; the last of repeated keys wins, as in Claude Code.
+struct Only(Option<u32>);
 
 #[derive(Deserialize)]
 #[serde(untagged)]
@@ -49,12 +47,36 @@ enum Lenient {
     Other(IgnoredAny),
 }
 
-// A value Claude Code could not read counts as unset, so its default applies.
-fn days<'de, D: Deserializer<'de>>(d: D) -> Result<Option<u32>, D::Error> {
-    Ok(match Lenient::deserialize(d)? {
-        Lenient::Number(n) => Some(u32::try_from(n).unwrap_or(u32::MAX)),
-        Lenient::Other(_) => None,
-    })
+impl<'de> Deserialize<'de> for Only {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        d.deserialize_map(OnlyVisitor)
+    }
+}
+
+struct OnlyVisitor;
+
+impl<'de> Visitor<'de> for OnlyVisitor {
+    type Value = Only;
+
+    fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("a settings object")
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Only, A::Error> {
+        let mut days = None;
+        while let Some(key) = map.next_key::<String>()? {
+            if key == KEY {
+                // A value Claude Code could not read counts as unset, so its default applies.
+                days = match map.next_value::<Lenient>()? {
+                    Lenient::Number(n) => Some(u32::try_from(n).unwrap_or(u32::MAX)),
+                    Lenient::Other(_) => None,
+                };
+            } else {
+                map.next_value::<IgnoredAny>()?;
+            }
+        }
+        Ok(Only(days))
+    }
 }
 
 /// The days Claude Code keeps chats for, or `None` when the file can't be read as JSON.
@@ -63,7 +85,7 @@ pub fn kept_days(file: &Path) -> Option<u32> {
         Ok(None) => Some(DEFAULT_DAYS),
         Ok(Some(text)) => serde_json::from_str::<Only>(strip_bom(&text))
             .ok()
-            .map(|only| only.days.unwrap_or(DEFAULT_DAYS)),
+            .map(|only| only.0.unwrap_or(DEFAULT_DAYS)),
         Err(_) => None,
     }
 }
@@ -74,12 +96,34 @@ pub fn keep(file: &Path) -> Result<(), KeepError> {
         None => format!("{{\n  \"{KEY}\": {KEEP_DAYS}\n}}\n"),
         Some(text) => with_kept(&text).ok_or(KeepError::NotJson)?,
     };
-    let temp = file.with_extension("json.cerberus");
-    fs::write(&temp, edited).map_err(KeepError::Write)?;
-    fs::rename(&temp, file).map_err(|e| {
+    let temp = fresh_temp(file).map_err(KeepError::Write)?;
+    let written = fs::OpenOptions::new()
+        .write(true)
+        .open(&temp)
+        .and_then(|mut out| out.write_all(edited.as_bytes()))
+        .and_then(|()| fs::rename(&temp, file));
+    written.map_err(|e| {
         let _ = fs::remove_file(&temp);
         KeepError::Write(e)
     })
+}
+
+/// A new, empty file beside `file` that no other save shares, so two saves at once can't write into each other's.
+fn fresh_temp(file: &Path) -> io::Result<PathBuf> {
+    static NEXT: AtomicU32 = AtomicU32::new(0);
+    loop {
+        let n = NEXT.fetch_add(1, Ordering::Relaxed);
+        let temp = file.with_extension(format!("json.cerberus-{}-{n}", std::process::id()));
+        match fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temp)
+        {
+            Ok(_) => return Ok(temp),
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {}
+            Err(e) => return Err(e),
+        }
+    }
 }
 
 fn read(file: &Path) -> io::Result<Option<String>> {
@@ -274,6 +318,14 @@ mod tests {
         assert_eq!(kept_days(&file), Some(DEFAULT_DAYS));
         fs::write(&file, "{ not json").unwrap();
         assert_eq!(kept_days(&file), None);
+        fs::write(
+            &file,
+            r#"{"cleanupPeriodDays": 7, "env": {}, "cleanupPeriodDays": 9}"#,
+        )
+        .unwrap();
+        assert_eq!(kept_days(&file), Some(9), "the last of repeated keys wins");
+        fs::write(&file, "[30]").unwrap();
+        assert_eq!(kept_days(&file), None);
     }
 
     #[test]
@@ -343,5 +395,30 @@ mod tests {
         fs::write(&file, "{ broken").unwrap();
         assert!(matches!(keep(&file), Err(KeepError::NotJson)));
         assert_eq!(fs::read_to_string(&file).unwrap(), "{ broken");
+        let left: Vec<_> = fs::read_dir(dir.path()).unwrap().collect();
+        assert_eq!(left.len(), 1, "no temp file is left behind");
+    }
+
+    #[test]
+    fn saves_at_once_each_land_whole() {
+        let dir = TestDir::new();
+        let file = dir.path().join("settings.json");
+        fs::write(&file, "{\"model\": \"opus\"}").unwrap();
+
+        let saves: Vec<_> = (0..8)
+            .map(|_| {
+                let file = file.clone();
+                std::thread::spawn(move || keep(&file))
+            })
+            .collect();
+
+        for save in saves {
+            save.join().unwrap().unwrap();
+        }
+        assert_eq!(
+            fs::read_to_string(&file).unwrap(),
+            "{\"model\": \"opus\",\"cleanupPeriodDays\": 36500}"
+        );
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
     }
 }
