@@ -58,8 +58,9 @@ whether alerts and shell suggestions are on.
   account's `cleanupPeriodDays` (30 when unset), and then Find chat, resume and Move can't reach it.
   An account kept for less than a year says "Claude Code deletes this account's chats after 30
   days" on its row. **Keep them** sets `cleanupPeriodDays` to 36500 in that account's
-  `settings.json` and changes nothing else in the file. Cerberus reads no other key there, and
-  writes only after the click.
+  `settings.json` and changes nothing else in the file. This check reads only that key, and writes
+  only after the click. Elsewhere Cerberus reads `statusLine` (Live cards), `enabledPlugins` and
+  `syncClaudeAiSkills` (the Skills card) from the same file.
 
 ## Projects and tabs
 
