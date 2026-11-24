@@ -1088,11 +1088,16 @@ export function App() {
   // A folder added to a running chat waits here until the chat is idle with nothing typed, then goes as `/add-dir`, the one command sent with Enter.
   // In the order added; one goes per idle report, so the next never lands on the chat while it handles the last.
   const addDirs = new Map<TabId, string[]>();
-  const sendAddDir = (id: TabId) => {
+  // Tabs sent one since their last idle report, which may still describe the chat before it.
+  const sentSinceIdle = new Set<TabId>();
+  /** `idle`: the chat just reported idle, so what was sent before has been handled. */
+  const sendAddDir = (id: TabId, idle = false) => {
+    if (idle) sentSinceIdle.delete(id);
     const [folder, ...rest] = addDirs.get(id) ?? [];
     const sender = senders.get(id);
     if (folder === undefined || !sender || lastState.get(id) !== "idle") return;
-    if (!sender.empty()) return;
+    if (sentSinceIdle.has(id) || !sender.empty()) return;
+    sentSinceIdle.add(id);
     if (rest.length > 0) addDirs.set(id, rest);
     else addDirs.delete(id);
     sender.send(addDirCommand(folder));
@@ -1908,7 +1913,7 @@ export function App() {
                                 lastState.set(id, state.state);
                                 if (state.state === "idle") {
                                   checkHandoff(id);
-                                  sendAddDir(id);
+                                  sendAddDir(id, true);
                                 }
                                 notify(id, state);
                                 setBoard((b) =>
