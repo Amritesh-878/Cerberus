@@ -5,6 +5,7 @@ mod deliver;
 pub mod inbox;
 pub mod link;
 pub mod mcp;
+mod peek;
 mod queue;
 mod serve;
 pub mod spawn;
@@ -82,6 +83,10 @@ pub trait Hooks: Send + Sync + 'static {
     fn label(&self, tab: TabId) -> Label;
     /// The waiting messages or a tab's note changed.
     fn changed(&self, snapshot: Snapshot);
+    /// The tab's last finished reply, from its Stop hook.
+    fn last_reply(&self, tab: TabId) -> Option<String>;
+    /// Another tab's chat read this tab's reply, so the tab can say so.
+    fn read_by(&self, tab: TabId, reader: TabId);
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -177,6 +182,10 @@ struct TabLink {
     hello: Option<Hello>,
     facts: Option<(Option<String>, Option<u64>)>,
     busy: bool,
+    /// When the chat last started a turn.
+    busy_at: Option<Instant>,
+    /// When a message last landed in its inbox, which starts a turn a moment later.
+    delivered_at: Option<Instant>,
     sighting: Option<(Sighting, SyncSender<()>)>,
     /// Helper runs that are gone, newest last.
     ended: VecDeque<String>,
@@ -366,6 +375,8 @@ impl Bridge {
                 hello: None,
                 facts: None,
                 busy: false,
+                busy_at: None,
+                delivered_at: None,
                 sighting: None,
                 ended: VecDeque::new(),
                 waits,
@@ -469,6 +480,9 @@ impl Bridge {
         let Some(core) = &self.0 else { return };
         if let Some(link) = core.state().links.get_mut(token) {
             link.busy = busy;
+            if busy {
+                link.busy_at = Some(Instant::now());
+            }
         }
     }
 
@@ -575,7 +589,13 @@ impl Bridge {
             id = pending.from
         );
         let (from, target) = (pending.from, pending.to);
-        let (outcome, decided) = match land(core, (from, target), &from_label, &body, type_into) {
+        let landed = land(core, (from, target), &from_label, &body, type_into);
+        if matches!(landed, Landed::Seen | Landed::Unseen)
+            && let Some(link) = core.state().by_tab_mut(target)
+        {
+            link.delivered_at = Some(Instant::now());
+        }
+        let (outcome, decided) = match landed {
             Landed::Seen => (
                 Outcome::Delivered { to, edited },
                 Decided::Delivered { from, to: target },

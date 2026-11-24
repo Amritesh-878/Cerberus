@@ -7,6 +7,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use crate::accounts::{Accounts, AccountsError, Profiles};
 use crate::blocking::blocking;
 use crate::bridge::{Bridge, BridgeError, Decided, Decision, Hooks, Label, Snapshot};
+use crate::live::Live;
 use crate::pty::PtyManager;
 use crate::saved::{Saved, TabId};
 
@@ -33,6 +34,22 @@ impl Hooks for AppHooks {
         // Fails only once the window is gone, and then nobody is left to show it.
         let _ = self.0.emit("bridge", snapshot);
     }
+
+    fn last_reply(&self, tab: TabId) -> Option<String> {
+        self.0.state::<Live>().last_reply(tab)
+    }
+
+    fn read_by(&self, tab: TabId, reader: TabId) {
+        let by = self.label(reader).text();
+        let _ = self.0.emit("bridge-read", ReadBy { tab, by });
+    }
+}
+
+/// Tells the webview that a tab's reply was read, and by which tab.
+#[derive(Clone, serde::Serialize)]
+struct ReadBy {
+    tab: TabId,
+    by: String,
 }
 
 #[tauri::command(async)]

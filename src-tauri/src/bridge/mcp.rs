@@ -13,15 +13,16 @@ use crate::bridge::inbox::{self, Letter};
 use crate::bridge::link;
 use crate::bridge::lock;
 use crate::bridge::wire::{
-    Ask, AskKind, BRIDGE_VAR, CHILD_TOKEN_VAR, MOST_LINE, MOST_MESSAGE, Order, Outcome, Reply,
-    SOCKET_VAR, TOKEN_VAR, Written,
+    Ask, AskKind, BRIDGE_VAR, CHILD_TOKEN_VAR, MOST_LINE, MOST_MESSAGE, MOST_WAIT_S, Order,
+    Outcome, Reply, SOCKET_VAR, TOKEN_VAR, Written,
 };
 
 const PROTOCOL: &str = "2025-06-18";
 const FACTS_TRIES: u32 = 300;
 const FACTS_GAP: Duration = Duration::from_secs(1);
+const DEFAULT_WAIT_S: u64 = 600;
 
-const INSTRUCTIONS: &str = "Cerberus runs this chat in a tab. To message a Claude chat on another account, call send_to_tab (list_tabs shows the tabs it can reach). The user reads every message first and approves, edits or rejects it, so a call can wait a while; its result says what happened. A message from another Cerberus tab starts with \"[Cerberus: a message from tab ...]\": reply to it with send_to_tab to that tab, not with SendMessage, which cannot reach other accounts. Chats on this same account keep using SendMessage.";
+const INSTRUCTIONS: &str = "Cerberus runs this chat in a tab. To message a Claude chat on another account, call send_to_tab (list_tabs shows the tabs it can reach). The user reads every message first and approves, edits or rejects it, so a call can wait a while; its result says what happened. A message from another Cerberus tab starts with \"[Cerberus: a message from tab ...]\": reply to it with send_to_tab to that tab, not with SendMessage, which cannot reach other accounts. Chats on this same account keep using SendMessage. To follow work you handed to a tab, wait_for_tab waits until that tab is idle at its prompt, and read_tab returns its last finished reply; neither types or sends anything there.";
 
 fn tools() -> Value {
     json!([
@@ -42,6 +43,33 @@ fn tools() -> Value {
             "name": "list_tabs",
             "description": "List the Claude tabs on other accounts that send_to_tab can reach: id, \"account · project / tab\", and whether each is busy.",
             "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false },
+            "annotations": { "readOnlyHint": true }
+        },
+        {
+            "name": "wait_for_tab",
+            "description": "Wait until a tab from list_tabs is idle at its prompt, or until timeout_s passes; the result says which. Types and sends nothing.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "tab": { "type": "string", "description": "The tab id, from list_tabs." },
+                    "timeout_s": { "type": "integer", "minimum": 1, "maximum": MOST_WAIT_S, "description": "How long to wait, in seconds; 600 when left out." }
+                },
+                "required": ["tab"],
+                "additionalProperties": false
+            },
+            "annotations": { "readOnlyHint": true }
+        },
+        {
+            "name": "read_tab",
+            "description": "Return the last finished reply of a tab from list_tabs, as text, at most 64 KB. Types and sends nothing.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "tab": { "type": "string", "description": "The tab id, from list_tabs." }
+                },
+                "required": ["tab"],
+                "additionalProperties": false
+            },
             "annotations": { "readOnlyHint": true }
         }
     ])
@@ -205,15 +233,40 @@ fn call_tool(client: Option<&Client>, call: String, name: &str, args: &Value) ->
             Err(e) => text_result(&format!("Cerberus is not reachable: {e}"), true),
         },
         "send_to_tab" => send_to_tab(client, call, args),
+        "wait_for_tab" | "read_tab" => {
+            let Some(to) = tab_of(args) else {
+                return text_result(&format!("{name} needs a tab id."), true);
+            };
+            let kind = if name == "read_tab" {
+                AskKind::Read { to }
+            } else {
+                let timeout_s = args
+                    .get("timeout_s")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(DEFAULT_WAIT_S);
+                AskKind::Wait { to, timeout_s }
+            };
+            match client.ask(kind) {
+                Ok(Reply::Told { text, error }) => text_result(&text, error),
+                Ok(_) => text_result("Cerberus sent an answer this helper cannot read.", true),
+                Err(e) => text_result(&format!("Cerberus is not reachable: {e}"), true),
+            }
+        }
         other => text_result(&format!("There is no tool named {other}."), true),
     }
 }
 
+fn tab_of(args: &Value) -> Option<String> {
+    match args.get("tab") {
+        Some(Value::String(tab)) => Some(tab.clone()),
+        Some(Value::Number(tab)) => Some(tab.to_string()),
+        _ => None,
+    }
+}
+
 fn send_to_tab(client: &Client, call: String, args: &Value) -> Value {
-    let tab = match args.get("tab") {
-        Some(Value::String(tab)) => tab.clone(),
-        Some(Value::Number(tab)) => tab.to_string(),
-        _ => return text_result("Not sent: send_to_tab needs a tab id.", true),
+    let Some(tab) = tab_of(args) else {
+        return text_result("Not sent: send_to_tab needs a tab id.", true);
     };
     let Some(message) = args.get("message").and_then(Value::as_str) else {
         return text_result("Not sent: send_to_tab needs a message.", true);
@@ -420,10 +473,11 @@ mod tests {
         let instructions = result["instructions"].as_str().unwrap();
         assert!(instructions.contains("send_to_tab"));
         assert!(instructions.contains("not with SendMessage"));
+        assert!(instructions.contains("wait_for_tab") && instructions.contains("read_tab"));
     }
 
     #[test]
-    fn the_tools_are_send_to_tab_and_list_tabs() {
+    fn the_tools_are_send_list_wait_and_read() {
         let Step::Reply(reply) = step(&json!({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}))
         else {
             panic!("no reply");
@@ -435,7 +489,10 @@ mod tests {
             .iter()
             .map(|t| t["name"].as_str().unwrap())
             .collect();
-        assert_eq!(names, ["send_to_tab", "list_tabs"]);
+        assert_eq!(
+            names,
+            ["send_to_tab", "list_tabs", "wait_for_tab", "read_tab"]
+        );
     }
 
     #[test]

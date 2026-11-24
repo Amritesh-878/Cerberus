@@ -11,6 +11,8 @@ const MOST_PATH: usize = 4096;
 const MOST_TASKS: usize = 64;
 /// A task's description shows in one row; the rest is Claude Code's own `/tasks` view.
 const MOST_DESCRIPTION: usize = 120;
+/// The most of a reply kept for another tab's `read_tab`.
+pub const MOST_REPLY: usize = 64 * 1024;
 
 /// The tools whose `file_path` (or `notebook_path`) is a file the chat wrote.
 const WRITE_TOOLS: [&str; 4] = ["Write", "Edit", "MultiEdit", "NotebookEdit"];
@@ -50,6 +52,9 @@ pub struct Task {
 pub struct Tasks {
     pub at: u64,
     pub tasks: Vec<Task>,
+    /// The turn's last message, sent only from a tab with messages on, for another tab's `read_tab`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reply: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -76,6 +81,8 @@ struct HookIn {
     agent_id: Option<String>,
     #[serde(default)]
     agent_type: Option<String>,
+    #[serde(default)]
+    last_assistant_message: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -100,8 +107,8 @@ struct TaskIn {
     description: Option<String>,
 }
 
-/// The kept fields of one hook input, or `None` when it is not one Cerberus listens to.
-pub fn hook_from(input: &[u8], at: u64) -> Option<Event> {
+/// The kept fields of one hook input, or `None` when it is not one Cerberus listens to; the reply only with `keep_reply`.
+pub fn hook_from(input: &[u8], at: u64, keep_reply: bool) -> Option<Event> {
     if input.len() > MOST_INPUT {
         return None;
     }
@@ -125,6 +132,10 @@ pub fn hook_from(input: &[u8], at: u64) -> Option<Event> {
                     .filter_map(task)
                     .take(MOST_TASKS)
                     .collect(),
+                reply: parsed
+                    .last_assistant_message
+                    .filter(|_| keep_reply)
+                    .and_then(reply_like),
             }))
         }
         name @ ("SubagentStart" | "SubagentStop") => {
@@ -166,6 +177,7 @@ pub fn checked(event: Event) -> Option<Event> {
                 })
                 .take(MOST_TASKS)
                 .collect(),
+            reply: t.reply.and_then(reply_like),
         })),
         Event::Subagent(s) => id_like(&s.id).then(|| {
             Event::Subagent(Subagent {
@@ -189,6 +201,18 @@ fn task(found: TaskIn) -> Option<Task> {
         agent_type: found.agent_type.as_deref().and_then(name_like),
         description: found.description.as_deref().and_then(description_like),
     })
+}
+
+// Cut on a character boundary, so an over-long reply still reads.
+fn reply_like(mut text: String) -> Option<String> {
+    if text.len() > MOST_REPLY {
+        let mut end = MOST_REPLY;
+        while !text.is_char_boundary(end) {
+            end -= 1;
+        }
+        text.truncate(end);
+    }
+    (!text.trim().is_empty()).then_some(text)
 }
 
 /// One line of plain text: control characters become spaces, runs of space close up, and it stops at the cap.
@@ -256,6 +280,8 @@ pub(crate) mod tests {
         fits(Event::Tasks(Tasks {
             at: u64::MAX,
             tasks: (0..MOST_TASKS).map(task).collect(),
+            // Control characters cost six bytes each once escaped.
+            reply: Some("\u{1}".repeat(MOST_REPLY)),
         }));
         // Each backslash doubles in JSON.
         fits(Event::Wrote(Wrote {
@@ -320,7 +346,7 @@ pub(crate) mod tests {
 
     #[test]
     fn a_write_keeps_the_tool_and_path_and_nothing_of_its_content() {
-        let kept = hook_from(native(FAKE_WRITE).as_bytes(), 9).unwrap();
+        let kept = hook_from(native(FAKE_WRITE).as_bytes(), 9, true).unwrap();
 
         assert_eq!(
             kept,
@@ -335,7 +361,7 @@ pub(crate) mod tests {
 
     #[test]
     fn a_stop_keeps_each_tasks_id_kind_state_and_description_never_its_command() {
-        let kept = hook_from(FAKE_STOP.as_bytes(), 9).unwrap();
+        let kept = hook_from(FAKE_STOP.as_bytes(), 9, false).unwrap();
 
         assert_eq!(
             kept,
@@ -356,10 +382,28 @@ pub(crate) mod tests {
                         agent_type: Some("general-purpose".into()),
                         description: Some("Review the diff".into()),
                     },
-                ]
+                ],
+                reply: None,
             })
         );
         assert!(!json_of(&kept).contains("FAKE-SECRET"));
+    }
+
+    #[test]
+    fn a_stop_keeps_the_reply_only_when_asked_and_cut_at_64_kb() {
+        let long = FAKE_STOP.replace("FAKE-SECRET-reply", &"é".repeat(MOST_REPLY));
+
+        let Some(Event::Tasks(kept)) = hook_from(FAKE_STOP.as_bytes(), 9, true) else {
+            panic!("not a stop");
+        };
+        let Some(Event::Tasks(cut)) = hook_from(long.as_bytes(), 9, true) else {
+            panic!("not a stop");
+        };
+
+        assert_eq!(kept.reply.as_deref(), Some("FAKE-SECRET-reply"));
+        let cut = cut.reply.unwrap();
+        assert_eq!(cut.len(), MOST_REPLY);
+        assert!(cut.chars().all(|c| c == 'é'));
     }
 
     #[test]
@@ -371,7 +415,7 @@ pub(crate) mod tests {
             "background_tasks":[{"id":"aec41a0ac0cf62716","type":"subagent","status":"running"}]}"#;
 
         assert_eq!(
-            hook_from(start.as_bytes(), 1),
+            hook_from(start.as_bytes(), 1, true),
             Some(Event::Subagent(Subagent {
                 at: 1,
                 id: "aec41a0ac0cf62716".into(),
@@ -379,7 +423,7 @@ pub(crate) mod tests {
                 started: true,
             }))
         );
-        let stopped = hook_from(stop.as_bytes(), 2).unwrap();
+        let stopped = hook_from(stop.as_bytes(), 2, true).unwrap();
         assert!(matches!(
             stopped,
             Event::Subagent(Subagent { started: false, .. })
@@ -397,7 +441,7 @@ pub(crate) mod tests {
         let bad_id = r#"{"hook_event_name":"SubagentStart","agent_id":"../../x"}"#;
 
         for input in [bash, relative, notify, bad_id, "not json", "[]"] {
-            assert_eq!(hook_from(input.as_bytes(), 1), None, "{input}");
+            assert_eq!(hook_from(input.as_bytes(), 1, true), None, "{input}");
         }
     }
 
@@ -408,7 +452,7 @@ pub(crate) mod tests {
             "tool_input":{"notebook_path":"C:\\work\\out.txt","new_source":"FAKE-SECRET"}}"#,
         );
 
-        let kept = hook_from(input.as_bytes(), 1).unwrap();
+        let kept = hook_from(input.as_bytes(), 1, true).unwrap();
 
         assert!(matches!(kept, Event::Wrote(Wrote { ref path, .. }) if path == WRITTEN));
     }

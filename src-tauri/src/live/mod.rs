@@ -23,7 +23,7 @@ use serde::Serialize;
 
 use crate::accounts::{AccountId, KeptUsage};
 use crate::bridge::link;
-use crate::live::event::{Event, Line, MOST_LINE, PIPE_VAR, TOKEN_VAR};
+use crate::live::event::{Event, Line, MOST_LINE, PIPE_VAR, TOKEN_VAR, Tasks};
 pub use crate::live::meters::{DEFAULT_WARN_AT, Meter, Warning};
 use crate::live::meters::{Meters, Warner};
 pub use crate::live::settings::Shell;
@@ -97,6 +97,8 @@ struct State {
     tabs: BTreeMap<TabId, TabLive>,
     /// Kept across the tab's restarts, since a resumed chat is the same session.
     work: HashMap<TabId, (PathBuf, Work)>,
+    /// Each tab's last finished reply, only from tabs with messages on, in memory only.
+    replies: HashMap<TabId, String>,
     meters: Meters,
     warner: Warner,
 }
@@ -201,6 +203,7 @@ impl Live {
                 return;
             };
             state.tabs.remove(&link.tab);
+            state.replies.remove(&link.tab);
             // Its tasks ended with its `claude`.
             if let Some((_, work)) = state.work.get_mut(&link.tab) {
                 work.ended(now_ms());
@@ -267,6 +270,13 @@ impl Live {
 
     pub fn view(&self) -> View {
         self.core.as_ref().map(|c| c.view()).unwrap_or_default()
+    }
+
+    /// The tab's last finished reply, for another tab's `read_tab`.
+    pub fn last_reply(&self, tab: TabId) -> Option<String> {
+        self.core
+            .as_ref()
+            .and_then(|core| core.state().replies.get(&tab).cloned())
     }
 
     /// Accounts other than `from` below the warning line; `None` while live cards are off and no limits are known.
@@ -398,6 +408,12 @@ impl Core {
             let reports = state.tabs.get(&tab).is_some_and(|t| !t.kept_theirs);
             if matches!(event, Event::Tasks(_)) && reports {
                 state.meters.replied(account);
+            }
+            if let Event::Tasks(Tasks {
+                reply: Some(reply), ..
+            }) = event
+            {
+                state.replies.insert(tab, reply.clone());
             }
             let Some((_, work)) = state.work.get_mut(&tab) else {
                 return;

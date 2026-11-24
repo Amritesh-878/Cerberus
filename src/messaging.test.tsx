@@ -1,5 +1,5 @@
 import { emit as emitEvent } from "@tauri-apps/api/event";
-import { afterEach, expect, test } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 
 import {
   activeTitle,
@@ -12,7 +12,7 @@ import {
   SAVED,
   settle,
 } from "./harness";
-import { type BridgeSnapshot, noteText } from "./messaging";
+import { type BridgeSnapshot, noteText, READ_SHOWN_MS } from "./messaging";
 import type { SavedTree } from "./saved";
 
 afterEach(cleanup);
@@ -274,6 +274,29 @@ test("a tab's note says when messages are prefill only or off", async () => {
   expect(root.querySelector(".messages-note")?.textContent).toBe(
     "messages off",
   );
+});
+
+test("a tab whose reply another chat read says so for a few seconds", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  try {
+    const app = core({ pending: [], notes: [], senderGone: [] });
+    const root = await renderApp(() => SAVED, app.core);
+    await open(root, "coder");
+
+    await emitEvent("bridge-read", {
+      tab: 6,
+      by: "personal · alpha / planner",
+    });
+    await settle();
+    expect(root.querySelector(".messages-note")?.textContent).toBe(
+      "Read by personal · alpha / planner",
+    );
+
+    await vi.advanceTimersByTimeAsync(READ_SHOWN_MS);
+    expect(root.querySelector(".messages-note")).toBeNull();
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 test("a new waiting message from the core shows in the popup", async () => {

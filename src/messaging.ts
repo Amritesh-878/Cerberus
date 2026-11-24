@@ -74,12 +74,41 @@ export function noteText(note: TabNote): { label: string; title: string } {
   return { label: LABELS[note.note], title };
 }
 
+/** How long a tab says another chat read its reply. */
+export const READ_SHOWN_MS = 6000;
+
+interface ReadBy {
+  tab: number;
+  /** The reading tab, as "account · project / tab". */
+  by: string;
+}
+
 /** The core's waiting messages and tab notes, kept current from its `bridge` event. */
 export function createMessaging() {
   const [snapshot, setSnapshot] = createSignal<BridgeSnapshot>({
     pending: [],
     notes: [],
     senderGone: [],
+  });
+  // The latest read of each tab's reply, shown for a few seconds.
+  const [reads, setReads] = createSignal<ReadBy[]>([]);
+  const timers = new Set<ReturnType<typeof setTimeout>>();
+  onMount(() => {
+    const reading = listen<ReadBy>("bridge-read", (event) => {
+      const read = event.payload;
+      setReads((all) => [...all.filter((r) => r.tab !== read.tab), read]);
+      const timer = setTimeout(() => {
+        timers.delete(timer);
+        setReads((all) => all.filter((r) => r !== read));
+      }, READ_SHOWN_MS);
+      timers.add(timer);
+    });
+    onCleanup(() => {
+      for (const timer of timers) clearTimeout(timer);
+      void reading.then((stop) => {
+        stop();
+      });
+    });
   });
   onMount(() => {
     // An event that lands first is newer than the snapshot asked for, so it wins.
@@ -113,5 +142,10 @@ export function createMessaging() {
       tab === undefined
         ? undefined
         : snapshot().notes.find((n) => n.tab === tab),
+    /** "Read by <tab>" while another chat's read of this tab's reply is recent. */
+    readBy: (tab: number | undefined): string | undefined => {
+      const by = reads().find((r) => r.tab === tab)?.by;
+      return by === undefined ? undefined : `Read by ${by}`;
+    },
   };
 }

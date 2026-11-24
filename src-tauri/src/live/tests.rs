@@ -73,6 +73,7 @@ fn env_of(ticket: &Ticket) -> Env {
     Env {
         pipe: get(PIPE_VAR),
         token: get(TOKEN_VAR),
+        messages: false,
     }
 }
 
@@ -245,6 +246,7 @@ fn without_the_pipe_the_helper_still_passes_his_input_on() {
     let env = Env {
         pipe: Some(link::name_for("nobody-listens").into()),
         token: Some("x".into()),
+        messages: false,
     };
 
     assert_eq!(status_line(&env, FAKE_INPUT, true), FAKE_INPUT.as_bytes());
@@ -463,4 +465,35 @@ fn the_pane_reads_only_files_the_chat_wrote() {
     assert!(fx.live.output_stamp(7, &path).is_some());
     assert_eq!(fx.live.output_stamp(7, &other.to_string_lossy()), None);
     assert_eq!(fx.live.output_stamp(8, &path), None, "another tab");
+}
+
+#[test]
+fn a_reply_is_kept_only_from_a_tab_with_messages_on_and_goes_when_it_closes() {
+    let fx = start(85);
+    let quiet = fx
+        .live
+        .register(7, 2, fx.dir.path(), fx.dir.path())
+        .unwrap();
+    let linked = fx
+        .live
+        .register(8, 3, fx.dir.path(), fx.dir.path())
+        .unwrap();
+    let with_messages = Env {
+        messages: true,
+        ..env_of(&linked)
+    };
+
+    hook(&env_of(&quiet), crate::live::hooks::tests::FAKE_STOP);
+    hook(&with_messages, crate::live::hooks::tests::FAKE_STOP);
+    next_view_where(&fx.views, |v| v.tabs.iter().all(|t| t.tasks.len() == 2));
+
+    assert_eq!(fx.live.last_reply(7), None);
+    assert_eq!(fx.live.last_reply(8).as_deref(), Some("FAKE-SECRET-reply"));
+    let view = serde_json::to_string(&fx.live.view()).unwrap();
+    assert!(
+        !view.contains("FAKE-SECRET"),
+        "the reply never reaches the cards"
+    );
+    fx.live.closed(&linked.token);
+    assert_eq!(fx.live.last_reply(8), None);
 }

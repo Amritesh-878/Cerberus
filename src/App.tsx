@@ -1676,6 +1676,13 @@ export function App() {
                     </button>
                   )}
                 </Show>
+                <Show when={messaging.readBy(shown())}>
+                  {(line) => (
+                    <span class="messages-note" role="status">
+                      {line()}
+                    </span>
+                  )}
+                </Show>
                 <Show when={messaging.note(shown())}>
                   {(note) => (
                     <span

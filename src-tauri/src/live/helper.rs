@@ -17,6 +17,8 @@ pub const PASS: &str = "--pass";
 pub struct Env {
     pub pipe: Option<OsString>,
     pub token: Option<OsString>,
+    /// The tab has messages on, so another tab's chat may read its replies.
+    pub messages: bool,
 }
 
 impl Env {
@@ -24,6 +26,8 @@ impl Env {
         Self {
             pipe: std::env::var_os(PIPE_VAR),
             token: std::env::var_os(TOKEN_VAR),
+            messages: std::env::var_os(crate::bridge::wire::TOKEN_VAR)
+                .is_some_and(|v| !v.is_empty()),
         }
     }
 }
@@ -50,7 +54,7 @@ pub fn run(args: &[String], stdin: impl Read, stdout: impl Write, env: &Env) {
         .and_then(|d| u64::try_from(d.as_millis()).ok())
         .unwrap_or(0);
     let event = if mode == Some(HOOK) {
-        hook_from(&input, at)
+        hook_from(&input, at, env.messages)
     } else {
         status_from(&input, at).map(Event::Status)
     };
