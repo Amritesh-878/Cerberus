@@ -138,7 +138,26 @@ async function editEnvironment(root: HTMLElement, tab: string): Promise<void> {
 const lastSave = (saves: SavedTree[], id: number) =>
   saves.at(-1)?.tabs.find((t) => t.id === id);
 
-test("adding a folder saves it and types /add-dir into the running chat, never Enter", async () => {
+/** Types into the shown pane as a key would, so the chat's input holds text. */
+function typeKey(root: HTMLElement, key: string): void {
+  const area = root.querySelector<HTMLTextAreaElement>(
+    ".xterm-helper-textarea",
+  );
+  if (!area) throw new Error("no terminal");
+  const keyCode = key === "Enter" ? 13 : key.toUpperCase().charCodeAt(0);
+  area.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key,
+      keyCode,
+      bubbles: true,
+      cancelable: true,
+    }),
+  );
+}
+
+const SENT_PLANS = `\x1b[200~/add-dir ${PLANS}\x1b[201~\r`;
+
+test("adding a folder saves it and sends /add-dir once the chat is idle", async () => {
   const env = envCore([PLANS]);
   const root = await renderApp(() => PROFILES, env.core);
   await editEnvironment(root, "planner");
@@ -147,7 +166,9 @@ test("adding a folder saves it and types /add-dir into the running chat, never E
   click(dialog(), "Add folder…");
   await settle();
   expect(dialog().textContent).toContain("plans");
-  expect(dialog().textContent).toContain("/add-dir is typed into the chat");
+  expect(dialog().textContent).toContain(
+    "Sent as /add-dir once the chat is idle.",
+  );
   click(dialog(), "Save");
   await settle();
 
@@ -157,10 +178,92 @@ test("adding a folder saves it and types /add-dir into the running chat, never E
     cwd: ALPHA,
     dirs: [PLANS],
   });
-  expect(env.writes).toEqual([`\x1b[200~/add-dir ${PLANS}\x1b[201~`]);
+  expect(env.writes, "not before the chat says it is idle").toEqual([]);
+  emit(env.pty.spawned, 0, { state: "idle" });
+  await settle();
+  expect(env.writes).toEqual([SENT_PLANS]);
+  expect(root.querySelector(".tab-alert")?.textContent).toContain(
+    `Added ${PLANS} to the chat`,
+  );
+  emit(env.pty.spawned, 0, { state: "idle" });
+  await settle();
+  expect(env.writes, "sent once").toEqual([SENT_PLANS]);
 });
 
-test("adding two folders says the first is typed for you to send and the rest wait for a restart", async () => {
+test("/add-dir waits while the chat works or its input holds text, and goes at the next idle after", async () => {
+  const env = envCore([PLANS]);
+  const root = await renderApp(() => PROFILES, env.core);
+  await open(root, "planner");
+  emit(env.pty.spawned, 0, { state: "working" });
+  await settle();
+  click(root, "Edit environment");
+  await settle();
+  click(dialog(), "Add folder…");
+  await settle();
+  click(dialog(), "Save");
+  await settle();
+  expect(env.writes, "working").toEqual([]);
+
+  typeKey(root, "h");
+  emit(env.pty.spawned, 0, { state: "idle" });
+  await settle();
+  expect(env.writes, "his text is still in the input").toEqual(["h"]);
+
+  typeKey(root, "Enter");
+  emit(env.pty.spawned, 0, { state: "working" });
+  emit(env.pty.spawned, 0, { state: "idle" });
+  await settle();
+  expect(env.writes).toEqual(["h", "\r", SENT_PLANS]);
+});
+
+test("a folder saved right after one was sent waits for the chat's next idle report", async () => {
+  const env = envCore([PLANS, BETA]);
+  const root = await renderApp(() => PROFILES, env.core);
+  await open(root, "planner");
+  emit(env.pty.spawned, 0, { state: "idle" });
+  await settle();
+  for (let save = 0; save < 2; save++) {
+    click(root, "Edit environment");
+    await settle();
+    click(dialog(), "Add folder…");
+    await settle();
+    click(dialog(), "Save");
+    await settle();
+  }
+  expect(env.writes, "the chat may still be adding the first").toEqual([
+    SENT_PLANS,
+  ]);
+
+  emit(env.pty.spawned, 0, { state: "idle" });
+  await settle();
+  expect(env.writes).toEqual([SENT_PLANS, SENT_PLANS.replace(PLANS, BETA)]);
+});
+
+test("folders added in two saves while the chat works each reach it, one per idle, in order", async () => {
+  const env = envCore([PLANS, BETA]);
+  const root = await renderApp(() => PROFILES, env.core);
+  await open(root, "planner");
+  emit(env.pty.spawned, 0, { state: "working" });
+  await settle();
+  for (let save = 0; save < 2; save++) {
+    click(root, "Edit environment");
+    await settle();
+    click(dialog(), "Add folder…");
+    await settle();
+    click(dialog(), "Save");
+    await settle();
+  }
+  expect(env.writes, "working").toEqual([]);
+
+  emit(env.pty.spawned, 0, { state: "idle" });
+  await settle();
+  expect(env.writes).toEqual([SENT_PLANS]);
+  emit(env.pty.spawned, 0, { state: "working" }, { state: "idle" });
+  await settle();
+  expect(env.writes).toEqual([SENT_PLANS, SENT_PLANS.replace(PLANS, BETA)]);
+});
+
+test("adding two folders says the first is sent and the rest wait for a restart", async () => {
   const env = envCore([PLANS, BETA]);
   const root = await renderApp(() => PROFILES, env.core);
   await editEnvironment(root, "planner");
@@ -171,7 +274,7 @@ test("adding two folders says the first is typed for you to send and the rest wa
   await settle();
 
   expect(dialog().textContent).toContain(
-    "/add-dir is typed for the first folder, for you to send. The rest apply on the next start.",
+    "The first is sent as /add-dir once the chat is idle. The rest apply on the next start.",
   );
   expect(env.calls.map((c) => c.cmd)).not.toContain("tab_move_folder");
   // No restart: the chat keeps running in the one pane it had.

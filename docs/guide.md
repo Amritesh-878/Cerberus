@@ -220,7 +220,8 @@ says so. Shell tabs start fresh in their folder.
 **Ended chats.** When a chat ends by itself, for example with `/exit`, its tab becomes a shell in
 the same folder and account, with Claude Code's "Resume this session with" line still above the
 prompt. It stays a shell after a restart. **Resume chat** in its right-click menu brings the chat
-back. Closing Cerberus, a crash, or moving the chat never counts as ended.
+back. Closing Cerberus, a crash, or moving the chat never counts as ended. Resuming, a move, and
+any other restart of an open tab keep its terminal: what it showed stays above, in its scrollback.
 
 **`claude` typed in a shell tab.** Run `claude` (or `claude --resume <id>`) in a shell tab, or in
 the shell of an ended chat, and within a second or two the tab becomes a Claude Code tab: its icon,
@@ -363,8 +364,10 @@ The gear on the Environment card edits the tab on screen. Nothing changes until 
 - **Name:** the tab's title.
 - **Folders:** the main folder (**Change…**) and any extra folders (**Add folder…**, and the cross
   to remove one), each with its git branch. A Claude Code tab starts with each extra folder as
-  `--add-dir`, every time. Adding one to a running chat also types `/add-dir <folder>` into its
-  input for you to send (one folder per save is typed; the rest apply on the next start). Removing
+  `--add-dir`, every time. Adding one to a running chat also sends `/add-dir <folder>` to it once
+  the chat is idle with nothing typed in its input, and the tab says "Added <folder> to the chat"
+  (one folder per save; the rest apply on the next start). `/add-dir` is handled by Claude Code
+  itself and never reaches the model; it is the only command Cerberus sends with Enter. Removing
   one applies on the next start.
 - **A new main folder** restarts the tab there. A Claude Code chat is copied to the new folder's
   project on the same account and resumes with `claude --resume`, so it keeps its history; the old
@@ -398,12 +401,14 @@ JSON on to it unchanged, and keeps its `padding` and `refreshInterval`. On Windo
 Claude Code runs status lines in PowerShell; there Cerberus leaves your status line alone, and the
 Context card says the chat can't report.
 
-**Warn when an account passes N% of its 5-hour limit** (Accounts, under Claude tabs; 85% by
-default) shows a banner over the chat and, with desktop alerts on, a notification: "work is at 87%,
-resets 6:40 pm". It comes once per account per 5-hour window. The banner lists **Move to
-<account>** for each signed-in account below the line; a click opens the usual move confirm
-for the tab that crossed it, and nothing moves until you confirm. **Dismiss** hides it until the
-next window.
+**Warn when an account passes N% of its 5-hour limit** (Accounts, under Claude tabs; 90% by
+default) shows a popup over the tab that crossed it: "work is at 87%, resets 6:40 pm". It comes
+once per account per 5-hour window. When that tab isn't on screen, or the window isn't focused, the
+popup waits for it and, with desktop alerts on, a notification says so. Like the limit popup below, it has one **Move to
+<account>** button for each signed-in account below the line, the first as the default, and
+**Not now**. An account's button moves the chat in one click; nothing moves without it. **Not now**
+leaves a small bar over the chat: **Show** opens the popup again, and **Dismiss** hides it until
+the next window.
 
 The **Live cards** switch, in the same place, turns all of it off; Claude tabs started after that
 get no `--settings` and start as before.
@@ -499,8 +504,9 @@ Right-click a Claude Code tab and pick **Move to `<account>`…** to move its ch
 of your accounts, for example to keep work and personal chats apart. If the chat is running,
 Cerberus asks before closing it, and the row says "Moving to `<account>`…" until it lands. Closing
 it also ends what the chat left running, such as its background shells, as Claude Code does on a
-normal exit; only processes started by that chat are ended. The limit banner's **Move to** runs
-the same steps.
+normal exit; only processes started by that chat are ended. The limit and low-limit popups'
+**Move to** run the same steps. The chat resumes in the same tab, in its place and split, and the
+terminal keeps what it showed, scrolled where it was, until the resumed chat draws.
 
 On a tab whose chat ended (now a shell), the item reads **Move the ended chat to
 `<account>`…**: it moves that tab's ended chat, which is the last `claude` you ran in its shell if
@@ -525,7 +531,7 @@ account below the warning line, the first one as the default, and **Not now**, w
 as it is. An account's button runs the same move as above, without a second confirm (the popup's
 click is it). Once the moved chat is
 ready, `continue` is typed into it for you to send, so Claude carries on with the request that hit
-the limit. The limit banner's **Move to** types it too; a move from the tab's menu doesn't.
+the limit. A move from the low-limit popup types it too; a move from the tab's menu doesn't.
 
 A move between accounts of two organizations adds "Other organization: Claude rereads the chat,
 so it starts slower." to its confirm and to the limit popup: Claude can't reuse the chat's earlier

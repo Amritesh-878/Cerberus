@@ -5,6 +5,7 @@ import {
   activeTitle,
   cleanup,
   click,
+  emit,
   field,
   press,
   pressAndRelease,
@@ -325,6 +326,7 @@ test("a moving chat says where it is going on its row and in its pane until it r
     },
   });
   await open(root, "Claude Code · work");
+  const terminal = root.querySelector(".tab-view.shown .xterm");
 
   await openMenu(root, "Claude Code · work");
   click(root.querySelector(".tab-menu") ?? root, "Move to personal…");
@@ -335,16 +337,28 @@ test("a moving chat says where it is going on its row and in its pane until it r
   expect(root.querySelector(".moving-line")?.textContent).toBe(
     "Moving to personal…",
   );
-  expect(root.querySelector(".tab-view .pane-note")?.textContent).toBe(
-    "Moving to personal…",
+  expect(
+    root.querySelector(".tab-view.shown .terminal-notice")?.textContent,
+  ).toBe("Moving to personal…");
+  expect(app.pty.killed).toEqual([1]);
+  // The stopped chat's exit shows no ended screen and starts no shell.
+  emit(app.pty.spawned, 0, { exitCode: 0, ended: true });
+  await settle();
+  expect(root.querySelector(".tab-view.shown")?.textContent).not.toContain(
+    "chat ended",
   );
+  expect(app.pty.spawned).toHaveLength(1);
 
   finish?.();
   await settle();
 
   expect(root.querySelector(".moving-line")).toBeNull();
-  expect(root.querySelector(".pane-note")).toBeNull();
+  expect(root.querySelector(".terminal-notice")).toBeNull();
   expect(app.pty.spawned).toHaveLength(2);
+  expect(app.pty.spawned.map((s) => field(s, "account"))).toEqual([1, 0]);
+  // One terminal throughout, so what it showed and its scroll stay until the resumed chat draws.
+  expect(root.querySelector(".tab-view.shown .xterm")).toBe(terminal);
+  expect(terminal).not.toBeNull();
 });
 
 // The Claude tab is the first row; a move renames it after its new account.

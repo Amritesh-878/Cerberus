@@ -251,54 +251,148 @@ test("usage has a row per account, unknown until one of its tabs reports", async
   );
 });
 
-test("a warning offers Continue on, which only opens the usual confirm, and Dismiss tells the core", async () => {
+const WARNING = {
+  account: 1,
+  tab: 3,
+  used: 87.2,
+  resetsAt: RESET,
+  offers: [0],
+};
+
+/** The core's view holding `warning`, then its once-per-window event, as the core sends them. */
+async function warn(warning: typeof WARNING): Promise<void> {
+  await emitEvent("live", { ...VIEW, warnings: [warning] });
+  await emitEvent("live-warning", warning);
+  await settle();
+}
+
+function popup(): HTMLElement | null {
+  return document.querySelector<HTMLElement>(".limit-popup");
+}
+
+test("the warning is a popup over its tab, and its account button moves the chat in one click", async () => {
   const live = liveCore();
   const root = await renderApp(live.profiles, live.core);
   await open(root, "planner");
-  await emitEvent("live", {
-    ...VIEW,
-    warnings: [
-      { account: 1, tab: 3, used: 87.2, resetsAt: RESET, offers: [0] },
-    ],
-  });
-  await settle();
 
-  const banner = root.querySelector<HTMLElement>(".live-warning");
-  expect(banner?.textContent).toContain("work is at 87%, resets ");
-  click(banner ?? root, "Move to personal");
-  await settle();
+  await warn(WARNING);
 
-  expect(root.querySelector(".menu-confirm")?.textContent).toContain(
-    "Move this chat to personal?",
+  expect(popup()?.querySelector("h2")?.textContent).toMatch(
+    /^work is at 87%, resets /,
   );
-  expect(live.calls.filter((c) => c.cmd === "continue_on_account")).toEqual([]);
-  click(root.querySelector(".menu-confirm") ?? root, "Move");
+  expect(popup()?.textContent).toContain("Move planner to:");
+  expect(popup()?.textContent).toContain("Stops anything it started.");
+  expect(desktop.sent, "its tab is on screen").toEqual([]);
+  // The first account below the line is the default.
+  expect(document.activeElement?.getAttribute("aria-label")).toBe(
+    "Move to personal",
+  );
+  click(popup() ?? root, "Move to personal");
   await settle();
+
+  expect(root.querySelector(".menu-confirm")).toBeNull();
+  expect(popup()).toBeNull();
   expect(live.calls.find((c) => c.cmd === "continue_on_account")?.args).toEqual(
     { tab: 3, account: 0 },
   );
-
-  click(root.querySelector(".live-warning") ?? root, "Dismiss");
-  await settle();
   expect(live.calls.find((c) => c.cmd === "live_dismiss")?.args).toEqual({
     account: 1,
   });
 });
 
+test("Not now leaves a bar whose Show opens the popup again, and Dismiss tells the core", async () => {
+  const live = liveCore();
+  const root = await renderApp(live.profiles, live.core);
+  await open(root, "planner");
+  await warn(WARNING);
+
+  click(popup() ?? root, "Not now");
+  await settle();
+  expect(popup()).toBeNull();
+  const bar = root.querySelector<HTMLElement>(".live-warning");
+  expect(bar?.textContent).toContain("work is at 87%, resets ");
+  expect(() => button(bar ?? root, "Move to personal")).toThrow();
+  click(bar ?? root, "Show");
+  await settle();
+  expect(popup()?.textContent).toContain("Move planner to:");
+  expect(root.querySelector(".live-warning")).toBeNull();
+
+  click(popup() ?? root, "Not now");
+  await settle();
+  click(root.querySelector(".live-warning") ?? root, "Dismiss");
+  await settle();
+  expect(live.calls.find((c) => c.cmd === "live_dismiss")?.args).toEqual({
+    account: 1,
+  });
+  expect(live.calls.map((c) => c.cmd)).not.toContain("continue_on_account");
+});
+
 test("a warning with no signed-in account below the line offers no move", async () => {
   const live = liveCore();
   const root = await renderApp(live.profiles, live.core);
-  await emitEvent("live", {
-    ...VIEW,
-    warnings: [{ account: 1, tab: 3, used: 90, resetsAt: RESET, offers: [] }],
-  });
-  await settle();
+  await open(root, "planner");
+  await warn({ ...WARNING, used: 90, offers: [] });
 
-  const banner = root.querySelector<HTMLElement>(".live-warning");
-  expect(banner?.textContent).toContain(
+  expect(popup()?.textContent).toContain(
     "No other signed-in account is under 85%",
   );
-  expect(() => button(banner ?? root, "Move to personal")).toThrow();
+  expect(() => button(popup() ?? root, "Move to personal")).toThrow();
+});
+
+test("a warning while the window is behind another waits for the focus, with a desktop notification", async () => {
+  const live = liveCore();
+  const root = await renderApp(live.profiles, live.core);
+  await open(root, "planner");
+  await emitEvent("tauri://blur");
+
+  await warn(WARNING);
+
+  expect(popup()).toBeNull();
+  expect(desktop.sent).toHaveLength(1);
+  await emitEvent("tauri://focus");
+  await settle();
+  expect(popup()?.textContent).toContain("Move planner to:");
+});
+
+test("a warning for an account its tab no longer uses opens nothing and offers no Show", async () => {
+  const live = liveCore();
+  const root = await renderApp(live.profiles, live.core);
+  await open(root, "planner");
+
+  // The planner is on work (1); the warning is about personal (0).
+  await warn({ ...WARNING, account: 0, offers: [1] });
+
+  expect(popup()).toBeNull();
+  const bar = root.querySelector<HTMLElement>(".live-warning");
+  expect(bar?.textContent).toContain("personal is at 87%");
+  expect(() => button(bar ?? root, "Show")).toThrow();
+});
+
+test("a full window's bar offers no Show, since its popup is the limit popup", async () => {
+  const live = liveCore();
+  const root = await renderApp(live.profiles, live.core);
+  await open(root, "planner");
+  await warn({ ...WARNING, used: 100 });
+
+  click(popup() ?? root, "Not now");
+  await settle();
+
+  expect(popup()).toBeNull();
+  const bar = root.querySelector<HTMLElement>(".live-warning");
+  expect(bar?.textContent).toContain("work is at 100%");
+  expect(() => button(bar ?? root, "Show")).toThrow();
+});
+
+test("a warning for a tab not on screen waits for it, with a desktop notification meanwhile", async () => {
+  const live = liveCore();
+  const root = await renderApp(live.profiles, live.core);
+
+  await warn(WARNING);
+
+  expect(popup()).toBeNull();
+  expect(desktop.sent).toHaveLength(1);
+  await open(root, "planner");
+  expect(popup()?.textContent).toContain("Move planner to:");
 });
 
 test("the core's warning event sends one desktop notification naming the account", async () => {

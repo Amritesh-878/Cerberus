@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import {
   asPaste,
+  holdsText,
   isReloadKey,
   type KeyChord,
   keyHelp,
@@ -75,6 +76,42 @@ test("typed text is one bracketed paste that can never press Enter or end itself
   expect(typed).toBe("\x1b[200~one\ntwo\nthree[201~\nfour\ttab\x1b[201~");
   expect(typed).not.toContain("\r");
   expect(asPaste("/compact")).toBe("\x1b[200~/compact\x1b[201~");
+});
+
+describe("holdsText", () => {
+  test.each([
+    ["a key", false, "h", true],
+    ["Enter", true, "\r", false],
+    ["Ctrl+C", true, "\x03", false],
+    ["text and a plain Enter in one write", false, "abc\r", false],
+    ["Alt+Enter after typing, a newline", true, "\x1b\r", true],
+    ["Alt+Enter on an empty input", false, "\x1b\r", true],
+    [
+      "Shift+Enter, which term.input sends through onData",
+      false,
+      "\x1b[13;2u",
+      true,
+    ],
+    ["text after an Enter in one write", false, "a\rb", true],
+    ["Up, which recalls the last prompt", false, "\x1b[A", true],
+    ["Up in application cursor mode", false, "\x1bOA", true],
+    ["Esc, which restores a queued prompt", false, "\x1b", true],
+    ["a right arrow", false, "\x1b[C", true],
+    ["Alt+B", false, "\x1bb", true],
+    ["a focus-in report", false, "\x1b[I", false],
+    ["a focus-out report", false, "\x1b[O", false],
+    ["a cursor position report", false, "\x1b[12;40R", false],
+    ["a device attributes report", false, "\x1b[?1;2c", false],
+    ["a secondary device attributes report", false, "\x1b[>0;276;0c", false],
+    ["a mouse report", false, "\x1b[<0;10;5M", false],
+    ["a focus report after typing", true, "\x1b[I", true],
+    ["a bracketed paste", false, "\x1b[200~hello\x1b[201~", true],
+    ["a pasted line break", false, "\x1b[200~one\rtwo\x1b[201~", true],
+    ["a pasted line break after typing", true, "\x1b[200~a\rb\x1b[201~", true],
+    ["an empty paste", false, "\x1b[200~\x1b[201~", false],
+  ])("after %s", (_name, before, data, after) => {
+    expect(holdsText(before, data)).toBe(after);
+  });
 });
 
 test("the platform comes from the user agent", () => {

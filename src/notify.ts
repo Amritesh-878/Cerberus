@@ -72,6 +72,8 @@ interface AlertsApp {
   board: () => Board;
   shown: () => TabId | undefined;
   alertsOn: () => boolean;
+  /** Whether the window has the focus, from `createWindowFocus`. */
+  focused: () => boolean;
   open: (tab: TabId) => void;
 }
 
@@ -91,17 +93,12 @@ function logged(what: string): (error: unknown) => undefined {
   };
 }
 
-/** Returns the call to make with each change, before the board takes it. */
-export function createNotifier(
-  app: AlertsApp,
-): (tab: TabId, change: Change) => void {
+/** Whether the app's window has the focus, following it as it changes. */
+export function createWindowFocus(): () => boolean {
   const [focused, setFocused] = createSignal(true);
-  // Asked once, on the first alert; a refusal leaves alerts silently off.
-  let allowed: Promise<boolean> | undefined;
-
   onMount(() => {
-    const win = getCurrentWindow();
     let heard = false;
+    const win = getCurrentWindow();
     win.isFocused().then((now) => {
       if (!heard) setFocused(now);
     }, logged("could not read window focus"));
@@ -111,6 +108,23 @@ export function createNotifier(
         setFocused(payload);
       })
       .catch(logged("could not follow window focus"));
+    onCleanup(() => {
+      void focus.then((stop) => stop?.());
+    });
+  });
+  return focused;
+}
+
+/** Returns the call to make with each change, before the board takes it. */
+export function createNotifier(
+  app: AlertsApp,
+): (tab: TabId, change: Change) => void {
+  const focused = app.focused;
+  // Asked once, on the first alert; a refusal leaves alerts silently off.
+  let allowed: Promise<boolean> | undefined;
+
+  onMount(() => {
+    const win = getCurrentWindow();
     const clicks = onAction((performed) => {
       const tab = clickedTab(performed, app.tree());
       if (tab === undefined) return;
@@ -121,7 +135,6 @@ export function createNotifier(
         .catch(logged("could not bring the window forward"));
     }).catch(logged("could not follow notification clicks"));
     onCleanup(() => {
-      void focus.then((stop) => stop?.());
       void clicks.then((listener) => listener?.unregister());
     });
   });

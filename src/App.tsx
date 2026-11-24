@@ -53,6 +53,7 @@ import {
 } from "./board";
 import { type FoundChat, projectFor, resumeFound } from "./chatSearch";
 import {
+  addDirCommand,
   applyEnvironment,
   type EnvironmentChange,
   tabMoveFolder,
@@ -82,9 +83,14 @@ import {
   noteText,
   typeIn,
 } from "./messaging";
-import { createLiveFeed, dismissWarning, warningText } from "./live";
+import {
+  createLiveFeed,
+  dismissWarning,
+  type LiveWarning,
+  warningText,
+} from "./live";
 import { LiveBanner } from "./LiveBanner";
-import { createNotifier, sendWarning } from "./notify";
+import { createNotifier, createWindowFocus, sendWarning } from "./notify";
 import { type Anchor, onScreen, type Side } from "./place";
 import { followOpenRequests } from "./open";
 import { Panel } from "./Panel";
@@ -126,7 +132,7 @@ import {
   updateService,
 } from "./services";
 import { ServicesRailIcon, ServicesSection } from "./ServicesSection";
-import { TerminalView } from "./Terminal";
+import { type Sender, TerminalView } from "./Terminal";
 import {
   addProject,
   addTab,
@@ -222,8 +228,6 @@ export function App() {
     at: MenuPlace;
     tab: TabId;
     chosen?: Account;
-    /** Opened from the low-limit banner, so the moved chat gets `continue` typed. */
-    fromLimit?: boolean;
   }>();
   const [sheet, setSheet] = createSignal(false);
   // The sidebar's own row menu, a layer like the tab menu above.
@@ -588,18 +592,36 @@ export function App() {
     showPage(undefined);
     setDrawer(false);
   };
+  const windowFocused = createWindowFocus();
   const notify = createNotifier({
     tree,
     board,
     shown,
     alertsOn: alertsSetting.on,
+    focused: windowFocused,
     open: (id) => {
       setOpening(undefined);
       select(id);
     },
   });
+  // Low-limit warnings whose popup waits for its tab to be shown; the core warns once per account per window.
+  const [warnWaiting, setWarnWaiting] = createSignal<readonly LiveWarning[]>(
+    [],
+  );
+  const waitWarning = (warning: LiveWarning) => {
+    setWarnWaiting((all) => [
+      ...all.filter((w) => w.account !== warning.account),
+      warning,
+    ]);
+  };
+  const warnDone = (account: AccountId) => {
+    setWarnWaiting((all) => all.filter((w) => w.account !== account));
+  };
   const live = createLiveFeed((warning) => {
-    if (!alertsSetting.on()) return;
+    waitWarning(warning);
+    // The popup is over that tab already, unless the window is behind another.
+    const seen = shown() === warning.tab && windowFocused();
+    if (!alertsSetting.on() || seen) return;
     const name =
       profiles()?.accounts.find((a) => a.id === warning.account)?.name ??
       "An account";
@@ -637,15 +659,17 @@ export function App() {
     if (moving().has(id)) return Promise.resolve(false);
     setMovingTab(id, account.name);
     const initialRun = runOf(id);
+    // The pane stays, paused, so the chat resumes in the same terminal with its scroll kept.
     batch(() => {
-      setRun(id, 0);
       setBoard((b) => cleared(b, id));
       setAlert(id, undefined);
       if (!quiet) select(id);
     });
     const restart = () => {
-      setMovingTab(id, undefined);
-      setRun(id, initialRun + 1);
+      batch(() => {
+        setMovingTab(id, undefined);
+        setRun(id, initialRun + 1);
+      });
     };
     return continueOnAccount(id, account.id).then(
       () => {
@@ -1060,6 +1084,25 @@ export function App() {
 
   // Each open pane's way to type into its program, for the panel's prefills.
   const typers = new Map<TabId, (text: string) => void>();
+  const senders = new Map<TabId, Sender>();
+  // A folder added to a running chat waits here until the chat is idle with nothing typed, then goes as `/add-dir`, the one command sent with Enter.
+  // In the order added; one goes per idle report, so the next never lands on the chat while it handles the last.
+  const addDirs = new Map<TabId, string[]>();
+  // Tabs sent one since their last idle report, which may still describe the chat before it.
+  const sentSinceIdle = new Set<TabId>();
+  /** `idle`: the chat just reported idle, so what was sent before has been handled. */
+  const sendAddDir = (id: TabId, idle = false) => {
+    if (idle) sentSinceIdle.delete(id);
+    const [folder, ...rest] = addDirs.get(id) ?? [];
+    const sender = senders.get(id);
+    if (folder === undefined || !sender || lastState.get(id) !== "idle") return;
+    if (sentSinceIdle.has(id) || !sender.empty()) return;
+    sentSinceIdle.add(id);
+    if (rest.length > 0) addDirs.set(id, rest);
+    else addDirs.delete(id);
+    sender.send(addDirCommand(folder));
+    setAlert(id, `Added ${folder} to the chat`);
+  };
   // A started task's prompt, typed once its chat is ready.
   const prefills = new Prefills();
   // Each chat's limit popup, once per limit window, one shown at a time.
@@ -1121,6 +1164,30 @@ export function App() {
       },
     ),
   );
+  // The low-limit popup over the shown tab, with the core's latest numbers; a full window has the limit popup instead.
+  const warnShown = createMemo(() => {
+    const id = shown();
+    // Behind another window it would open unseen, so it waits for the focus too.
+    if (id === undefined || limitShown() !== undefined || !windowFocused())
+      return undefined;
+    if (moving().has(id)) return undefined;
+    // A warning names an account; a tab moved off it since has nothing to move away from.
+    const account = tabById(id)?.launch.account?.id;
+    const waiting = warnWaiting().find(
+      (w) => w.tab === id && w.account === account,
+    );
+    if (!waiting) return undefined;
+    const now =
+      live().warnings.find((w) => w.account === waiting.account) ?? waiting;
+    return now.used < 100 && now.resetsAt > Date.now() / 1000 ? now : undefined;
+  });
+  // Dismissed for the rest of its window: its popup and its bar both go.
+  const endWarning = (account: AccountId) => {
+    warnDone(account);
+    dismissWarning(account).catch((error: unknown) => {
+      console.error("could not dismiss the warning:", error);
+    });
+  };
   // The tab whose Start a task dialog is open.
   const [startingTask, setStartingTask] = createSignal<TabId>();
   // A modal dialog other than the limit popup is open.
@@ -1141,7 +1208,8 @@ export function App() {
     pillMenu() !== undefined ||
     sidebarMenu() ||
     opening() !== undefined ||
-    limitShown() !== undefined;
+    limitShown() !== undefined ||
+    warnShown() !== undefined;
   // A Claude tab in a project with a planner above it, or that is one, can start a task.
   const canStartTask = (id: TabId) => {
     const tab = tabById(id);
@@ -1349,10 +1417,11 @@ export function App() {
     setTree,
     runOf,
     setRun,
-    typeInto: (id: TabId, text: string) => {
-      if (tabById(id)?.launch.program === "claude" && isRunning(id)) {
-        typers.get(id)?.(text);
-      }
+    addDir: (id: TabId, folder: string) => {
+      if (tabById(id)?.launch.program !== "claude" || !isRunning(id)) return;
+      const queued = addDirs.get(id) ?? [];
+      if (!queued.includes(folder)) addDirs.set(id, [...queued, folder]);
+      sendAddDir(id);
     },
     setAlert,
   };
@@ -1701,23 +1770,23 @@ export function App() {
                 )}
               </Show>
               <LiveBanner
-                warnings={live().warnings}
+                warnings={live().warnings.filter(
+                  (w) => w.account !== warnShown()?.account,
+                )}
                 profiles={loaded()}
-                statuses={statuses}
-                tabTitle={(id) => tabById(id)?.title}
-                onContinue={(id, account, box) => {
-                  setPillMenu({
-                    at: { x: box.left, y: box.bottom },
-                    tab: id,
-                    chosen: account,
-                    fromLimit: true,
-                  });
+                showable={(warning) => {
+                  // A full window's popup is the limit popup, told once; a moved tab no longer uses the account.
+                  const tab = tabById(warning.tab);
+                  return warning.used < 100 &&
+                    tab?.launch.account?.id === warning.account
+                    ? tab.title
+                    : undefined;
                 }}
-                onDismiss={(account) => {
-                  dismissWarning(account).catch((error: unknown) => {
-                    console.error("could not dismiss the warning:", error);
-                  });
+                onShow={(warning) => {
+                  waitWarning(warning);
+                  select(warning.tab);
                 }}
+                onDismiss={endWarning}
               />
               <Show when={handBarShown()} keyed>
                 {(id) => (
@@ -1786,8 +1855,7 @@ export function App() {
                           }}
                         >
                           <Show
-                            when={onRemoved(id) ? 0 : runOf(id)}
-                            keyed
+                            when={!onRemoved(id) && runOf(id) !== 0}
                             fallback={
                               <Show
                                 when={moving().get(id)}
@@ -1824,6 +1892,9 @@ export function App() {
                             <TerminalView
                               tab={id}
                               spec={tab().launch.spec}
+                              run={runOf(id)}
+                              paused={moving().has(id)}
+                              note={`Moving to ${moving().get(id) ?? ""}…`}
                               kind={tabKind(
                                 tab().launch.program,
                                 ended().has(id),
@@ -1840,7 +1911,10 @@ export function App() {
                                 prefills.reported(id, state, typers.get(id));
                                 limitReported(id, state);
                                 lastState.set(id, state.state);
-                                if (state.state === "idle") checkHandoff(id);
+                                if (state.state === "idle") {
+                                  checkHandoff(id);
+                                  sendAddDir(id, true);
+                                }
                                 notify(id, state);
                                 setBoard((b) =>
                                   reported(b, id, state, shown()),
@@ -1859,6 +1933,13 @@ export function App() {
                                 return () => {
                                   if (typers.get(id) === type)
                                     typers.delete(id);
+                                };
+                              }}
+                              onSender={(sender) => {
+                                senders.set(id, sender);
+                                return () => {
+                                  if (senders.get(id) === sender)
+                                    senders.delete(id);
                                 };
                               }}
                             />
@@ -2137,6 +2218,41 @@ export function App() {
                 />
               )}
             </Show>
+            <Show
+              when={(() => {
+                if (otherDialog()) return undefined;
+                const warning = warnShown();
+                const title = warning && tabById(warning.tab)?.title;
+                return warning && title !== undefined
+                  ? { warning, title }
+                  : undefined;
+              })()}
+            >
+              {(open) => (
+                <LimitPopup
+                  hit={{ ...open().warning, source: "meter" }}
+                  used={open().warning.used}
+                  title={open().title}
+                  profiles={loaded()}
+                  statuses={statuses}
+                  onContinue={(account) => {
+                    const { tab, account: from } = open().warning;
+                    endWarning(from);
+                    void continueOn(tab, account, true);
+                  }}
+                  onNotNow={() => {
+                    warnDone(open().warning.account);
+                  }}
+                  crosses={(account) =>
+                    crossesOrganization(
+                      logins(),
+                      open().warning.account,
+                      account.id,
+                    )
+                  }
+                />
+              )}
+            </Show>
             <Show when={handoffFailed()}>
               {(reason) => (
                 <NoticePopup
@@ -2261,11 +2377,7 @@ export function App() {
                     at={open.at}
                     onContinue={(account) => {
                       setPillMenu(undefined);
-                      void continueOn(
-                        open.tab,
-                        account,
-                        open.fromLimit === true,
-                      );
+                      void continueOn(open.tab, account);
                     }}
                     onResume={() => {
                       setPillMenu(undefined);

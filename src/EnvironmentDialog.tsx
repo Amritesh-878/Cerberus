@@ -267,8 +267,8 @@ export function EnvironmentDialog(props: {
           <Show when={plan().added.length > 0 && props.chatRunning}>
             <p class="env-note">
               {plan().added.length === 1
-                ? "/add-dir is typed into the chat for you to send."
-                : "/add-dir is typed for the first folder, for you to send. The rest apply on the next start."}
+                ? "Sent as /add-dir once the chat is idle."
+                : "The first is sent as /add-dir once the chat is idle. The rest apply on the next start."}
             </p>
           </Show>
           <Show when={plan().removed.length > 0}>
