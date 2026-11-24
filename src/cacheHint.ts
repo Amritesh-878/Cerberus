@@ -18,7 +18,7 @@ export function cacheHint(
     return undefined;
   if (tokens < BIG_CONTEXT) return undefined;
   const thousands = `${String(Math.round(tokens / 1000))}k`;
-  if (expiresAt !== null && expiresAt !== undefined) {
+  if (expiresAt !== null) {
     return now / 1000 >= expiresAt
       ? `The prompt cache has expired: the next reply rereads ${thousands} tokens.`
       : undefined;
