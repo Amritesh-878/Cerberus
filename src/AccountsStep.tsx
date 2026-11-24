@@ -229,7 +229,6 @@ export function AccountsStep(props: {
                           {deletionText(deletes().days)}{" "}
                           <button
                             type="button"
-                            class="link-button"
                             onClick={() => {
                               keep(account);
                             }}
