@@ -4,6 +4,7 @@ pub mod procs;
 pub mod shell;
 mod watch;
 
+use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -103,15 +104,92 @@ pub fn transcript(config_dir: &Path, cwd: &str, session_id: &str) -> Option<Path
     let file = format!("{session_id}.jsonl");
     let slug = slug(cwd);
     if slug.len() <= SLUG_MAX {
-        return Some(projects.join(slug).join(file)).filter(|p| p.is_file());
+        let exact = projects.join(&slug).join(&file);
+        if exact.is_file() {
+            return Some(exact);
+        }
     }
-    let prefix = format!("{}-", &slug[..SLUG_MAX]);
+    // Claude Code slugs the folder in the case it was started with, which a case-blind file system lets differ.
+    let prefix = format!("{}-", &slug[..slug.len().min(SLUG_MAX)]);
     fs::read_dir(&projects)
         .ok()?
         .filter_map(Result::ok)
-        .filter(|entry| entry.file_name().to_string_lossy().starts_with(&prefix))
+        .filter(|entry| {
+            let name = entry.file_name().to_string_lossy().to_ascii_lowercase();
+            if slug.len() <= SLUG_MAX {
+                name == slug.to_ascii_lowercase()
+            } else {
+                name.starts_with(&prefix.to_ascii_lowercase())
+            }
+        })
         .map(|entry| entry.path().join(&file))
         .find(|p| p.is_file())
+}
+
+/// The chat's transcript in the one project of the account that holds its id, for a move that only needs the file.
+pub fn find_chat(config_dir: &Path, session_id: &str) -> Option<PathBuf> {
+    if !is_session_id(session_id) {
+        return None;
+    }
+    let file = format!("{session_id}.jsonl");
+    let mut found = fs::read_dir(config_dir.join("projects"))
+        .ok()?
+        .filter_map(Result::ok)
+        .map(|entry| entry.path().join(&file))
+        .filter(|p| p.is_file());
+    let only = found.next()?;
+    // A move to another folder leaves the older copy behind, and nothing says which one the tab continued.
+    found.next().is_none().then_some(only)
+}
+
+/// A folder as the disk spells it, each part in its real case; anything that isn't there stays as given.
+pub fn on_disk_case(folder: &str) -> String {
+    // Only Windows and macOS file systems ignore case, so only there can a typed case differ from the disk's.
+    if cfg!(target_os = "linux") {
+        return folder.to_owned();
+    }
+    let mut real = PathBuf::new();
+    for part in Path::new(folder).components() {
+        let std::path::Component::Normal(name) = part else {
+            real.push(part.as_os_str());
+            continue;
+        };
+        let found = fs::read_dir(&real).ok().and_then(|entries| {
+            spelled(
+                entries
+                    .filter_map(Result::ok)
+                    .map(|entry| entry.file_name()),
+                name,
+            )
+        });
+        match found {
+            Some(found) => real.push(found),
+            // A short 8.3 name or a missing part isn't listed under its own spelling, so it stays as typed.
+            None => real.push(name),
+        }
+    }
+    let real = real.to_string_lossy().into_owned();
+    // Only a change of case is taken; a different spelling of separators keeps the folder as it was saved.
+    if real.to_lowercase() == folder.to_lowercase() {
+        real
+    } else {
+        folder.to_owned()
+    }
+}
+
+/// The listed name that is `name`: its exact spelling if listed, since a case-sensitive folder can hold both, else one differing only in case.
+fn spelled(names: impl Iterator<Item = OsString>, name: &OsStr) -> Option<OsString> {
+    let wanted = name.to_string_lossy().to_lowercase();
+    let mut other_case = None;
+    for found in names {
+        if found == name {
+            return Some(found);
+        }
+        if other_case.is_none() && found.to_string_lossy().to_lowercase() == wanted {
+            other_case = Some(found);
+        }
+    }
+    other_case
 }
 
 pub fn resume_args(args: &[String], session_id: &str) -> Vec<String> {
@@ -283,6 +361,84 @@ mod tests {
         assert_eq!(
             slug(r"C:\Users\u\My Work\app.v2\sub dir\deep"),
             "C--Users-u-My-Work-app-v2-sub-dir-deep"
+        );
+    }
+
+    #[test]
+    fn a_tab_folder_in_another_case_still_finds_the_chat_and_moves_find_it_by_id() {
+        let dir = TestDir::new();
+        let folder = dir
+            .path()
+            .join("projects")
+            .join("C--Users-u-Desktop-Cerberus-Code");
+        fs::create_dir_all(&folder).unwrap();
+        fs::write(folder.join(format!("{SESSION}.jsonl")), "{}\n").unwrap();
+        let file = Some(folder.join(format!("{SESSION}.jsonl")));
+
+        // A case-blind disk may answer in the asked-for case, so the paths compare without case.
+        let lower = |p: Option<PathBuf>| p.map(|p| p.to_string_lossy().to_lowercase());
+        assert_eq!(
+            lower(transcript(
+                dir.path(),
+                r"C:\Users\u\Desktop\Cerberus\code",
+                SESSION
+            )),
+            lower(file.clone())
+        );
+        assert_eq!(find_chat(dir.path(), SESSION), file);
+        assert_eq!(find_chat(dir.path(), "a1b2"), None);
+    }
+
+    #[test]
+    fn a_chat_copied_into_two_projects_is_not_found_by_id_alone() {
+        let dir = TestDir::new();
+        for project in ["C--work-old", "C--work-new"] {
+            let folder = dir.path().join("projects").join(project);
+            fs::create_dir_all(&folder).unwrap();
+            fs::write(
+                folder.join(format!("{SESSION}.jsonl")),
+                "{}
+",
+            )
+            .unwrap();
+        }
+
+        assert_eq!(find_chat(dir.path(), SESSION), None);
+    }
+
+    #[test]
+    fn an_exact_name_wins_over_a_sibling_that_differs_only_in_case() {
+        let names = || ["Repo", "repo", "Other"].map(OsString::from).into_iter();
+
+        assert_eq!(
+            spelled(names(), OsStr::new("repo")).as_deref(),
+            Some(OsStr::new("repo"))
+        );
+        assert_eq!(
+            spelled(names(), OsStr::new("OTHER")).as_deref(),
+            Some(OsStr::new("Other"))
+        );
+        assert_eq!(spelled(names(), OsStr::new("gone")), None);
+    }
+
+    // Only Windows and macOS let a folder be named in another case.
+    #[cfg(not(target_os = "linux"))]
+    #[test]
+    fn a_folder_typed_in_another_case_is_kept_as_the_disk_spells_it() {
+        let dir = TestDir::new();
+        let real = dir.path().join("Cerberus").join("Code");
+        fs::create_dir_all(&real).unwrap();
+        let typed = dir.path().join("cerberus").join("CODE");
+        let missing = dir.path().join("cerberus").join("GONE");
+
+        let found = on_disk_case(&typed.to_string_lossy());
+
+        // The test folder itself may hold a short 8.3 name, which also stays as typed.
+        assert_eq!(found, real.to_string_lossy());
+        assert_eq!(
+            on_disk_case(&missing.to_string_lossy()),
+            dir.path().join("Cerberus").join("GONE").to_string_lossy(),
+            "a part that isn't there stays as typed, the rest takes the disk's case"
         );
     }
 

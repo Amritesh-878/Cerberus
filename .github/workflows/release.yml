@@ -113,6 +113,25 @@ jobs:
           done
           echo "AppImage usr/bin: $(ls "$RUNNER_TEMP/squashfs-root/usr/bin" | xargs)" >> "$GITHUB_STEP_SUMMARY"
 
+      # Installs the setup as a user would, since the installer renames files that a build folder doesn't.
+      - name: Install the Windows setup and check the claude wrapper's source is there
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $setup = @(Get-Item "src-tauri/target/release/bundle/nsis/*-setup.exe")[0]
+          $dir = Join-Path $env:RUNNER_TEMP "cerberus-install"
+          Start-Process $setup.FullName -ArgumentList "/S", "/D=$dir" -Wait
+          $files = @(Get-ChildItem $dir -File | ForEach-Object Name)
+          "Installed: $($files -join ' ')" >> $env:GITHUB_STEP_SUMMARY
+          # wrapper::install copies the first of these into <app data>\bin\claude.exe.
+          if (-not ($files -contains "cerberus-cli.exe" -or $files -contains "cerberus.com")) {
+            throw "Neither cerberus-cli.exe nor cerberus.com is in $dir, so the claude wrapper can't be placed"
+          }
+          foreach ($bin in "cerberus.exe", "cerberus-mcp.exe", "cerberus-live.exe") {
+            if ($files -notcontains $bin) { throw "$bin is missing from $dir" }
+          }
+          Start-Process (Join-Path $dir "uninstall.exe") -ArgumentList "/S" -Wait
+
       - name: Hash the installers
         shell: pwsh
         run: |

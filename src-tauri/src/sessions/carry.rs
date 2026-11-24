@@ -2,7 +2,7 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use crate::sessions::{SLUG_MAX, is_session_id, parse_session_file, slug, transcript};
+use crate::sessions::{SLUG_MAX, find_chat, is_session_id, parse_session_file, slug, transcript};
 
 // A copy lands under this suffix first, so a half copy is never mistaken for a chat.
 const IN_PROGRESS: &str = "cerberus-copy";
@@ -82,7 +82,9 @@ fn copy_chat_with(
     if !is_session_id(id) {
         return Err(CarryError::Missing);
     }
-    let source = transcript(from, cwd, id).ok_or(CarryError::Missing)?;
+    let source = transcript(from, cwd, id)
+        .or_else(|| find_chat(from, id))
+        .ok_or(CarryError::Missing)?;
     // The same name as the source's, so a long cwd's hashed folder matches without recomputing the hash.
     let project = match to_cwd {
         None => source
@@ -316,6 +318,24 @@ mod tests {
         }
         names.sort();
         names
+    }
+
+    #[test]
+    fn a_tab_saved_with_its_folder_in_another_case_still_moves() {
+        let dir = TestDir::new();
+        let source = chat_in(&dir, "personal", r"C:\work\App");
+
+        carry(&dir, r"C:\work\app").unwrap();
+
+        let target = dir
+            .path()
+            .join("work")
+            .join("projects")
+            .join(source.file_name().unwrap());
+        assert!(
+            target.join(format!("{ID}.jsonl")).is_file(),
+            "kept in the chat's own project"
+        );
     }
 
     #[test]

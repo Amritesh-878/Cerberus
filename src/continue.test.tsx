@@ -660,6 +660,31 @@ test("a tab on a removed account whose folder another account uses goes to it, w
   expect(field(app.pty.spawned.at(-1), "account")).toBe(5);
 });
 
+test("a tab starting reads its account's sign-in and login again, as a /login there may have changed them", async () => {
+  const app = core();
+  const statusOf: unknown[] = [];
+  let loginReads = 0;
+  const root = await renderApp(() => SAVED, {
+    ...app.core,
+    account_status: (args: unknown) => {
+      statusOf.push(field(args, "id"));
+      return { state: "loggedIn", summary: "user@example.com · Pro" };
+    },
+    account_logins: () => {
+      loginReads += 1;
+      return [];
+    },
+  });
+  await settle();
+  const [statusBefore, loginsBefore] = [statusOf.length, loginReads];
+
+  await open(root, "Claude Code · work");
+  await settle();
+
+  expect(statusOf.slice(statusBefore)).toContain(1);
+  expect(loginReads).toBeGreaterThan(loginsBefore);
+});
+
 test("an account signed in to the same login as another says so on its row", async () => {
   const root = await renderApp(() => SAVED, {
     ...core().core,

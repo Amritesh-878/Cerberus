@@ -83,6 +83,8 @@ pub async fn pty_spawn(
         let mut claude_home = is_claude(&request.program)
             .then(|| accounts.claude_home(account))
             .transpose()?;
+        // In the disk's case, since Claude Code names a chat's project after the folder exactly as started.
+        request.cwd = request.cwd.as_deref().map(crate::sessions::on_disk_case);
         let cwd = request
             .cwd
             .clone()
@@ -129,7 +131,10 @@ pub async fn pty_spawn(
         }
         let bridge = Bridge::clone(&app.state::<Bridge>());
         let live = Live::clone(&app.state::<Live>());
-        let bin = app.state::<wrapper::Bin>().0.clone();
+        let bin = app
+            .state::<wrapper::Bin>()
+            .dir()
+            .map(std::path::Path::to_path_buf);
         let (token, live_token) = match (claude_home.as_deref(), shell_home.as_deref(), tab) {
             (Some(home), _, Some(tab)) => (
                 link_messages(&app, &accounts, &mut request, home, (tab, false)),

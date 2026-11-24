@@ -391,9 +391,14 @@ impl Core {
     fn hooked(&self, token: &str, event: &Event) {
         {
             let mut state = self.state();
-            let Some(&Link { tab, .. }) = state.links.get(token) else {
+            let Some(&Link { tab, account }) = state.links.get(token) else {
                 return;
             };
+            // Only the Stop hook lists tasks, so this is a finished reply; a tab on his own status line can't report usage, so it proves nothing.
+            let reports = state.tabs.get(&tab).is_some_and(|t| !t.kept_theirs);
+            if matches!(event, Event::Tasks(_)) && reports {
+                state.meters.replied(account);
+            }
             let Some((_, work)) = state.work.get_mut(&tab) else {
                 return;
             };

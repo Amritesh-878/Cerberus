@@ -1,4 +1,4 @@
-import { createSignal, For, Show } from "solid-js";
+import { createResource, createSignal, For, Show } from "solid-js";
 
 import { AccountsStep } from "./AccountsStep";
 import {
@@ -11,6 +11,7 @@ import {
   setShell,
   setStartFolder,
   setSuggestions,
+  wrapperFailure,
 } from "./accounts";
 import { installCli, type Linked, linksCli } from "./cli";
 import { PLATFORM } from "./keys";
@@ -20,6 +21,21 @@ import type { ProgramChoice } from "./pty";
 import type { Statuses } from "./statuses";
 import { SettingSwitch } from "./SettingSwitch";
 import { shellChoice, type Tab } from "./tab";
+
+/** Says, once, why `claude` typed in a shell tab runs without the tab's messages and live cards. */
+function WrapperNote() {
+  const [failure] = createResource(wrapperFailure);
+  return (
+    <Show when={failure()}>
+      {(reason) => (
+        <p class="setting-warning" role="note">
+          Typing <code>claude</code> in a shell tab won't have messages:{" "}
+          {reason()}
+        </p>
+      )}
+    </Show>
+  );
+}
 
 export function AccountsScreen(props: {
   profiles: Profiles;
@@ -79,6 +95,7 @@ export function AccountsScreen(props: {
         onProfiles={props.onProfiles}
       />
       <LiveSetting profiles={props.profiles} onProfiles={props.onProfiles} />
+      <WrapperNote />
       <Show when={linksCli(PLATFORM)}>
         <h3>Command line</h3>
         <CliInstall />

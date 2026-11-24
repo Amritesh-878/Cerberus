@@ -1701,6 +1701,18 @@ kbd {
   gap: 6px;
 }
 
+.usage-silent {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--faint);
+}
+
+.setting-warning {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #d6b45a;
+}
+
 .setting-switch {
   max-width: 480px;
   font-size: 13px;

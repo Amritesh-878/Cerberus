@@ -101,10 +101,11 @@ pub fn run() {
             app.manage(Accounts::new(&config_dir, paths.home_dir()?));
             app.manage(Suggestions::new(&paths.app_data_dir()?));
             app.manage(Messages::prepare(&paths.app_data_dir()?));
-            // Without it shell tabs start as before, and a `claude` typed in one gets the quiet bar.
-            let bin = wrapper::install(&paths.app_data_dir()?)
-                .inspect_err(|e| eprintln!("the claude wrapper is off: {e}"))
-                .ok();
+            // Without it shell tabs start as before, and Accounts says why.
+            let bin = wrapper::install(&paths.app_data_dir()?).map_err(|e| e.to_string());
+            if let Err(e) = &bin {
+                eprintln!("the claude wrapper is off: {e}");
+            }
             app.manage(wrapper::Bin(bin));
             // Without its pipe the bridge is off, and every tab starts as it did before.
             let bridge =
@@ -160,6 +161,7 @@ pub fn run() {
             commands::rename_account,
             commands::remove_account,
             commands::account_logins,
+            wrapper::wrapper_failure,
             commands::set_default_account,
             commands::set_account_color,
             commands::set_start_folder,

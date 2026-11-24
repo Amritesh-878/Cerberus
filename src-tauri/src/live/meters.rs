@@ -1,6 +1,6 @@
 //! Each account's limits from the newest report of any of its tabs, and when to warn about them.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use serde::Serialize;
 
@@ -11,6 +11,8 @@ use crate::saved::TabId;
 pub const DEFAULT_WARN_AT: u8 = 85;
 // Reports of one 5-hour window may round its reset differently; the next window is hours away.
 const SAME_WINDOW_S: u64 = 10 * 60;
+// Replies before an account with no numbers counts as one that doesn't report them, not one still loading.
+const SILENT_AFTER: u32 = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -30,6 +32,8 @@ pub struct Meter {
     pub account: AccountId,
     pub five_hour: Option<WindowView>,
     pub seven_day: Option<WindowView>,
+    /// Replied enough times since the app started with no usage numbers in any status, so its plan doesn't report them.
+    pub silent: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -43,6 +47,10 @@ pub struct Meters {
     by_account: BTreeMap<AccountId, Kept>,
     /// Reports older than this came before the app started, so they show with their time.
     since_ms: u64,
+    /// Replies finished since the app started, per account.
+    replies: BTreeMap<AccountId, u32>,
+    /// Accounts with a status carrying usage numbers since the app started.
+    reporting: BTreeSet<AccountId>,
 }
 
 impl Meters {
@@ -73,6 +81,7 @@ impl Meters {
                 })
                 .collect(),
             since_ms,
+            ..Self::default()
         }
     }
 
@@ -103,9 +112,22 @@ impl Meters {
 
     /// Each window keeps the newest report that had it, so a tab with no reply yet clears nothing.
     pub fn report(&mut self, account: AccountId, status: &Status) {
+        if status.five_hour.is_some() || status.seven_day.is_some() {
+            self.reporting.insert(account);
+        }
         let kept = self.by_account.entry(account).or_default();
         newer(&mut kept.five_hour, status.at, status.five_hour);
         newer(&mut kept.seven_day, status.at, status.seven_day);
+    }
+
+    /// A reply on the account finished, which a plan that reports usage follows with its numbers.
+    pub fn replied(&mut self, account: AccountId) {
+        *self.replies.entry(account).or_default() += 1;
+    }
+
+    fn silent(&self, account: AccountId) -> bool {
+        !self.reporting.contains(&account)
+            && self.replies.get(&account).copied().unwrap_or(0) >= SILENT_AFTER
     }
 
     /// The 5-hour window still running at `now_s`, as Claude Code drops one once it resets.
@@ -122,12 +144,22 @@ impl Meters {
                 as_of: (at < self.since_ms).then_some(at),
             })
         };
-        self.by_account
-            .iter()
-            .map(|(&account, kept)| Meter {
-                account,
-                five_hour: shown(kept.five_hour),
-                seven_day: shown(kept.seven_day),
+        let accounts: BTreeSet<AccountId> = self
+            .by_account
+            .keys()
+            .chain(self.replies.keys())
+            .copied()
+            .collect();
+        accounts
+            .into_iter()
+            .map(|account| {
+                let kept = self.by_account.get(&account).copied().unwrap_or_default();
+                Meter {
+                    account,
+                    five_hour: shown(kept.five_hour),
+                    seven_day: shown(kept.seven_day),
+                    silent: self.silent(account),
+                }
             })
             .collect()
     }
@@ -254,6 +286,36 @@ mod tests {
                 resets_at: NOW + 86_400,
             }),
         }
+    }
+
+    #[test]
+    fn an_account_is_silent_only_after_three_replies_with_no_numbers_since_start() {
+        let silent = |meters: &Meters| meters.view(NOW).iter().any(|m| m.account == 2 && m.silent);
+        let mut meters = Meters::restored(
+            &[KeptUsage {
+                account: 2,
+                at: 5,
+                five_hour: Some(UsageWindow {
+                    used: 40.0,
+                    resets_at: RESET,
+                }),
+                seven_day: None,
+            }],
+            10,
+        );
+        meters.report(2, &status(20, None, None));
+        meters.replied(2);
+        meters.replied(2);
+        assert!(!silent(&meters), "two replies may still be loading");
+
+        meters.replied(2);
+        assert!(
+            silent(&meters),
+            "numbers kept from an earlier run don't count"
+        );
+
+        meters.report(2, &status(30, Some(12.0), None));
+        assert!(!silent(&meters), "one status with numbers and it reports");
     }
 
     #[test]

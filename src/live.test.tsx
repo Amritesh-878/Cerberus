@@ -2,6 +2,7 @@ import { emit as emitEvent } from "@tauri-apps/api/event";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import type { Profiles } from "./accounts";
+import { resetText } from "./board";
 import {
   button,
   cleanup,
@@ -172,6 +173,25 @@ test("the context card shows the shown chat's use, and Compact types /compact wi
   expect(live.writes).toEqual(["\x1b[200~/compact\x1b[201~"]);
 });
 
+test("an account whose plan doesn't report usage says so instead of empty bars", async () => {
+  const live = liveCore();
+  const root = await renderApp(live.profiles, live.core);
+  await open(root, "planner");
+  await emitEvent("live", {
+    ...VIEW,
+    meters: [{ account: 1, fiveHour: null, sevenDay: null, silent: true }],
+  });
+  await settle();
+
+  const work = card(root, "Usage").querySelector(
+    ".usage-account + .usage-account",
+  );
+  expect(work?.querySelector(".usage-silent")?.textContent).toBe(
+    "This plan doesn't report usage",
+  );
+  expect(work?.querySelectorAll(".usage-line")).toHaveLength(0);
+});
+
 test("usage kept from before a restart shows dimmed with its time, and a reset window says so", async () => {
   const live = liveCore();
   const root = await renderApp(live.profiles, live.core);
@@ -194,7 +214,10 @@ test("usage kept from before a restart shows dimmed with its time, and a reset w
   const lines = [...(work?.querySelectorAll(".usage-line") ?? [])];
   expect(lines[0]?.classList.contains("kept")).toBe(true);
   expect(lines[0]?.textContent).toMatch(/5hin .+as of .+$/);
-  expect(lines[1]?.textContent).toBe("7dreset");
+  // Never a bare "reset": when it reset, and that a reply brings new numbers.
+  expect(lines[1]?.textContent).toBe(
+    `7dReset at ${resetText(1)} · updates after a reply`,
+  );
   expect(
     card(root, "Usage").querySelector(".card-title")?.getAttribute("title"),
   ).toContain("an account updates after a reply in one of its tabs");
