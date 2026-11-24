@@ -33,7 +33,14 @@ type Typed = Arc<Mutex<Vec<(u32, Vec<u8>)>>>;
 #[cfg(windows)]
 const ARRIVAL: &[u8] = b"\x1b[1m\xe2\x80\xba Message\x1b[1Cfrom @a-p-t1: hi";
 
-struct TestHooks(Mutex<Sender<Snapshot>>);
+/// Each tab's last reply as the live cards would hold it, and each read as (read tab, reader).
+#[derive(Clone, Default)]
+struct Peeks {
+    replies: Arc<Mutex<HashMap<TabId, String>>>,
+    reads: Arc<Mutex<Vec<(TabId, TabId)>>>,
+}
+
+struct TestHooks(Mutex<Sender<Snapshot>>, Peeks);
 
 impl Hooks for TestHooks {
     fn label(&self, tab: TabId) -> Label {
@@ -46,6 +53,14 @@ impl Hooks for TestHooks {
 
     fn changed(&self, snapshot: Snapshot) {
         let _ = lock(&self.0).send(snapshot);
+    }
+
+    fn last_reply(&self, tab: TabId) -> Option<String> {
+        lock(&self.1.replies).get(&tab).cloned()
+    }
+
+    fn read_by(&self, tab: TabId, reader: TabId) {
+        lock(&self.1.reads).push((tab, reader));
     }
 }
 
@@ -162,13 +177,15 @@ struct World {
     bridge: Bridge,
     snapshots: Receiver<Snapshot>,
     tabs: HashMap<TabId, Tab>,
+    peeks: Peeks,
 }
 
 impl World {
     /// Tabs 1 and 3 on account A, tab 2 on account B; `version` is what tab 2's Claude Code reports.
     fn new(version: &str) -> Self {
         let (tx, snapshots) = mpsc::channel();
-        let bridge = Bridge::start(TestHooks(Mutex::new(tx))).unwrap();
+        let peeks = Peeks::default();
+        let bridge = Bridge::start(TestHooks(Mutex::new(tx), peeks.clone())).unwrap();
         let mut tabs = HashMap::new();
         for (tab, home, version) in [
             (1, "acc-a", "2.1.317"),
@@ -195,6 +212,7 @@ impl World {
             bridge,
             snapshots,
             tabs,
+            peeks,
         };
         world.until(|state| (1..=3).all(|t| state.by_tab(t).is_some_and(|l| l.facts.is_some())));
         world
@@ -598,6 +616,160 @@ fn list_tabs_shows_only_other_accounts() {
     );
 }
 
+impl Helper {
+    /// Whether a result came within `within`, without taking a later one's place.
+    fn answered_within(&self, within: Duration) -> bool {
+        self.lines.recv_timeout(within).is_ok()
+    }
+}
+
+#[test]
+fn wait_for_tab_answers_at_once_for_an_idle_tab_and_on_timeout_for_a_busy_one() {
+    let mut world = World::new("2.1.317");
+
+    world
+        .helper(1)
+        .call("wait_for_tab", &json!({"tab": "2", "timeout_s": 1}));
+    let (idle, idle_error) = world.helper(1).result();
+    world.bridge.working(&world.tabs[&2].ticket.token, true);
+    world
+        .helper(1)
+        .call("wait_for_tab", &json!({"tab": 2, "timeout_s": 1}));
+    let (busy, busy_error) = world.helper(1).result();
+
+    assert_eq!(
+        idle,
+        "Tab \"2\" (B · p / t2) is idle at its prompt. read_tab gives its last reply."
+    );
+    assert_eq!(busy, "Tab \"2\" (B · p / t2) is still working after 1 s.");
+    assert!(!idle_error && !busy_error);
+}
+
+#[test]
+fn wait_for_tab_answers_when_the_tab_finishes_its_turn() {
+    let mut world = World::new("2.1.317");
+    let token = world.tabs[&2].ticket.token.clone();
+    world.bridge.working(&token, true);
+
+    world
+        .helper(1)
+        .call("wait_for_tab", &json!({"tab": "2", "timeout_s": 60}));
+
+    assert!(!world.helper(1).answered_within(Duration::from_millis(300)));
+    world.bridge.working(&token, false);
+    assert!(world.helper(1).result().0.contains("is idle at its prompt"));
+}
+
+#[test]
+fn read_tab_gives_the_last_reply_types_nothing_and_tells_the_read_tab() {
+    let mut world = World::new("2.1.317");
+    lock(&world.peeks.replies).insert(2, "All 12 tests pass.".to_owned());
+
+    world.helper(1).call("read_tab", &json!({"tab": "2"}));
+    let (text, is_error) = world.helper(1).result();
+
+    assert_eq!(
+        text,
+        "Tab \"2\" (B · p / t2)'s last finished reply:\nAll 12 tests pass."
+    );
+    assert!(!is_error);
+    assert_eq!(*lock(&world.peeks.reads), [(2, 1)]);
+    assert!(world.tabs[&2].inbox.try_recv().is_err(), "nothing was sent");
+    assert!(world.bridge.snapshot().pending.is_empty());
+}
+
+#[test]
+fn read_tab_without_a_reply_says_so_and_is_not_counted_as_a_read() {
+    let mut world = World::new("2.1.317");
+
+    world.helper(1).call("read_tab", &json!({"tab": "2"}));
+    let (text, is_error) = world.helper(1).result();
+
+    assert!(
+        text.ends_with("has no finished reply yet. Live cards must be on for it to report one.")
+    );
+    assert!(!is_error);
+    assert!(lock(&world.peeks.reads).is_empty());
+}
+
+#[test]
+fn wait_and_read_reach_only_the_tabs_list_tabs_shows() {
+    let mut world = World::new("2.1.317");
+    lock(&world.peeks.replies).insert(3, "same account".to_owned());
+
+    world.helper(1).call("read_tab", &json!({"tab": "3"}));
+    let (same, same_error) = world.helper(1).result();
+    world
+        .helper(1)
+        .call("wait_for_tab", &json!({"tab": "9", "timeout_s": 1}));
+    let (unknown, unknown_error) = world.helper(1).result();
+    world.helper(1).call("read_tab", &json!({}));
+    let (no_tab, no_tab_error) = world.helper(1).result();
+
+    assert!(same.contains("on this chat's own account"), "{same}");
+    assert!(unknown.starts_with("there is no tab \"9\""), "{unknown}");
+    assert_eq!(no_tab, "read_tab needs a tab id.");
+    assert!(same_error && unknown_error && no_tab_error);
+    assert!(lock(&world.peeks.reads).is_empty());
+}
+
+// macOS always types messages in, so inbox delivery is Windows only.
+#[cfg(windows)]
+#[test]
+fn after_a_delivery_wait_for_tab_waits_for_the_turn_it_starts() {
+    let mut world = World::new("2.1.317");
+    let token = world.tabs[&2].ticket.token.clone();
+    world.helper(1).send_to_tab("2", "run the tests");
+    let deciding = approve_later(&world, "run the tests", no_typing);
+    world.show_arrival(2);
+    assert!(matches!(
+        deciding.join().unwrap().unwrap(),
+        Decided::Delivered { .. }
+    ));
+    world.helper(1).result();
+
+    world
+        .helper(1)
+        .call("wait_for_tab", &json!({"tab": "2", "timeout_s": 60}));
+
+    assert!(!world.helper(1).answered_within(Duration::from_millis(300)));
+    world.bridge.working(&token, true);
+    assert!(!world.helper(1).answered_within(Duration::from_millis(300)));
+    world.bridge.working(&token, false);
+    assert!(world.helper(1).result().0.contains("is idle at its prompt"));
+}
+
+// macOS always types messages in, so inbox delivery is Windows only.
+#[cfg(windows)]
+#[test]
+fn a_turn_that_ends_before_the_message_shows_still_counts_as_finished() {
+    let mut world = World::new("2.1.317");
+    let token = world.tabs[&2].ticket.token.clone();
+    world.helper(1).send_to_tab("2", "quick one");
+    let deciding = approve_later(&world, "quick one", no_typing);
+    world.tabs[&2]
+        .inbox
+        .recv_timeout(WAIT)
+        .expect("nothing reached the inbox");
+    world.bridge.working(&token, true);
+    world.bridge.working(&token, false);
+    world.bridge.output(&token, ARRIVAL);
+    assert!(matches!(
+        deciding.join().unwrap().unwrap(),
+        Decided::Delivered { .. }
+    ));
+    world.helper(1).result();
+
+    world
+        .helper(1)
+        .call("wait_for_tab", &json!({"tab": "2", "timeout_s": 60}));
+
+    assert!(
+        world.helper(1).answered_within(Duration::from_millis(500)),
+        "its turn already ended, so it is idle now"
+    );
+}
+
 #[test]
 fn a_target_that_closes_fails_the_waiting_sender_plainly() {
     let mut world = World::new("2.1.317");
@@ -632,7 +804,7 @@ fn a_closing_app_fails_every_waiting_sender_plainly() {
 #[test]
 fn a_helper_that_never_says_hello_turns_its_tab_off() {
     let (tx, snapshots) = mpsc::channel();
-    let bridge = Bridge::start(TestHooks(Mutex::new(tx))).unwrap();
+    let bridge = Bridge::start(TestHooks(Mutex::new(tx), Peeks::default())).unwrap();
 
     bridge.register(5, Path::new("acc-a")).unwrap();
 
@@ -655,7 +827,7 @@ fn a_helper_that_never_says_hello_turns_its_tab_off() {
 #[test]
 fn a_shell_tabs_link_stays_quiet_while_no_claude_has_been_typed() {
     let (tx, snapshots) = mpsc::channel();
-    let bridge = Bridge::start(TestHooks(Mutex::new(tx))).unwrap();
+    let bridge = Bridge::start(TestHooks(Mutex::new(tx), Peeks::default())).unwrap();
 
     let born = Instant::now();
     bridge.register_shell(5, Path::new("acc-a")).unwrap();
@@ -673,7 +845,7 @@ fn a_shell_tabs_link_stays_quiet_while_no_claude_has_been_typed() {
 #[test]
 fn a_tab_is_linked_from_its_start_until_its_program_ends() {
     let (tx, _snapshots) = mpsc::channel();
-    let bridge = Bridge::start(TestHooks(Mutex::new(tx))).unwrap();
+    let bridge = Bridge::start(TestHooks(Mutex::new(tx), Peeks::default())).unwrap();
 
     let ticket = bridge.register(5, Path::new("acc-a")).unwrap();
 
@@ -687,7 +859,7 @@ fn a_tab_is_linked_from_its_start_until_its_program_ends() {
 #[test]
 fn a_wrong_token_gets_no_answer() {
     let (tx, _snapshots) = mpsc::channel();
-    let bridge = Bridge::start(TestHooks(Mutex::new(tx))).unwrap();
+    let bridge = Bridge::start(TestHooks(Mutex::new(tx), Peeks::default())).unwrap();
     let name = bridge.0.as_ref().unwrap().name.clone();
     let stream = link::connect(&name).unwrap().unwrap();
     let ask = Ask {
@@ -1154,7 +1326,7 @@ struct HeldHooks {
 
 impl Hooks for HeldHooks {
     fn label(&self, tab: TabId) -> Label {
-        TestHooks(Mutex::new(mpsc::channel().0)).label(tab)
+        TestHooks(Mutex::new(mpsc::channel().0), Peeks::default()).label(tab)
     }
 
     fn changed(&self, snapshot: Snapshot) {
@@ -1165,6 +1337,12 @@ impl Hooks for HeldHooks {
         }
         let _ = lock(&self.sent).send(snapshot);
     }
+
+    fn last_reply(&self, _: TabId) -> Option<String> {
+        None
+    }
+
+    fn read_by(&self, _: TabId, _: TabId) {}
 }
 
 #[test]

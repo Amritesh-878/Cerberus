@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex, PoisonError, Weak, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use crate::bridge::peek;
 use crate::bridge::queue::run_of;
 use crate::bridge::wire::{Ask, AskKind, MOST_LINE, MOST_MESSAGE, Order, Outcome, Reply, TabEntry};
 use crate::bridge::{Core, Hello, link};
@@ -100,6 +101,14 @@ fn answer(core: &Arc<Core>, stream: link::Stream) -> io::Result<()> {
                 core.changed();
             }
             Reply::Ok
+        }
+        AskKind::Wait { to, timeout_s } => {
+            let (text, error) = peek::wait(core, &ask.token, &to, timeout_s);
+            Reply::Told { text, error }
+        }
+        AskKind::Read { to } => {
+            let (text, error) = peek::read(core, &ask.token, &to);
+            Reply::Told { text, error }
         }
         AskKind::Delivered { id, written } => {
             let mut state = core.state();

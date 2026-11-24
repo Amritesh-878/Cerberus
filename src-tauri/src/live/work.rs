@@ -218,7 +218,11 @@ mod tests {
     }
 
     fn listed(at: u64, tasks: Vec<Task>) -> Tasks {
-        Tasks { at, tasks }
+        Tasks {
+            at,
+            tasks,
+            reply: None,
+        }
     }
 
     #[test]

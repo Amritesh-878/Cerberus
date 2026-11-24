@@ -54,6 +54,13 @@ whether alerts and shell suggestions are on.
 - **A tab whose account is gone** says "Work was removed. This chat is saved." with **Move to
   `<account>`** (the New tabs use account) and **Other account…**. If an account you have uses the
   same folder, the tab goes to it by itself.
+- **Chats Claude Code deletes.** Claude Code deletes a chat's file once it has gone unused for the
+  account's `cleanupPeriodDays` (30 when unset), and then Find chat, resume and Move can't reach it.
+  An account kept for less than a year says "Claude Code deletes this account's chats after 30
+  days" on its row. **Keep them** sets `cleanupPeriodDays` to 36500 in that account's
+  `settings.json` and changes nothing else in the file. This check reads only that key, and writes
+  only after the click. Elsewhere Cerberus reads `statusLine` (Live cards), `enabledPlugins` and
+  `syncClaudeAiSkills` (the Skills card) from the same file.
 
 ## Projects and tabs
 
@@ -303,7 +310,8 @@ it is open, its width, the folded cards, their order, starred skills and dismiss
   `gh pr ready <number>`. A repo the chat wrote into (from Outputs, a worktree beside the
   tab's folder for instance) gets a row of its own for this session, marked "written by this
   chat", with its branch, changes, PRs and Open in VS Code. Its **⋯** menu has **Add to the tab**,
-  which saves it as one of the tab's folders, as Edit environment's Add folder does. Every repo
+  which saves it as one of the tab's folders and sends `/add-dir` to a running chat, as Edit
+  environment's Add folder does. Every repo
   row's **⋯** menu also has **Worktrees** (below).
 - **Skills:** the project's `.claude/skills`, the account's `skills` folder, the skills synced
   from claude.ai (named `anthropic-skills:<skill>`, marked "claude.ai") and the skills of each
@@ -385,16 +393,18 @@ The gear on the Environment card edits the tab on screen. Nothing changes until 
 Each Claude tab is started with `--settings` pointing at a small file of Cerberus's own (in the app
 data folder, `live/tab-<id>.json`) that sets `statusLine` and `hooks`. Claude Code runs the status
 line command, the `cerberus-live` helper shipped beside the app, after each reply, and hands it the
-status line's JSON. The helper sends the app only the session id, model name, context percentage,
-and the 5-hour and 7-day used percentages and reset times. Prompts, file paths, costs and the
+status line's JSON. The helper sends the app only the session id, model name, context percentage and
+window size, when the prompt cache expires, and the 5-hour and 7-day used percentages and reset times. Prompts, file paths, costs and the
 transcript path in that JSON are skipped, never kept or logged. Your settings files are never
 written.
 
 The same helper runs as a hook, in the background so the chat never waits on it, after each Write,
 Edit, MultiEdit or NotebookEdit, when a turn ends, and when a subagent starts or stops. From those it
 keeps only the written file's path, and each background task's id, kind (shell or subagent), state and
-subagent type. Commands, file contents, task descriptions, prompts and replies are skipped. Hooks
-add to any you have; they never replace yours.
+subagent type. Commands, file contents, task descriptions and prompts are skipped. A turn's last reply
+is skipped too, except in a tab with messages between accounts on: there it is kept in memory, up to
+64 KB, for another tab's `read_tab` (below), and goes when the tab closes. Hooks add to any you have;
+they never replace yours.
 
 If you have a status line of your own, it still runs and shows: Cerberus's command passes the same
 JSON on to it unchanged, and keeps its `padding` and `refreshInterval`. On Windows without Git Bash,
@@ -409,6 +419,15 @@ popup waits for it and, with desktop alerts on, a notification says so. Like the
 **Not now**. An account's button moves the chat in one click; nothing moves without it. **Not now**
 leaves a small bar over the chat: **Show** opens the popup again, and **Dismiss** hides it until
 the next window.
+
+**A big chat whose cache has expired.** Claude keeps a chat's prompt cache for a while (about an
+hour on a subscription, five minutes on an API key), and the first reply after it expires rereads
+the whole chat. When a Claude tab is idle at its prompt, its context holds 200k tokens or more, and
+the cache has expired, it says "The prompt cache has expired: the next reply rereads 412k tokens."
+with **Type /compact**, which types `/compact` into the empty input. Cerberus takes the expiry time
+from the status line; when Claude Code doesn't report one, it counts an hour idle instead and says
+"Idle for over an hour". Nothing is sent: you press Enter, or type something else. The line goes
+once you type.
 
 The **Live cards** switch, in the same place, turns all of it off; Claude tabs started after that
 get no `--settings` and start as before.
@@ -545,9 +564,17 @@ automatically is against Anthropic's Usage Policy, so every move waits for your 
 Claude Code's own `SendMessage` reaches chats on the same account only. Cerberus lets a Claude Code
 tab message a Claude Code tab on another of your accounts, and every message waits for you.
 
-- **Sending.** Each Claude Code tab gets a `cerberus` MCP server with two tools: `list_tabs` (the
-  Claude Code tabs on your other accounts, with their ids) and `send_to_tab`. Ask a chat to message
-  another tab and it calls `send_to_tab`; the call waits while you decide.
+- **Sending.** Each Claude Code tab gets a `cerberus` MCP server with four tools: `list_tabs` (the
+  Claude Code tabs on your other accounts, with their ids), `send_to_tab`, `wait_for_tab` and
+  `read_tab`. Ask a chat to message another tab and it calls `send_to_tab`; the call waits while you
+  decide.
+- **Waiting and reading.** `wait_for_tab` waits until a tab from `list_tabs` is idle at its prompt,
+  or until its timeout passes (600 seconds unless the chat asks for another, an hour at most), and
+  says which. Right after a message lands in that tab, it first waits for the turn the message
+  starts. `read_tab` returns that tab's last finished reply, up to 64 KB; for a few seconds the tab
+  shows "Read by `<tab>`" in its top bar. Neither types or sends anything in the other tab.
+  Unlike `send_to_tab`, they are not allowed in advance, so Claude Code's own permission rules
+  apply to them. A reply is there only when the tab has live cards on.
 - **Approving.** A popup shows the sending tab, the target tab, each with its account colour, and
   the whole message in a box you can edit. **Approve**, **Approve edited** or **Reject**. Nothing
   approves by itself, there is no "always allow", and Escape stays with the terminal. Several

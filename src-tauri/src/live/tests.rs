@@ -32,14 +32,14 @@ impl Sink for FakeSink {
     }
 }
 
-struct Fixture {
-    live: Live,
-    views: Receiver<View>,
+pub(super) struct Fixture {
+    pub(super) live: Live,
+    pub(super) views: Receiver<View>,
     warnings: Arc<Mutex<Vec<Warning>>>,
-    dir: TestDir,
+    pub(super) dir: TestDir,
 }
 
-fn start(warn_at: u8) -> Fixture {
+pub(super) fn start(warn_at: u8) -> Fixture {
     start_in(warn_at, Shell::Posix)
 }
 
@@ -62,7 +62,7 @@ fn start_in(warn_at: u8, shell: Shell) -> Fixture {
     }
 }
 
-fn env_of(ticket: &Ticket) -> Env {
+pub(super) fn env_of(ticket: &Ticket) -> Env {
     let get = |name| {
         ticket
             .env
@@ -73,11 +73,12 @@ fn env_of(ticket: &Ticket) -> Env {
     Env {
         pipe: get(PIPE_VAR),
         token: get(TOKEN_VAR),
+        messages: false,
     }
 }
 
 /// Runs the helper as Claude Code would, and returns what it printed.
-fn status_line(env: &Env, input: &str, pass: bool) -> Vec<u8> {
+pub(super) fn status_line(env: &Env, input: &str, pass: bool) -> Vec<u8> {
     let mut args = vec!["status".to_owned()];
     if pass {
         args.push(helper::PASS.to_owned());
@@ -87,7 +88,7 @@ fn status_line(env: &Env, input: &str, pass: bool) -> Vec<u8> {
     out
 }
 
-fn next_view_where(views: &Receiver<View>, done: impl Fn(&View) -> bool) -> View {
+pub(super) fn next_view_where(views: &Receiver<View>, done: impl Fn(&View) -> bool) -> View {
     loop {
         let view = views.recv_timeout(Duration::from_secs(5)).unwrap();
         if done(&view) {
@@ -110,6 +111,7 @@ fn a_status_line_update_reaches_the_tab_card_and_its_accounts_meter() {
     assert!(printed.is_empty(), "with no line of his own, nothing shows");
     assert_eq!(view.tabs[0].tab, 7);
     assert_eq!(view.tabs[0].context, Some(42.5));
+    assert_eq!(view.tabs[0].context_tokens, Some(85_000));
     assert_eq!(view.tabs[0].model.as_deref(), Some("Opus 5.5"));
     assert_eq!(view.meters[0].account, 2);
     assert_eq!(view.meters[0].five_hour.map(|w| w.used), Some(87.2));
@@ -245,6 +247,7 @@ fn without_the_pipe_the_helper_still_passes_his_input_on() {
     let env = Env {
         pipe: Some(link::name_for("nobody-listens").into()),
         token: Some("x".into()),
+        messages: false,
     };
 
     assert_eq!(status_line(&env, FAKE_INPUT, true), FAKE_INPUT.as_bytes());
@@ -283,7 +286,7 @@ fn off_registers_nothing() {
     assert_eq!(live.view(), View::default());
 }
 
-fn hook(env: &Env, input: &str) {
+pub(super) fn hook(env: &Env, input: &str) {
     let mut out = Vec::new();
     helper::run(&[helper::HOOK.to_owned()], input.as_bytes(), &mut out, env);
     assert!(
@@ -463,4 +466,35 @@ fn the_pane_reads_only_files_the_chat_wrote() {
     assert!(fx.live.output_stamp(7, &path).is_some());
     assert_eq!(fx.live.output_stamp(7, &other.to_string_lossy()), None);
     assert_eq!(fx.live.output_stamp(8, &path), None, "another tab");
+}
+
+#[test]
+fn a_reply_is_kept_only_from_a_tab_with_messages_on_and_goes_when_it_closes() {
+    let fx = start(85);
+    let quiet = fx
+        .live
+        .register(7, 2, fx.dir.path(), fx.dir.path())
+        .unwrap();
+    let linked = fx
+        .live
+        .register(8, 3, fx.dir.path(), fx.dir.path())
+        .unwrap();
+    let with_messages = Env {
+        messages: true,
+        ..env_of(&linked)
+    };
+
+    hook(&env_of(&quiet), crate::live::hooks::tests::FAKE_STOP);
+    hook(&with_messages, crate::live::hooks::tests::FAKE_STOP);
+    next_view_where(&fx.views, |v| v.tabs.iter().all(|t| t.tasks.len() == 2));
+
+    assert_eq!(fx.live.last_reply(7), None);
+    assert_eq!(fx.live.last_reply(8).as_deref(), Some("FAKE-SECRET-reply"));
+    let view = serde_json::to_string(&fx.live.view()).unwrap();
+    assert!(
+        !view.contains("FAKE-SECRET"),
+        "the reply never reaches the cards"
+    );
+    fx.live.closed(&linked.token);
+    assert_eq!(fx.live.last_reply(8), None);
 }

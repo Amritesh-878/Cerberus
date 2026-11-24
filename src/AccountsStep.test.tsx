@@ -2,7 +2,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { render } from "solid-js/web";
 import { afterEach, expect, test } from "vitest";
 
-import type { Profiles } from "./accounts";
+import type { Deletes, Profiles } from "./accounts";
 import { AccountsStep } from "./AccountsStep";
 import type { ProgramChoice } from "./pty";
 import { createStatuses } from "./statuses";
@@ -81,6 +81,7 @@ interface Rendered {
   form: HTMLFormElement;
   added: unknown[];
   opened: Tab[];
+  kept: unknown[];
   folder: () => string | undefined;
 }
 
@@ -89,12 +90,19 @@ async function renderStep(
     profiles?: Profiles;
     picked?: string | null;
     state?: "loggedIn" | "loggedOut";
+    deletes?: Deletes[];
   } = {},
 ): Promise<Rendered> {
   const added: unknown[] = [];
   const opened: Tab[] = [];
+  const kept: unknown[] = [];
   mockIPC((cmd, args) => {
     switch (cmd) {
+      case "chat_deletion":
+        return options.deletes ?? [];
+      case "keep_chats":
+        kept.push(args);
+        return [];
       case "suggest_config_dir":
         return String.raw`C:\h\.claude-` + field(args, "name");
       case "add_account":
@@ -143,7 +151,7 @@ async function renderStep(
   if (!name || !form) throw new Error("no add form");
   const folder = () =>
     root.querySelector(".folder .program")?.textContent ?? undefined;
-  return { root, name, form, added, opened, folder };
+  return { root, name, form, added, opened, kept, folder };
 }
 
 test("the add form asks only for a name", async () => {
@@ -258,4 +266,27 @@ test("a row being renamed shows only Save and Cancel", async () => {
 
   button(row, "Cancel").click();
   expect(labels()).toEqual(["Rename", "Remove"]);
+});
+
+test("an account on Claude Code's default says when its chats go, and Keep them asks the core once", async () => {
+  const { root, kept } = await renderStep({
+    profiles: ONE,
+    deletes: [{ id: 0, days: 30 }],
+  });
+  const line = root.querySelector(".account-deletes");
+
+  expect(line?.textContent).toBe(
+    "Claude Code deletes this account's chats after 30 days Keep them",
+  );
+  button(root, "Keep them").click();
+  await settled();
+
+  expect(kept).toEqual([{ id: 0 }]);
+  expect(root.querySelector(".account-deletes")).toBeNull();
+});
+
+test("an account that keeps its chats shows no deletion line", async () => {
+  const { root } = await renderStep({ profiles: ONE, deletes: [] });
+
+  expect(root.querySelector(".account-deletes")).toBeNull();
 });

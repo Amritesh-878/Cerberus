@@ -4,6 +4,10 @@ use serde::{Deserialize, Serialize};
 
 /// The longest message a tab may send; it must fit Claude Code's 1 MiB inbox line once escaped.
 pub const MOST_MESSAGE: usize = 64 * 1024;
+/// The most of a reply `read_tab` hands back.
+pub const MOST_READ: usize = 64 * 1024;
+/// The longest `wait_for_tab` waits, so a forgotten call ends within the hour.
+pub const MOST_WAIT_S: u64 = 3600;
 /// A request line holds at most one message, escaped, plus a few names.
 pub const MOST_LINE: u64 = 1024 * 1024;
 
@@ -49,6 +53,16 @@ pub enum AskKind {
     Cancel {
         call: String,
     },
+    /// Answers once the tab is idle at its prompt or `timeout_s` passes; nothing is typed or sent.
+    #[serde(rename_all = "camelCase")]
+    Wait {
+        to: String,
+        timeout_s: u64,
+    },
+    /// The tab's last finished reply; nothing is typed or sent.
+    Read {
+        to: String,
+    },
     /// The answer to `Order::Deliver` with the same id.
     Delivered {
         id: u64,
@@ -83,9 +97,20 @@ pub enum Written {
 #[serde(tag = "reply", rename_all = "camelCase")]
 pub enum Reply {
     Ok,
-    Tabs { tabs: Vec<TabEntry> },
-    Outcome { outcome: Outcome },
-    Refused { reason: String },
+    Tabs {
+        tabs: Vec<TabEntry>,
+    },
+    Outcome {
+        outcome: Outcome,
+    },
+    Refused {
+        reason: String,
+    },
+    /// Plain text for the tool result, and whether it reads as an error.
+    Told {
+        text: String,
+        error: bool,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -161,6 +161,8 @@ pub fn run() {
             commands::rename_account,
             commands::remove_account,
             commands::account_logins,
+            commands::chat_deletion,
+            commands::keep_chats,
             wrapper::wrapper_failure,
             commands::set_default_account,
             commands::set_account_color,

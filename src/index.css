@@ -865,6 +865,11 @@ button {
   border-bottom: 1px solid var(--line);
 }
 
+.cache-hint button {
+  flex: none;
+  white-space: nowrap;
+}
+
 .save-error {
   font-size: 12px;
   color: var(--accent);
@@ -1526,6 +1531,17 @@ kbd {
   display: block;
   font-size: 12px;
   color: #d6b45a;
+}
+
+.account-deletes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: center;
+  margin-top: 4px;
+  font-size: 12px;
+  color: #d6b45a;
+  white-space: normal;
 }
 
 .dot-button {
