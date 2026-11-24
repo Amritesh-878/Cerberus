@@ -1,6 +1,7 @@
 """Makes two fake account folders and a work folder under the folder given, for a test build."""
 import json
 import os
+import shlex
 import shutil
 import sys
 
@@ -8,7 +9,7 @@ ROOT = os.path.abspath(sys.argv[1])
 WORK = os.path.join(ROOT, "work")
 os.makedirs(ROOT, exist_ok=True)
 shutil.copy(os.path.join(os.path.dirname(os.path.abspath(__file__)), "record.sh"), ROOT)
-REC = os.path.join(ROOT, "record.sh").replace("\\", "/")
+REC = shlex.quote(os.path.join(ROOT, "record.sh").replace("\\", "/"))
 
 os.makedirs(WORK, exist_ok=True)
 
@@ -28,11 +29,14 @@ def account(name, keep, record):
     if keep:
         settings["cleanupPeriodDays"] = 36500
     if record:
-        settings["statusLine"] = {"type": "command", "command": f"bash '{REC}' status"}
-        hook = lambda kind: [{"matcher": "*", "hooks": [{"type": "command", "command": f"bash '{REC}' {kind}"}]}]
+        settings["statusLine"] = {"type": "command", "command": f"bash {REC} status"}
+
+        def hook(kind):
+            return [{"matcher": "*", "hooks": [{"type": "command", "command": f"bash {REC} {kind}"}]}]
+
         settings["hooks"] = {
             "PostToolUse": hook("post-tool-use"),
-            "Stop": [{"hooks": [{"type": "command", "command": f"bash '{REC}' stop"}]}],
+            "Stop": [{"hooks": [{"type": "command", "command": f"bash {REC} stop"}]}],
             "SubagentStart": hook("subagent-start"),
             "SubagentStop": hook("subagent-stop"),
             "PreCompact": hook("pre-compact"),

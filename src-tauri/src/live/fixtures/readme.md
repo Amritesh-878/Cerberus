@@ -14,7 +14,7 @@ covered by the hand-written fixtures in `event.rs` and `meters.rs`.
 1. `python record/setup.py <folder>` makes two fake accounts there (`acc-a` records its status line
    and hooks into `<folder>/recorded/`, `acc-b` keeps chats) and a `work` folder. Both use an API
    key helper and `ANTHROPIC_BASE_URL=http://127.0.0.1:8820`.
-2. `FAKE_WORK=<folder>/work node record/fake-api.js` serves scripted replies: "say hello" gets text,
+2. `FAKE_WORK=<folder>/work node record/fake-api.cjs` serves scripted replies: "say hello" gets text,
    "write a file" gets a Write, a compaction gets a summary. `FAKE_CACHED` sets the cached input
    tokens each reply reports (240000 by default, a big chat).
 3. In a test build with its own identifier, add the two folders as accounts, open a Claude tab on
