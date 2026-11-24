@@ -47,6 +47,9 @@ pub struct Status {
     /// The context window's size in tokens.
     #[serde(default)]
     pub context_size: Option<u64>,
+    /// Unix seconds when the chat's prompt cache expires, as Claude Code last reported it.
+    #[serde(default)]
+    pub cache_expires_at: Option<u64>,
     pub five_hour: Option<Window>,
     pub seven_day: Option<Window>,
 }
@@ -71,6 +74,14 @@ struct StatusIn {
     context_window: Option<ContextIn>,
     #[serde(default)]
     rate_limits: Option<LimitsIn>,
+    #[serde(default)]
+    prompt_cache: Option<CacheIn>,
+}
+
+#[derive(Deserialize)]
+struct CacheIn {
+    #[serde(default, deserialize_with = "number")]
+    expires_at: Option<f64>,
 }
 
 #[derive(Deserialize)]
@@ -145,6 +156,10 @@ pub fn status_from(input: &[u8], at: u64) -> Option<Status> {
             .and_then(|c| c.used_percentage)
             .map(percent),
         context_size: context.and_then(|c| c.context_window_size).and_then(size),
+        cache_expires_at: parsed
+            .prompt_cache
+            .and_then(|c| c.expires_at)
+            .and_then(unix_seconds),
         five_hour: limits.as_ref().and_then(|l| window(l.five_hour.as_ref())),
         seven_day: limits.as_ref().and_then(|l| window(l.seven_day.as_ref())),
     })
@@ -167,6 +182,7 @@ impl Status {
             model: self.model.as_deref().and_then(model_name),
             context: self.context.filter(|c| c.is_finite()).map(percent),
             context_size: self.context_size.and_then(|s| size(s as f64)),
+            cache_expires_at: self.cache_expires_at.and_then(|s| unix_seconds(s as f64)),
             five_hour: window(self.five_hour),
             seven_day: window(self.seven_day),
         }
@@ -184,6 +200,11 @@ fn window(found: Option<&WindowIn>) -> Option<Window> {
         // In range by the check above, so the cast neither wraps nor saturates.
         resets_at: resets as u64,
     })
+}
+
+fn unix_seconds(n: f64) -> Option<u64> {
+    // In range by the check, so the cast neither wraps nor saturates.
+    (1.0..LATEST_RESET_S).contains(&n).then_some(n as u64)
 }
 
 fn percent(n: f64) -> f64 {
@@ -239,7 +260,7 @@ pub(crate) mod tests {
         "cost": {"total_cost_usd": 1.5, "total_lines_added": 3},
         "context_window": {"total_input_tokens": 120, "context_window_size": 200000,
             "current_usage": {"input_tokens": 10}, "used_percentage": 42.5, "remaining_percentage": 57.5},
-        "prompt_cache": {"last_miss_cause": "FAKE-SECRET-cause"},
+        "prompt_cache": {"last_miss_cause": "FAKE-SECRET-cause", "expires_at": 4102444000, "ttl": "1h"},
         "rate_limits": {
             "five_hour": {"used_percentage": 87.2, "resets_at": 4102444800},
             "seven_day": {"used_percentage": 41, "resets_at": 4102531200},
@@ -259,6 +280,7 @@ pub(crate) mod tests {
                 model: Some("Opus 5.5".into()),
                 context: Some(42.5),
                 context_size: Some(200_000),
+                cache_expires_at: Some(4_102_444_000),
                 five_hour: Some(Window {
                     used: 87.2,
                     resets_at: 4_102_444_800
@@ -323,6 +345,7 @@ pub(crate) mod tests {
             model: Some(String::new()),
             context: Some(f64::NAN),
             context_size: Some(0),
+            cache_expires_at: Some(1_762_700_400_000),
             five_hour: Some(Window {
                 used: -5.0,
                 resets_at: 1_762_700_400,
@@ -339,6 +362,7 @@ pub(crate) mod tests {
         assert_eq!(checked.model, None);
         assert_eq!(checked.context, None);
         assert_eq!(checked.context_size, None);
+        assert_eq!(checked.cache_expires_at, None);
         assert_eq!(checked.five_hour.map(|w| w.used), Some(0.0));
         assert_eq!(checked.seven_day, None);
     }

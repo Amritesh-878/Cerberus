@@ -64,6 +64,8 @@ export interface TabLive {
   context: number | null;
   /** Tokens in the context window; `null` until the chat's first reply. */
   contextTokens: number | null;
+  /** Unix seconds when the prompt cache expires; `null` while Claude Code hasn't said. */
+  cacheExpiresAt: number | null;
   model: string | null;
   /** The user's own status line runs where Cerberus can't wrap it, so this tab reports no context. */
   keptTheirs: boolean;

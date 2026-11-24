@@ -60,6 +60,8 @@ pub struct TabLive {
     pub context: Option<f64>,
     /// Tokens in the context window, which the next reply rereads once the cache has expired.
     pub context_tokens: Option<u64>,
+    /// Unix seconds when the prompt cache expires; `None` while Claude Code hasn't said.
+    pub cache_expires_at: Option<u64>,
     pub model: Option<String>,
     /// His own status line runs where Cerberus cannot wrap it, so this tab reports no context.
     pub kept_theirs: bool,
@@ -369,6 +371,7 @@ impl Core {
             if let Some(shown) = state.tabs.get_mut(&tab) {
                 shown.context = status.context.or(shown.context);
                 shown.context_tokens = status.context_tokens().or(shown.context_tokens);
+                shown.cache_expires_at = status.cache_expires_at.or(shown.cache_expires_at);
                 shown.model = status.model.clone().or(shown.model.take());
             }
             let before = state.meters.kept();

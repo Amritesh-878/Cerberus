@@ -82,6 +82,11 @@ fn a_recorded_session_fills_the_cards_keeps_the_reply_and_compacts() {
     assert_eq!(tab.model.as_deref(), Some("Opus 5.5"));
     assert_eq!(tab.context, Some(24.0));
     assert_eq!(tab.context_tokens, Some(240_000));
+    assert_eq!(
+        tab.cache_expires_at,
+        Some(1_795_514_712),
+        "the last reply's cache"
+    );
     assert_eq!(tab.outputs.len(), 1, "the Write hook gave one output");
     assert_eq!(tab.outputs[0].name, "fake-out.txt");
     assert!(tab.tasks.is_empty());

@@ -37,6 +37,21 @@ test("the hint needs an hour idle and a big chat", () => {
   expect(cacheHint(0, null, HOUR)).toBeUndefined();
 });
 
+test("a known expiry wins over the hour, both ways", () => {
+  const expiresAt = 300;
+
+  expect(cacheHint(0, 412_400, 300_000, expiresAt)).toBe(
+    "The prompt cache has expired: the next reply rereads 412k tokens.",
+  );
+  expect(cacheHint(0, 412_400, 299_000, expiresAt)).toBeUndefined();
+  expect(
+    cacheHint(0, 412_400, 2 * HOUR, 3 * 3600),
+    "an hour idle, but the cache still holds",
+  ).toBeUndefined();
+  expect(cacheHint(undefined, 412_400, 300_000, expiresAt)).toBeUndefined();
+  expect(cacheHint(0, BIG_CONTEXT - 1, 300_000, expiresAt)).toBeUndefined();
+});
+
 const TREE: SavedTree = {
   projects: [{ id: 1, name: "alpha", folder: String.raw`C:\code\alpha` }],
   tabs: [
@@ -53,7 +68,7 @@ const TREE: SavedTree = {
   nextId: 4,
 };
 
-function view(tokens: number): LiveView {
+function view(tokens: number, cacheExpiresAt: number | null = null): LiveView {
   return {
     tabs: [
       {
@@ -61,6 +76,7 @@ function view(tokens: number): LiveView {
         account: 1,
         context: 41,
         contextTokens: tokens,
+        cacheExpiresAt,
         model: "Opus 5.5",
         keptTheirs: false,
         outputs: [],
@@ -74,20 +90,20 @@ function view(tokens: number): LiveView {
   };
 }
 
-async function idleChat(tokens: number) {
+async function idleChat(tokens: number, cacheExpiresAt: number | null = null) {
   const pty = ptyCore();
   const writes: string[] = [];
   const root = await renderApp(() => SAVED, {
     ...pty.core,
     tree_load: () => ({ tree: TREE, notice: null }),
-    live_view: () => view(tokens),
+    live_view: () => view(tokens, cacheExpiresAt),
     pty_write: (args: unknown) => {
       writes.push(String(field(args, "data")));
     },
   });
   await open(root, "planner");
   emit(pty.spawned, 0, { state: "idle" });
-  await emitEvent("live", view(tokens));
+  await emitEvent("live", view(tokens, cacheExpiresAt));
   await settle();
   return { root, writes, pty };
 }
@@ -132,6 +148,19 @@ test("the hint goes once he types, and a turn starts the clock over", async () =
   emit(pty.spawned, 0, { state: "working" }, { state: "idle" });
   await vi.advanceTimersByTimeAsync(HOUR - 60_000);
   expect(hint(root), "idle again for less than an hour").toBeUndefined();
+});
+
+test("a five minute cache is flagged once Claude Code says it expired", async () => {
+  const expiresAt = Math.floor(Date.now() / 1000) + 5 * 60;
+  const { root } = await idleChat(412_000, expiresAt);
+
+  await vi.advanceTimersByTimeAsync(4 * 60_000);
+  expect(hint(root)).toBeUndefined();
+
+  await vi.advanceTimersByTimeAsync(2 * 60_000);
+  expect(hint(root)).toBe(
+    "The prompt cache has expired: the next reply rereads 412k tokens.",
+  );
 });
 
 test("a small chat never shows the hint", async () => {

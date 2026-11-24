@@ -393,7 +393,7 @@ Each Claude tab is started with `--settings` pointing at a small file of Cerberu
 data folder, `live/tab-<id>.json`) that sets `statusLine` and `hooks`. Claude Code runs the status
 line command, the `cerberus-live` helper shipped beside the app, after each reply, and hands it the
 status line's JSON. The helper sends the app only the session id, model name, context percentage and
-window size, and the 5-hour and 7-day used percentages and reset times. Prompts, file paths, costs and the
+window size, when the prompt cache expires, and the 5-hour and 7-day used percentages and reset times. Prompts, file paths, costs and the
 transcript path in that JSON are skipped, never kept or logged. Your settings files are never
 written.
 
@@ -419,11 +419,14 @@ popup waits for it and, with desktop alerts on, a notification says so. Like the
 leaves a small bar over the chat: **Show** opens the popup again, and **Dismiss** hides it until
 the next window.
 
-**A big chat idle for an hour.** On a subscription, Claude keeps a chat's prompt cache for about an
-hour, so the first reply after that rereads the whole chat. When a Claude tab has been idle at its
-prompt for an hour or more and its context holds 200k tokens or more, it says "Idle for over an
-hour: the next reply rereads 412k tokens." with **Type /compact**, which types `/compact` into the
-empty input. Nothing is sent: you press Enter, or type something else. The line goes once you type.
+**A big chat whose cache has expired.** Claude keeps a chat's prompt cache for a while (about an
+hour on a subscription, five minutes on an API key), and the first reply after it expires rereads
+the whole chat. When a Claude tab is idle at its prompt, its context holds 200k tokens or more, and
+the cache has expired, it says "The prompt cache has expired: the next reply rereads 412k tokens."
+with **Type /compact**, which types `/compact` into the empty input. Cerberus takes the expiry time
+from the status line; when Claude Code doesn't report one, it counts an hour idle instead and says
+"Idle for over an hour". Nothing is sent: you press Enter, or type something else. The line goes
+once you type.
 
 The **Live cards** switch, in the same place, turns all of it off; Claude tabs started after that
 get no `--settings` and start as before.

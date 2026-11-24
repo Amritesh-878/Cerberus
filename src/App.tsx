@@ -1792,10 +1792,12 @@ export function App() {
               <Show
                 when={(() => {
                   const id = shown();
-                  const tokens = live().tabs.find(
-                    (t) => t.tab === id,
-                  )?.contextTokens;
-                  return cacheHints.hint(id, tokens);
+                  const shownLive = live().tabs.find((t) => t.tab === id);
+                  return cacheHints.hint(
+                    id,
+                    shownLive?.contextTokens,
+                    shownLive?.cacheExpiresAt,
+                  );
                 })()}
               >
                 {(hint) => (
