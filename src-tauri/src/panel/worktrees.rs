@@ -316,6 +316,13 @@ pub fn list(git: &Git, folder: &Path, prs: &[Pr], tabs: &[TabFolders]) -> Option
     )
 }
 
+/// The repo's main folder as `list` names it, which keys its removal lines.
+pub fn main_of(git: &Git, folder: &Path) -> Option<String> {
+    let listed = parse(&git.worktrees(folder)?);
+    let main = listed.first()?;
+    Some(native(&main.path).to_string_lossy().into_owned())
+}
+
 /// Merged into the default branch's history, or its PR merged at exactly this commit (a squash merge leaves no history link).
 fn merged(
     branch: &str,

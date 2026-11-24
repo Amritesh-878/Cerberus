@@ -92,6 +92,7 @@ pub fn run() {
         .manage(Arc::new(RunningTabs::default()))
         .manage(open::Pending::default())
         .manage(PrCache::default())
+        .manage(panel::CleanLog::default())
         .manage(panel::Roots::default())
         .manage(ChatFinder::default())
         .manage(wrapper::Wrapped::default())
@@ -121,6 +122,7 @@ pub fn run() {
                 let _ = handle.emit("tree-save", failure);
             };
             app.manage(Saved::open(&config_dir.join(saved::FILE_NAME), report));
+            panel::start_cleanup(app.handle().clone());
             let services = Services::new(
                 &config_dir,
                 paths.home_dir()?,
@@ -194,6 +196,7 @@ pub fn run() {
             panel::panel_written,
             panel::panel_worktrees,
             panel::panel_remove_worktrees,
+            panel::panel_clean_merged,
             panel::panel_prs,
             panel::panel_open_pr,
             panel::panel_pr_link,
