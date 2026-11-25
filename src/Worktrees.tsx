@@ -54,6 +54,10 @@ export function refusalText(
       return "it is not a worktree of this repo";
     case "failed":
       return "git could not remove it";
+    case "moved":
+      return "its branch has a commit after its merged PR";
+    case "noTabs":
+      return "the saved tabs could not be read";
   }
 }
 

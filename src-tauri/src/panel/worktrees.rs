@@ -89,6 +89,16 @@ pub enum Refusal {
     Unknown,
     /// Git refused or failed to remove it.
     Failed,
+    /// Its branch has a commit after the one its PR merged.
+    Moved,
+    /// The saved tabs could not be read, so it can't be shown to be out of use.
+    NoTabs,
+}
+
+/// A worktree to remove and, for an automatic removal, the commit its branch must still be on.
+pub struct Wanted {
+    pub path: PathBuf,
+    pub tip: Option<String>,
 }
 
 /// One row of the Worktrees list, decided in the core.
@@ -346,38 +356,51 @@ fn merged(
     by_pr || base.is_some_and(in_base)
 }
 
-/// Removes each asked-for worktree the list allows, checked again now; the local branch goes only if merged.
+/// Removes each asked-for worktree the list allows, each checked just before it goes; the local branch goes only if merged.
 pub fn remove(
     git: &Git,
     folder: &Path,
-    wanted: &[PathBuf],
+    wanted: &[Wanted],
     prs: &[Pr],
-    tabs: &[TabFolders],
+    tabs: &dyn Fn() -> Option<Vec<TabFolders>>,
 ) -> Option<Vec<Removed>> {
-    let rows = list(git, folder, prs, tabs)?;
     // Git runs from the main worktree, never from inside the one it removes.
-    let from = PathBuf::from(&rows.first()?.path);
+    let from = PathBuf::from(main_of(git, folder)?);
     let base = git.base(&from);
     let mut done = Vec::new();
     for want in wanted {
-        let want_real = real(want);
+        let refused = |refusal: Refusal| Removed {
+            path: want.path.to_string_lossy().into_owned(),
+            name: name_of(&want.path),
+            refusal: Some(refusal),
+            branch: None,
+            branch_deleted: false,
+        };
+        // Read again for each one, so a tab opened or a commit made since the last removal counts.
+        let Some(tabs_now) = tabs() else {
+            done.push(refused(Refusal::NoTabs));
+            continue;
+        };
+        let Some(rows) = list(git, folder, prs, &tabs_now) else {
+            done.push(refused(Refusal::Unread));
+            continue;
+        };
+        let want_real = real(&want.path);
         let Some(row) = rows
             .iter()
             .find(|r| same(&real(Path::new(&r.path)), &want_real))
         else {
-            done.push(Removed {
-                path: want.to_string_lossy().into_owned(),
-                name: name_of(want),
-                refusal: Some(Refusal::Unknown),
-                branch: None,
-                branch_deleted: false,
-            });
+            done.push(refused(Refusal::Unknown));
             continue;
         };
+        let moved = want
+            .tip
+            .as_deref()
+            .is_some_and(|tip| row.head.as_deref() != Some(tip));
         let mut result = Removed {
             path: row.path.clone(),
             name: row.name.clone(),
-            refusal: row.refusal,
+            refusal: row.refusal.or(moved.then_some(Refusal::Moved)),
             branch: row.branch.clone(),
             branch_deleted: false,
         };
@@ -514,6 +537,18 @@ mod tests {
             commit(&path, &format!("{name}.txt"));
         }
         repo
+    }
+
+    /// Removes as the manual Remove does: no expected tip, the tabs as given.
+    fn remove_now(repo: &Path, paths: &[PathBuf], prs: &[Pr], tabs: &[TabFolders]) -> Vec<Removed> {
+        let wanted: Vec<Wanted> = paths
+            .iter()
+            .map(|path| Wanted {
+                path: path.clone(),
+                tip: None,
+            })
+            .collect();
+        remove(&git(), repo, &wanted, prs, &|| Some(tabs.to_vec())).unwrap()
     }
 
     fn find<'a>(rows: &'a [Worktree], name: &str) -> &'a Worktree {
@@ -667,7 +702,7 @@ mod tests {
         let rows = list(&git(), &repo, &[], &[]).unwrap();
         let lost = find(&rows, "lost");
         assert!(lost.missing && lost.stale);
-        let removed = remove(&git(), &repo, &[PathBuf::from(&lost.path)], &[], &[]).unwrap();
+        let removed = remove_now(&repo, &[PathBuf::from(&lost.path)], &[], &[]);
 
         assert_eq!(removed[0].refusal, None);
         assert_eq!(list(&git(), &repo, &[], &[]).unwrap().len(), 1);
@@ -698,7 +733,7 @@ mod tests {
             dir.path().join("elsewhere"),
         ];
 
-        let removed = remove(&git(), &repo, &wanted, &[], &tabs).unwrap();
+        let removed = remove_now(&repo, &wanted, &[], &tabs);
 
         let refusals: Vec<Option<Refusal>> = removed.iter().map(|r| r.refusal).collect();
         assert_eq!(
@@ -750,7 +785,7 @@ mod tests {
             .map(|n| dir.path().join(n))
             .collect();
 
-        let removed = remove(&git(), &repo, &wanted, &prs, &[]).unwrap();
+        let removed = remove_now(&repo, &wanted, &prs, &[]);
 
         let fates: Vec<(&str, Option<Refusal>, bool)> = removed
             .iter()
@@ -822,7 +857,7 @@ mod tests {
         }];
 
         let rows = list(&git(), &repo, &[], &tabs).unwrap();
-        let removed = remove(&git(), &repo, &[alias, spare], &[], &tabs).unwrap();
+        let removed = remove_now(&repo, &[alias, spare], &[], &tabs);
 
         assert_eq!(find(&rows, "linked").tabs, [7]);
         let refusals: Vec<Option<Refusal>> = removed.iter().map(|r| r.refusal).collect();

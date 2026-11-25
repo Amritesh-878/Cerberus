@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use crate::panel::gh::{Pr, PrState};
 use crate::panel::git::Git;
-use crate::panel::worktrees::{self, TabFolders, Worktree};
+use crate::panel::worktrees::{self, TabFolders, Wanted, Worktree};
 
 /// How often the projects that asked are swept, besides at start.
 pub const EVERY: Duration = Duration::from_secs(60 * 60);
@@ -41,8 +41,8 @@ impl CleanLog {
     }
 }
 
-/// Worktrees stale because their PR merged at the commit their branch is still on, with that PR's number.
-pub fn merged_ones(rows: &[Worktree], prs: &[Pr]) -> Vec<(PathBuf, u64)> {
+/// Worktrees stale because their PR merged at the commit their branch is still on, with that PR's number and commit.
+pub fn merged_ones(rows: &[Worktree], prs: &[Pr]) -> Vec<(PathBuf, u64, String)> {
     rows.iter()
         .filter(|w| w.stale && !w.main)
         .filter_map(|w| {
@@ -50,7 +50,7 @@ pub fn merged_ones(rows: &[Worktree], prs: &[Pr]) -> Vec<(PathBuf, u64)> {
             // A commit after the merge is work the PR doesn't hold, so its worktree stays.
             let pr = prs.iter().find(|pr| pr.number == mark.number)?;
             (w.tip() == Some(pr.head_ref_oid.as_str()))
-                .then(|| (PathBuf::from(&w.path), mark.number))
+                .then(|| (PathBuf::from(&w.path), mark.number, pr.head_ref_oid.clone()))
         })
         .collect()
 }
@@ -93,17 +93,23 @@ pub fn sweep(
     if wanted.is_empty() {
         return Some((repo, Vec::new()));
     }
-    let paths: Vec<PathBuf> = wanted.iter().map(|(path, _)| path.clone()).collect();
-    // Read again now, since a tab may have opened in one while git listed; `remove` lists again and keeps any now in use or changed.
-    let removed = worktrees::remove(git, folder, &paths, prs, &tabs()?)?;
+    let asked: Vec<Wanted> = wanted
+        .iter()
+        .map(|(path, _, tip)| Wanted {
+            path: path.clone(),
+            tip: Some(tip.clone()),
+        })
+        .collect();
+    // `remove` reads the tabs and lists again before each one, and keeps any now in use, changed or moved on.
+    let removed = worktrees::remove(git, folder, &asked, prs, tabs)?;
     let lines = removed
         .iter()
         .filter(|r| r.refusal.is_none())
         .filter_map(|r| {
             let number = wanted
                 .iter()
-                .find(|(path, _)| Path::new(&r.path) == path.as_path())
-                .map(|(_, n)| *n)?;
+                .find(|(path, _, _)| Path::new(&r.path) == path.as_path())
+                .map(|(_, n, _)| *n)?;
             Some(format!("Removed {}, merged in #{number}", r.name))
         })
         .collect();
@@ -261,6 +267,71 @@ mod tests {
         assert!(lines.is_empty());
         assert!(at.is_dir());
         assert_eq!(reads.get(), 2, "the tabs were read again before removing");
+    }
+
+    #[test]
+    fn a_commit_made_between_the_listings_keeps_its_worktree() {
+        let dir = TestDir::new();
+        let repo = repo_with(&dir, &["merged"]);
+        let at = dir.path().join("merged");
+        let merged_at = tip(&at);
+        let reads = std::cell::Cell::new(0);
+        // The first read is the sweep's listing; the commit lands before the read for the removal.
+        let tabs = || {
+            reads.set(reads.get() + 1);
+            if reads.get() == 2 {
+                commit(&at, "late.txt");
+            }
+            Some(Vec::new())
+        };
+
+        let (_, lines) = sweep(
+            &git(),
+            &repo,
+            &[pr(61, "MERGED", "merged", &merged_at)],
+            &tabs,
+        )
+        .unwrap();
+
+        assert!(lines.is_empty());
+        assert!(at.is_dir(), "the late commit is still checked out there");
+    }
+
+    #[test]
+    fn a_tab_opened_between_two_removals_keeps_the_second_worktree() {
+        let dir = TestDir::new();
+        let repo = repo_with(&dir, &["one", "two"]);
+        let (one, two) = (dir.path().join("one"), dir.path().join("two"));
+        let prs = [
+            pr(71, "MERGED", "one", &tip(&one)),
+            pr(72, "MERGED", "two", &tip(&two)),
+        ];
+        let reads = std::cell::Cell::new(0);
+        // Reads: the sweep's listing, the first removal, then the second, by when a tab runs in both.
+        let tabs = || {
+            reads.set(reads.get() + 1);
+            Some(if reads.get() < 3 {
+                Vec::new()
+            } else {
+                vec![TabFolders {
+                    tab: 9,
+                    folders: vec![one.clone(), two.clone()],
+                }]
+            })
+        };
+
+        let (_, lines) = sweep(&git(), &repo, &prs, &tabs).unwrap();
+
+        assert_eq!(reads.get(), 3, "the tabs were read again for each removal");
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        assert_eq!(
+            [one.is_dir(), two.is_dir()]
+                .iter()
+                .filter(|kept| **kept)
+                .count(),
+            1,
+            "the one asked about after the tab opened stays"
+        );
     }
 
     #[test]

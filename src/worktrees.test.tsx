@@ -441,6 +441,10 @@ test("refusals and results read plainly", () => {
     "a tab runs in it (coder, planner)",
   );
   expect(refusalText("locked")).toBe("git has it locked");
+  expect(refusalText("moved")).toBe(
+    "its branch has a commit after its merged PR",
+  );
+  expect(refusalText("noTabs")).toBe("the saved tabs could not be read");
   expect(
     worktreeDetail(
       worktree(MERGED, {

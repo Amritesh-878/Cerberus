@@ -29,7 +29,7 @@ use crate::panel::git::Head;
 use crate::panel::mcp::Connectors;
 use crate::panel::skills::Skill;
 pub use crate::panel::worktrees::Roots;
-use crate::panel::worktrees::{Removed, TabFolders, Worktree};
+use crate::panel::worktrees::{Removed, TabFolders, Wanted, Worktree};
 
 #[derive(Debug, thiserror::Error)]
 pub enum PanelError {
@@ -322,9 +322,15 @@ pub async fn panel_remove_worktrees(
         let git = git().ok_or(PanelError::NoWorktrees)?;
         let folder = tabs_folder(&app, &git, tab, &folder)?;
         // Without the saved tabs nothing can be shown to be out of use, so nothing goes.
-        let tabs = tab_folders(&app)?;
+        tab_folders(&app)?;
         let prs = prs_of(&app, &git, &folder);
-        worktrees::remove(&git, &folder, &paths, &prs, &tabs).ok_or(PanelError::NoWorktrees)
+        let wanted: Vec<Wanted> = paths
+            .into_iter()
+            .map(|path| Wanted { path, tip: None })
+            .collect();
+        // Read again before each removal, so a tab opened meanwhile keeps its worktree.
+        let tabs = || tab_folders(&app).ok();
+        worktrees::remove(&git, &folder, &wanted, &prs, &tabs).ok_or(PanelError::NoWorktrees)
     })
     .await
 }

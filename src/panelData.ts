@@ -43,7 +43,15 @@ export interface Written {
 
 /** Why the core leaves a worktree in place. */
 export type Refusal =
-  "main" | "locked" | "dirty" | "unread" | "inUse" | "unknown" | "failed";
+  | "main"
+  | "locked"
+  | "dirty"
+  | "unread"
+  | "inUse"
+  | "unknown"
+  | "failed"
+  | "moved"
+  | "noTabs";
 
 export interface Worktree {
   path: string;
