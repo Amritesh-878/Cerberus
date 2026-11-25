@@ -304,11 +304,13 @@ it is open, its width, the folded cards, their order, starred skills and dismiss
   output, cache read and cache write tokens per model, with what they would cost at API list prices
   ("API price estimate, not your bill"; a subscription is billed by its plan). A model Cerberus has
   no price for shows its tokens with "no price". The counts come from the usage numbers in each
-  account's chat files and its subagents' files, read in memory; no message text is kept. A chat
-  copied to another account by a move counts once. Daily totals are kept in `usage.json` for 90
-  days, so they outlive chats Claude Code deletes. The first count after a start reads every chat
-  file changed in the last 90 days once; after that only the lines added since are read. The section
-  reads again every 5 minutes while shown.
+  account's chat files and its subagents' files, read in memory. A chat copied to another account by
+  a move counts once, on the account that had it first. Each reply's counts, time and model are kept
+  in `usage.db` for 90 days, so totals outlive chats Claude Code deletes; no message text is kept,
+  and each reply is known by a hash of its id, not the id. Days follow your computer's time zone.
+  The first count reads every chat file changed in the last 90 days once; after that, even after a
+  restart, only the lines added since are read. The section reads again every 5 minutes while
+  shown.
 - **Changes:** one row per repo among the tab's folders, the main folder's first: lines added and
   removed on the branch since it left the remote's default branch (`origin/HEAD`, else `main` or
   `master`), uncommitted and untracked files included. **Create PR**
@@ -774,7 +776,7 @@ WSLg, but not yet on a full desktop.
 | zsh suggestion files (`shell/zsh`) | same folder | same folder | `~/.local/share/com.cerberus.terminal` |
 | MCP config for messages between accounts (`mcp.json`) | same folder | same folder | `~/.local/share/com.cerberus.terminal` |
 | Status line settings for live cards (`live/tab-<id>.json`) | same folder | same folder | `~/.local/share/com.cerberus.terminal` |
-| Daily token totals (`usage.json`) | same folder | same folder | `~/.local/share/com.cerberus.terminal` |
+| Token counts per reply (`usage.db`) | same folder | same folder | `~/.local/share/com.cerberus.terminal` |
 
 Uninstalling on Windows keeps this folder unless you tick the box to delete the app data. An
 unreadable `profiles.json` is kept as `profiles.json.bad` and the app offers to start fresh.
