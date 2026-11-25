@@ -94,7 +94,7 @@ import { createNotifier, createWindowFocus, sendWarning } from "./notify";
 import { type Anchor, onScreen, type Side } from "./place";
 import { followOpenRequests } from "./open";
 import { Panel } from "./Panel";
-import { CREATE_PR } from "./panelData";
+import { cleanMergedNow, CREATE_PR } from "./panelData";
 import { createPanelState } from "./panelPrefs";
 import { listPrograms, type ProgramChoice } from "./pty";
 import {
@@ -404,6 +404,10 @@ export function App() {
   const shownTab = () => {
     const id = shown();
     return id === undefined ? undefined : tabById(id);
+  };
+  const shownProject = () => {
+    const id = shownTab()?.projectId;
+    return id == null ? undefined : tree().projects.find((p) => p.id === id);
   };
   const messaging = createMessaging();
   const split = createSplit(shown);
@@ -2162,6 +2166,18 @@ export function App() {
                 onOpenTab={openTabIn}
                 onAddFolder={addFolder}
                 tabTitle={(id) => tabById(id)?.title}
+                cleanMerged={() => {
+                  const project = shownProject();
+                  return project && (project.tasks?.cleanMerged ?? false);
+                }}
+                onCleanMerged={(on) => {
+                  const project = shownProject();
+                  if (!project) return Promise.resolve();
+                  setTree(
+                    withProjectTasks(tree(), project.id, { cleanMerged: on }),
+                  );
+                  return on ? cleanMergedNow(project.id) : Promise.resolve();
+                }}
                 onType={typeIntoChat}
                 links={messaging.snapshot()}
                 live={live()}

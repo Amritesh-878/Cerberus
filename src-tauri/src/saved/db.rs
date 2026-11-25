@@ -372,6 +372,7 @@ mod tests {
             folder: Some("C:/plans/tasks".to_owned()),
             prompt: Some("Do {task_id} in {folder}".to_owned()),
             account: Some(2),
+            clean_merged: true,
         };
         let snapshot = Snapshot {
             tree,
@@ -383,6 +384,15 @@ mod tests {
         db.write(&snapshot).unwrap();
 
         assert_eq!(db.load().unwrap(), snapshot);
+    }
+
+    #[test]
+    fn task_settings_saved_before_automatic_removal_read_as_off() {
+        let older: ProjectTasks =
+            json_column(r#"{"folder": "C:/plans/tasks", "prompt": null, "account": 1}"#).unwrap();
+
+        assert!(!older.clean_merged);
+        assert_eq!(older.folder.as_deref(), Some("C:/plans/tasks"));
     }
 
     #[test]

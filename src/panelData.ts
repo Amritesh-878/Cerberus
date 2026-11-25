@@ -43,7 +43,15 @@ export interface Written {
 
 /** Why the core leaves a worktree in place. */
 export type Refusal =
-  "main" | "locked" | "dirty" | "unread" | "inUse" | "unknown" | "failed";
+  | "main"
+  | "locked"
+  | "dirty"
+  | "unread"
+  | "inUse"
+  | "unknown"
+  | "failed"
+  | "moved"
+  | "noTabs";
 
 export interface Worktree {
   path: string;
@@ -107,11 +115,25 @@ export function panelWritten(tab: number): Promise<Written[]> {
 }
 
 /** The worktrees of the repo of one of the tab's folders, or of a repo its chat wrote into. */
+/** A repo's Worktrees list as the core drew it. */
+export interface WorktreeView {
+  rows: Worktree[];
+  /** "Removed <name>, merged in #<n>", one per automatic removal, oldest first. */
+  cleaned: string[];
+  /** The repo is the tab's project's, which its automatic removal setting covers. */
+  projectRepo: boolean;
+}
+
 export function panelWorktrees(
   tab: number,
   folder: string,
-): Promise<Worktree[]> {
-  return invoke<Worktree[]>("panel_worktrees", { tab, folder });
+): Promise<WorktreeView> {
+  return invoke<WorktreeView>("panel_worktrees", { tab, folder });
+}
+
+/** Removes the project's merged worktrees now, as a setting just turned on. */
+export function cleanMergedNow(project: number): Promise<void> {
+  return invoke("panel_clean_merged", { project });
 }
 
 /** Call only after the user confirmed the list; the core checks each one again and never forces. */

@@ -87,6 +87,9 @@ pub struct ProjectTasks {
     pub prompt: Option<String>,
     /// The account the last task in this project opened on.
     pub account: Option<AccountId>,
+    /// Worktrees whose PR merged are removed at start and hourly; off until the user turns it on.
+    #[serde(default)]
+    pub clean_merged: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

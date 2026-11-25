@@ -99,6 +99,9 @@ export function Panel(props: {
   onAddFolder: (folder: string) => void;
   /** A tab's title, to name the tabs running in a worktree. */
   tabTitle: (id: TabId) => string | undefined;
+  /** The shown tab's project's automatic worktree removal; `undefined` when it has no project. */
+  cleanMerged?: () => boolean | undefined;
+  onCleanMerged?: (on: boolean) => Promise<void>;
   /** Over the chat, since beside it the chat would be too narrow; it then has its own close button. */
   overlay?: boolean;
   onClose?: () => void;
@@ -167,6 +170,10 @@ export function Panel(props: {
     get openTab() {
       return inProject() ? props.onOpenTab : undefined;
     },
+    get cleanMerged() {
+      return props.cleanMerged?.();
+    },
+    setCleanMerged: (on) => props.onCleanMerged?.(on) ?? Promise.resolve(),
   };
   const account = () => props.tab?.launch.account ?? null;
   const accountName = (id: number, fallback: string) =>

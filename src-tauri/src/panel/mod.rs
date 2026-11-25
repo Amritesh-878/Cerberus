@@ -1,3 +1,4 @@
+mod cleanup;
 mod gh;
 pub(crate) mod git;
 mod mcp;
@@ -18,8 +19,9 @@ use crate::blocking::blocking;
 use crate::bridge::Bridge;
 use crate::live::Live;
 use crate::programs::Finder;
-use crate::saved::{Saved, SavedTab, TabId};
+use crate::saved::{ProjectId, Saved, SavedTab, TabId};
 
+pub use crate::panel::cleanup::CleanLog;
 pub use crate::panel::gh::PrCache;
 use crate::panel::gh::{Pr, PrRow};
 use crate::panel::git::Git;
@@ -27,7 +29,7 @@ use crate::panel::git::Head;
 use crate::panel::mcp::Connectors;
 use crate::panel::skills::Skill;
 pub use crate::panel::worktrees::Roots;
-use crate::panel::worktrees::{Removed, TabFolders, Worktree};
+use crate::panel::worktrees::{Removed, TabFolders, Wanted, Worktree};
 
 #[derive(Debug, thiserror::Error)]
 pub enum PanelError {
@@ -220,21 +222,92 @@ fn prs_of(app: &AppHandle, git: &Git, folder: &Path) -> Vec<Pr> {
         .get(&root, Instant::now(), || gh::list(&gh, folder))
 }
 
+/// A repo's Worktrees list, ready to draw.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorktreeView {
+    pub rows: Vec<Worktree>,
+    /// What automatic removals did here, oldest first.
+    pub cleaned: Vec<String>,
+    /// The repo is the tab's project's, the one its automatic removal setting covers.
+    pub project_repo: bool,
+}
+
 /// The worktrees of a repo the tab shows, with which are stale and why any cannot be removed.
 #[tauri::command]
 pub async fn panel_worktrees(
     app: AppHandle,
     tab: TabId,
     folder: PathBuf,
-) -> Result<Vec<Worktree>, PanelError> {
+) -> Result<WorktreeView, PanelError> {
     blocking(move || {
         let git = git().ok_or(PanelError::NoWorktrees)?;
         let folder = tabs_folder(&app, &git, tab, &folder)?;
         let tabs = tab_folders(&app).unwrap_or_default();
         let prs = prs_of(&app, &git, &folder);
-        worktrees::list(&git, &folder, &prs, &tabs).ok_or(PanelError::NoWorktrees)
+        let rows = worktrees::list(&git, &folder, &prs, &tabs).ok_or(PanelError::NoWorktrees)?;
+        let repo = rows.first().map(|w| w.path.clone()).unwrap_or_default();
+        let project_repo = project_of_tab(&app, tab)
+            .and_then(|folder| worktrees::main_of(&git, &folder))
+            .is_some_and(|main| main == repo);
+        Ok(WorktreeView {
+            cleaned: app.state::<CleanLog>().lines(&repo),
+            rows,
+            project_repo,
+        })
     })
     .await
+}
+
+/// The folder of the project the tab belongs to.
+fn project_of_tab(app: &AppHandle, tab: TabId) -> Option<PathBuf> {
+    let loaded = app.state::<Saved>().load().ok()?;
+    let project = loaded.tree.tabs.iter().find(|t| t.id == tab)?.project_id;
+    loaded
+        .tree
+        .projects
+        .iter()
+        .find(|p| p.id == project)
+        .map(|p| PathBuf::from(&p.folder))
+}
+
+/// Removes merged worktrees in each project that asked, or in `only` when the user just turned it on.
+fn sweep_projects(app: &AppHandle, only: Option<ProjectId>) {
+    let Some(git) = git() else { return };
+    let Ok(loaded) = app.state::<Saved>().load() else {
+        return;
+    };
+    let folders: Vec<PathBuf> = loaded
+        .tree
+        .projects
+        .iter()
+        .filter(|p| only.map_or(p.tasks.clean_merged, |id| id == p.id))
+        .map(|p| PathBuf::from(&p.folder))
+        .filter(|folder| folder.is_dir())
+        .collect();
+    let log = app.state::<CleanLog>();
+    // Read at each step; without the saved tabs nothing can be shown to be out of use, so nothing goes.
+    let tabs = || tab_folders(app).ok();
+    cleanup::sweep_all(&log, &git, &folders, |f| prs_of(app, &git, f), &tabs);
+}
+
+/// Sweeps the projects that asked now and then hourly, on a thread of its own.
+pub fn start_cleanup(app: AppHandle) {
+    let started = std::thread::Builder::new().spawn(move || {
+        loop {
+            sweep_projects(&app, None);
+            std::thread::sleep(cleanup::EVERY);
+        }
+    });
+    if let Err(e) = started {
+        eprintln!("merged worktrees won't be removed automatically: {e}");
+    }
+}
+
+/// Sweeps one project at once, for a setting just turned on.
+#[tauri::command]
+pub async fn panel_clean_merged(app: AppHandle, project: ProjectId) {
+    blocking(move || sweep_projects(&app, Some(project))).await;
 }
 
 /// Runs `git worktree remove` (never forced) for each listed worktree the user confirmed, checked again first.
@@ -249,9 +322,15 @@ pub async fn panel_remove_worktrees(
         let git = git().ok_or(PanelError::NoWorktrees)?;
         let folder = tabs_folder(&app, &git, tab, &folder)?;
         // Without the saved tabs nothing can be shown to be out of use, so nothing goes.
-        let tabs = tab_folders(&app)?;
+        tab_folders(&app)?;
         let prs = prs_of(&app, &git, &folder);
-        worktrees::remove(&git, &folder, &paths, &prs, &tabs).ok_or(PanelError::NoWorktrees)
+        let wanted: Vec<Wanted> = paths
+            .into_iter()
+            .map(|path| Wanted { path, tip: None })
+            .collect();
+        // Read again before each removal, so a tab opened meanwhile keeps its worktree.
+        let tabs = || tab_folders(&app).ok();
+        worktrees::remove(&git, &folder, &wanted, &prs, &tabs).ok_or(PanelError::NoWorktrees)
     })
     .await
 }

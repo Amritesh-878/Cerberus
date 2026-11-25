@@ -363,6 +363,14 @@ the main folder first, each with its branch, its PR's number and state (from the
 - **Open** from a worktree's **⋯** menu: in VS Code, in the file manager, or as a new shell or
   Claude tab there, under the tab on screen and on its account.
 
+- **Remove merged worktrees automatically**, on the Worktrees list of the tab's project repo, is off
+  until you turn it on, and is saved per project. On, Cerberus removes the worktrees that are stale
+  because their PR merged when you turn it on, when Cerberus starts, and every hour after. It uses
+  the same checks as **Remove…**: a worktree with uncommitted or untracked files, or one a tab runs
+  in, stays, and so does one whose branch has a commit after the merged one. A worktree whose PR
+  was closed, or whose remote branch is gone, is left for you to remove. Each removal leaves a line in the list, "Removed alpha-fix, merged in #12"; the list keeps the
+  latest 20 per repo until Cerberus closes. The local branch goes only when merged, as with Remove, and the remote branch never.
+
 The list is read when you open it and again after a removal, and closes when you switch tabs.
 
 ### Edit environment
