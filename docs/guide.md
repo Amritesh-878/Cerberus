@@ -367,8 +367,8 @@ the main folder first, each with its branch, its PR's number and state (from the
   until you turn it on, and is saved per project. On, Cerberus removes the worktrees that are stale
   because their PR merged when you turn it on, when Cerberus starts, and every hour after. It uses
   the same checks as **Remove…**: a worktree with uncommitted or untracked files, or one a tab runs
-  in, stays. A worktree whose PR was closed, or whose remote branch is gone, is left for you to
-  remove. Each removal leaves a line in the list, "Removed alpha-fix, merged in #12", until Cerberus
+  in, stays, and so does one whose branch has a commit after the merged one. A worktree whose PR
+  was closed, or whose remote branch is gone, is left for you to remove. Each removal leaves a line in the list, "Removed alpha-fix, merged in #12", until Cerberus
   closes. The local branch goes only when merged, as with Remove, and the remote branch never.
 
 The list is read when you open it and again after a removal, and closes when you switch tabs.
