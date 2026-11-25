@@ -41,13 +41,16 @@ impl CleanLog {
     }
 }
 
-/// Worktrees stale because their PR merged, with that PR's number; a closed PR or a gone branch alone is not enough.
-pub fn merged_ones(rows: &[Worktree]) -> Vec<(PathBuf, u64)> {
+/// Worktrees stale because their PR merged at the commit their branch is still on, with that PR's number.
+pub fn merged_ones(rows: &[Worktree], prs: &[Pr]) -> Vec<(PathBuf, u64)> {
     rows.iter()
         .filter(|w| w.stale && !w.main)
         .filter_map(|w| {
-            let pr = w.pr.filter(|pr| pr.state == PrState::Merged)?;
-            Some((PathBuf::from(&w.path), pr.number))
+            let mark = w.pr.filter(|pr| pr.state == PrState::Merged)?;
+            // A commit after the merge is work the PR doesn't hold, so its worktree stays.
+            let pr = prs.iter().find(|pr| pr.number == mark.number)?;
+            (w.tip() == Some(pr.head_ref_oid.as_str()))
+                .then(|| (PathBuf::from(&w.path), mark.number))
         })
         .collect()
 }
@@ -58,7 +61,7 @@ pub fn sweep_all(
     git: &Git,
     folders: &[PathBuf],
     prs_of: impl Fn(&Path) -> Vec<Pr>,
-    tabs: &[TabFolders],
+    tabs: &dyn Fn() -> Option<Vec<TabFolders>>,
 ) {
     let _turn = log.turn.lock().unwrap_or_else(PoisonError::into_inner);
     let mut swept: Vec<String> = Vec::new();
@@ -77,22 +80,22 @@ pub fn sweep_all(
     }
 }
 
-/// Removes the folder's repo's merged worktrees; the repo's main folder and a line per removal, or `None` when git can't list them.
+/// Removes the folder's repo's merged worktrees; the repo's main folder and a line per removal, or `None` when git can't list them or the tabs can't be read.
 pub fn sweep(
     git: &Git,
     folder: &Path,
     prs: &[Pr],
-    tabs: &[TabFolders],
+    tabs: &dyn Fn() -> Option<Vec<TabFolders>>,
 ) -> Option<(String, Vec<String>)> {
-    let rows = worktrees::list(git, folder, prs, tabs)?;
+    let rows = worktrees::list(git, folder, prs, &tabs()?)?;
     let repo = rows.first()?.path.clone();
-    let wanted = merged_ones(&rows);
+    let wanted = merged_ones(&rows, prs);
     if wanted.is_empty() {
         return Some((repo, Vec::new()));
     }
     let paths: Vec<PathBuf> = wanted.iter().map(|(path, _)| path.clone()).collect();
-    // `remove` lists them again and keeps any that now has changes or a tab.
-    let removed = worktrees::remove(git, folder, &paths, prs, tabs)?;
+    // Read again now, since a tab may have opened in one while git listed; `remove` lists again and keeps any now in use or changed.
+    let removed = worktrees::remove(git, folder, &paths, prs, &tabs()?)?;
     let lines = removed
         .iter()
         .filter(|r| r.refusal.is_none())
@@ -145,6 +148,10 @@ mod tests {
         String::from_utf8(out.stdout).unwrap().trim().to_owned()
     }
 
+    fn no_tabs() -> Option<Vec<TabFolders>> {
+        Some(Vec::new())
+    }
+
     /// A repo with a worktree per name beside it, each on its own branch with one commit.
     fn repo_with(dir: &TestDir, names: &[&str]) -> PathBuf {
         let repo = dir.path().join("repo");
@@ -181,7 +188,7 @@ mod tests {
             folders: vec![at("in_tab")],
         }];
 
-        let (main, lines) = sweep(&git(), &repo, &prs, &tabs).unwrap();
+        let (main, lines) = sweep(&git(), &repo, &prs, &|| Some(tabs.to_vec())).unwrap();
 
         assert_eq!(lines, ["Removed merged, merged in #11"]);
         assert!(!at("merged").exists());
@@ -202,11 +209,83 @@ mod tests {
     }
 
     #[test]
+    fn a_branch_with_a_commit_after_its_merged_pr_keeps_its_worktree() {
+        let dir = TestDir::new();
+        let repo = repo_with(&dir, &["moved_on"]);
+        let at = dir.path().join("moved_on");
+        let merged_at = tip(&at);
+        commit(&at, "after.txt");
+
+        let (_, lines) = sweep(
+            &git(),
+            &repo,
+            &[pr(31, "MERGED", "moved_on", &merged_at)],
+            &no_tabs,
+        )
+        .unwrap();
+
+        assert!(lines.is_empty());
+        assert!(
+            at.is_dir(),
+            "the commit after the merge is still checked out there"
+        );
+    }
+
+    #[test]
+    fn a_tab_opened_while_git_lists_keeps_its_worktree() {
+        let dir = TestDir::new();
+        let repo = repo_with(&dir, &["merged"]);
+        let at = dir.path().join("merged");
+        let reads = std::cell::Cell::new(0);
+        // Empty at the first read, then a tab in the worktree, as if it opened in between.
+        let tabs = || {
+            reads.set(reads.get() + 1);
+            Some(if reads.get() == 1 {
+                Vec::new()
+            } else {
+                vec![TabFolders {
+                    tab: 9,
+                    folders: vec![at.clone()],
+                }]
+            })
+        };
+
+        let (_, lines) = sweep(
+            &git(),
+            &repo,
+            &[pr(41, "MERGED", "merged", &tip(&at))],
+            &tabs,
+        )
+        .unwrap();
+
+        assert!(lines.is_empty());
+        assert!(at.is_dir());
+        assert_eq!(reads.get(), 2, "the tabs were read again before removing");
+    }
+
+    #[test]
+    fn without_the_saved_tabs_nothing_is_swept() {
+        let dir = TestDir::new();
+        let repo = repo_with(&dir, &["merged"]);
+        let at = dir.path().join("merged");
+
+        let swept = sweep(
+            &git(),
+            &repo,
+            &[pr(51, "MERGED", "merged", &tip(&at))],
+            &|| None,
+        );
+
+        assert_eq!(swept, None);
+        assert!(at.is_dir());
+    }
+
+    #[test]
     fn a_repo_with_nothing_merged_is_left_alone() {
         let dir = TestDir::new();
         let repo = repo_with(&dir, &["working"]);
 
-        let (_, lines) = sweep(&git(), &repo, &[pr(3, "OPEN", "working", "")], &[]).unwrap();
+        let (_, lines) = sweep(&git(), &repo, &[pr(3, "OPEN", "working", "")], &no_tabs).unwrap();
 
         assert!(lines.is_empty());
         assert!(dir.path().join("working").is_dir());
@@ -216,7 +295,7 @@ mod tests {
     fn a_folder_outside_any_repo_sweeps_nothing() {
         let dir = TestDir::new();
 
-        assert_eq!(sweep(&git(), dir.path(), &[], &[]), None);
+        assert_eq!(sweep(&git(), dir.path(), &[], &no_tabs), None);
     }
 
     #[test]
@@ -235,7 +314,7 @@ mod tests {
                 asked.set(asked.get() + 1);
                 vec![pr(21, "MERGED", "merged", &merged_tip)]
             },
-            &[],
+            &no_tabs,
         );
 
         assert_eq!(
@@ -266,7 +345,7 @@ mod tests {
                         held.recv().unwrap();
                         Vec::new()
                     },
-                    &[],
+                    &no_tabs,
                 );
             })
         };
@@ -283,7 +362,7 @@ mod tests {
                         entered.send("second").unwrap();
                         Vec::new()
                     },
-                    &[],
+                    &no_tabs,
                 );
             })
         };

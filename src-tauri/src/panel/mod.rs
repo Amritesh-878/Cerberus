@@ -274,8 +274,6 @@ fn project_of_tab(app: &AppHandle, tab: TabId) -> Option<PathBuf> {
 /// Removes merged worktrees in each project that asked, or in `only` when the user just turned it on.
 fn sweep_projects(app: &AppHandle, only: Option<ProjectId>) {
     let Some(git) = git() else { return };
-    // Without the saved tabs nothing can be shown to be out of use, so nothing goes.
-    let Ok(tabs) = tab_folders(app) else { return };
     let Ok(loaded) = app.state::<Saved>().load() else {
         return;
     };
@@ -288,6 +286,8 @@ fn sweep_projects(app: &AppHandle, only: Option<ProjectId>) {
         .filter(|folder| folder.is_dir())
         .collect();
     let log = app.state::<CleanLog>();
+    // Read at each step; without the saved tabs nothing can be shown to be out of use, so nothing goes.
+    let tabs = || tab_folders(app).ok();
     cleanup::sweep_all(&log, &git, &folders, |f| prs_of(app, &git, f), &tabs);
 }
 

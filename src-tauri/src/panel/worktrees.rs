@@ -115,6 +115,13 @@ pub struct Worktree {
     head: Option<String>,
 }
 
+impl Worktree {
+    /// The commit its branch is on.
+    pub fn tip(&self) -> Option<&str> {
+        self.head.as_deref()
+    }
+}
+
 /// A tab's folder and the folders added to it, from the saved tabs.
 #[derive(Debug, Clone)]
 pub struct TabFolders {
