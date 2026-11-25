@@ -124,7 +124,7 @@ pub fn run() {
             };
             app.manage(Saved::open(&config_dir.join(saved::FILE_NAME), report));
             app.manage(tokens::app::TokenLedger(std::sync::Mutex::new(
-                tokens::Ledger::new(paths.app_data_dir()?.join("usage.json")),
+                tokens::Ledger::new(paths.app_data_dir()?.join("usage.db")),
             )));
             panel::start_cleanup(app.handle().clone());
             let services = Services::new(

@@ -4,23 +4,25 @@ pub mod app;
 mod days;
 mod prices;
 mod read;
+mod store;
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::io::{self, BufReader, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::time::UNIX_EPOCH;
 
 use serde::{Deserialize, Serialize};
 
 use crate::accounts::AccountId;
 use crate::tokens::read::Parsed;
+use crate::tokens::store::{Band, Batch, Store, Total};
 
-/// Days kept in Cerberus's own store, past the 30 the card shows.
-const KEEP_DAYS: i64 = 90;
-const STORE_VERSION: u32 = 1;
+/// Days kept in the store, past the 30 the card shows.
+const KEEP_DAYS: u64 = 90;
 const DAY_MS: u64 = 86_400_000;
+/// Replies per commit, so a first look at many chats commits a few times rather than once per file.
+const BATCH_REPLIES: usize = 20_000;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -39,52 +41,28 @@ impl Tokens {
         self.cache_write += other.cache_write;
     }
 
-    fn max(&mut self, other: &Self) {
-        self.input = self.input.max(other.input);
-        self.output = self.output.max(other.output);
-        self.cache_read = self.cache_read.max(other.cache_read);
-        self.cache_write = self.cache_write.max(other.cache_write);
-    }
-
     fn total(&self) -> u64 {
         self.input + self.output + self.cache_read + self.cache_write
     }
 }
 
-/// One model's tokens on one day, and their cost at API prices; `None` when the model has no price.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Bucket {
-    pub tokens: Tokens,
-    pub cost: Option<f64>,
+/// How far a chat file has been recorded.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Recorded {
+    pub len: u64,
+    pub modified: u64,
+    /// Bytes up to the last complete line recorded.
+    pub offset: u64,
 }
 
-/// Account, then `YYYY-MM-DD`, then model key.
-type Days = BTreeMap<AccountId, BTreeMap<String, BTreeMap<String, Bucket>>>;
-
-/// What the store file holds: daily totals only, never a chat's words or ids.
-#[derive(Debug, Default, Serialize, Deserialize)]
-struct Stored {
-    version: u32,
-    days: Days,
-}
-
-/// A chat file's replies so far, and where reading it next starts.
-struct Read {
-    len: u64,
-    modified: u64,
-    /// Bytes up to the last complete line read.
-    offset: u64,
-    parsed: Arc<Parsed>,
-}
-
-/// The chat files read so far and the store of daily totals.
+/// What the chat files hold that the store doesn't yet, read a file's new lines at a time.
 pub struct Ledger {
     file: PathBuf,
-    read: HashMap<PathBuf, Read>,
-    stored: Option<Days>,
-    /// False when the file is from a newer build, which this one must not overwrite.
-    writable: bool,
+    store: Option<Store>,
+    opened: bool,
+    recorded: HashMap<PathBuf, Recorded>,
+    /// The last answer, with the day, offset and accounts it was for; it stands while nothing new is recorded.
+    last: Option<(i64, i32, Vec<AccountId>, Vec<AccountTokens>)>,
 }
 
 /// One model's row for a range of days, ready to draw.
@@ -109,140 +87,157 @@ impl Ledger {
     pub fn new(file: PathBuf) -> Self {
         Self {
             file,
-            read: HashMap::new(),
-            stored: None,
-            writable: true,
+            store: None,
+            opened: false,
+            recorded: HashMap::new(),
+            last: None,
         }
     }
 
-    /// Reads what changed in each account's chat files, keeps the daily totals, and returns today, 7 and 30 days per account.
+    /// Records what changed in each account's chat files and returns today, 7 and 30 days per account at the user's offset.
     pub fn view(
         &mut self,
         accounts: &[(AccountId, PathBuf)],
         offset_minutes: i32,
         now_ms: u64,
     ) -> Vec<AccountTokens> {
-        let fresh = self.scan(accounts, offset_minutes, now_ms);
-        let today = days::day_of(now_ms, offset_minutes);
-        let (mut stored, writable) = self
-            .stored
-            .take()
-            .map_or_else(|| load(&self.file), |kept| (kept, self.writable));
-        self.writable = writable;
-        let changed =
-            merge(&mut stored, &fresh) | prune(&mut stored, &days::date_of(today - KEEP_DAYS));
-        if changed
-            && writable
-            && let Err(e) = save(&self.file, &stored)
-        {
-            eprintln!("tokens: could not keep the daily totals: {e}");
+        if !self.opened {
+            self.store = Store::open(&self.file);
+            self.recorded = self.store.as_ref().map(Store::progress).unwrap_or_default();
+            self.opened = true;
         }
-        let views = accounts
+        let oldest_ms = now_ms.saturating_sub(KEEP_DAYS * DAY_MS);
+        let mut changed = self.record(accounts, oldest_ms);
+        let Some(store) = &mut self.store else {
+            return Vec::new();
+        };
+        match store.prune(oldest_ms) {
+            Ok(gone) => changed |= gone > 0,
+            Err(e) => eprintln!("tokens: could not drop old replies: {e}"),
+        }
+        let today = days::day_of(now_ms, offset_minutes);
+        let ids: Vec<AccountId> = accounts.iter().map(|(id, _)| *id).collect();
+        if !changed
+            && let Some((day, offset, known, views)) = &self.last
+            && (*day, *offset, known) == (today, offset_minutes, &ids)
+        {
+            return views.clone();
+        }
+        let at = |day: i64| days::start_ms(day, offset_minutes);
+        let totals = store
+            .totals(at(today - 29), at(today - 6), at(today), at(today + 1))
+            .unwrap_or_else(|e| {
+                eprintln!("tokens: could not add up replies: {e}");
+                Vec::new()
+            });
+        let views: Vec<AccountTokens> = ids
             .iter()
-            .map(|(account, _)| {
-                let range = |from: i64| {
-                    rows(
-                        stored.get(account),
-                        &days::date_of(today - from),
-                        &days::date_of(today),
-                    )
-                };
-                AccountTokens {
-                    account: *account,
-                    today: range(0),
-                    week: range(6),
-                    month: range(29),
-                }
+            .map(|&account| AccountTokens {
+                account,
+                today: rows(&totals, account, &[Band::Today]),
+                week: rows(&totals, account, &[Band::Today, Band::Week]),
+                month: rows(&totals, account, &[Band::Today, Band::Week, Band::Month]),
             })
             .collect();
-        self.stored = Some(stored);
+        self.last = Some((today, offset_minutes, ids, views.clone()));
         views
     }
 
-    /// Every reply in every account's chat files, each message once, the first account in order keeping a copied one.
-    fn scan(
-        &mut self,
-        accounts: &[(AccountId, PathBuf)],
-        offset_minutes: i32,
-        now_ms: u64,
-    ) -> Days {
-        // A file untouched for longer holds only days the store no longer keeps.
-        let oldest_ms = now_ms.saturating_sub(KEEP_DAYS.unsigned_abs() * DAY_MS);
-        let mut seen: HashSet<String> = HashSet::new();
-        let mut days = Days::new();
+    /// Reads each changed chat file from where it was last recorded; a file's place moves on only once its replies are committed. True when anything was recorded.
+    fn record(&mut self, accounts: &[(AccountId, PathBuf)], oldest_ms: u64) -> bool {
+        let Some(store) = &mut self.store else {
+            return false;
+        };
         let mut present: HashSet<PathBuf> = HashSet::new();
+        let mut batches: Vec<Batch> = Vec::new();
+        let mut pending = 0;
+        let mut changed = false;
         for (account, config_dir) in accounts {
             for (path, len, modified) in chat_files(config_dir) {
-                if modified < oldest_ms && !self.read.contains_key(&path) {
+                let known = self.recorded.get(&path).copied();
+                // A file untouched for longer holds only days the store no longer keeps.
+                if modified < oldest_ms && known.is_none() {
                     continue;
                 }
                 present.insert(path.clone());
-                let Some(parsed) = self.replies_of(&path, len, modified) else {
-                    continue;
+                let from = match known {
+                    Some(k) if k.len == len && k.modified == modified => continue,
+                    Some(k) if len > k.len => k.offset,
+                    // Shrunk or changed in place: read again whole; replies already kept are matched by id.
+                    _ => 0,
                 };
-                for reply in &parsed.replies {
-                    if !seen.insert(reply.id.clone()) {
+                let mut parsed = Parsed::default();
+                let more = match read_from(&path, from, &mut parsed) {
+                    Ok(more) => more,
+                    Err(e) => {
+                        eprintln!("tokens: could not read a chat file: {e}");
                         continue;
                     }
-                    let day = days::date_of(days::day_of(reply.at_ms, offset_minutes));
-                    let key = if reply.fast {
-                        format!("{} fast", reply.model)
-                    } else {
-                        reply.model.clone()
-                    };
-                    let bucket = days
-                        .entry(*account)
-                        .or_default()
-                        .entry(day)
-                        .or_default()
-                        .entry(key)
-                        .or_insert_with(|| Bucket {
-                            tokens: Tokens::default(),
-                            cost: Some(0.0),
-                        });
-                    bucket.tokens.add(&reply.tokens);
-                    let cost =
-                        prices::cost(&reply.model, reply.fast, &reply.tokens, reply.written_1h);
-                    bucket.cost = bucket.cost.zip(cost).map(|(a, b)| a + b);
+                };
+                let replies: Vec<_> = parsed
+                    .replies
+                    .into_iter()
+                    .filter(|r| r.at_ms >= oldest_ms)
+                    .map(|r| {
+                        let cost = prices::cost(&r.model, r.fast, &r.tokens, r.written_1h);
+                        (r, cost)
+                    })
+                    .collect();
+                pending += replies.len();
+                batches.push(Batch {
+                    path,
+                    recorded: Recorded {
+                        len,
+                        modified,
+                        offset: from + more,
+                    },
+                    account: *account,
+                    replies,
+                });
+                if pending >= BATCH_REPLIES {
+                    changed |= commit(store, &mut self.recorded, &mut batches);
+                    pending = 0;
                 }
             }
         }
-        self.read.retain(|path, _| present.contains(path));
-        days
+        changed |= commit(store, &mut self.recorded, &mut batches);
+        let gone: Vec<PathBuf> = self
+            .recorded
+            .keys()
+            .filter(|path| !present.contains(*path))
+            .cloned()
+            .collect();
+        if !gone.is_empty() {
+            match store.forget(&gone) {
+                Ok(()) => self.recorded.retain(|path, _| present.contains(path)),
+                Err(e) => eprintln!("tokens: could not forget deleted chats: {e}"),
+            }
+        }
+        changed
     }
+}
 
-    /// The file's replies, reading only what was appended since last time; a file that shrank or changed in place is read again whole.
-    fn replies_of(&mut self, path: &Path, len: u64, modified: u64) -> Option<Arc<Parsed>> {
-        if let Some(read) = self.read.get_mut(path) {
-            if read.len == len && read.modified == modified {
-                return Some(Arc::clone(&read.parsed));
+/// Commits the waiting files' replies and places together; on failure their places stay, so the next look records them again.
+fn commit(
+    store: &mut Store,
+    recorded: &mut HashMap<PathBuf, Recorded>,
+    batches: &mut Vec<Batch>,
+) -> bool {
+    if batches.is_empty() {
+        return false;
+    }
+    let done = std::mem::take(batches);
+    match store.record(&done) {
+        Ok(()) => {
+            for batch in done {
+                recorded.insert(batch.path, batch.recorded);
             }
-            if len > read.len {
-                let parsed = Arc::make_mut(&mut read.parsed);
-                match read_from(path, read.offset, parsed) {
-                    Ok(more) => {
-                        read.offset += more;
-                        read.len = len;
-                        read.modified = modified;
-                        return Some(Arc::clone(&read.parsed));
-                    }
-                    Err(e) => eprintln!("tokens: could not read a chat file's new lines: {e}"),
-                }
-            }
+            true
         }
-        let mut parsed = Parsed::default();
-        let offset = read_from(path, 0, &mut parsed).ok()?;
-        let parsed = Arc::new(parsed);
-        self.read.insert(
-            path.to_path_buf(),
-            Read {
-                len,
-                modified,
-                offset,
-                parsed: Arc::clone(&parsed),
-            },
-        );
-        Some(parsed)
+        Err(e) => {
+            eprintln!("tokens: could not record chats' replies: {e}");
+            false
+        }
     }
 }
 
@@ -295,81 +290,29 @@ fn chat_files(config_dir: &Path) -> Vec<(PathBuf, u64, u64)> {
     files
 }
 
-/// Keeps the larger of each stored and fresh count, so a total survives the chat file it came from being deleted.
-fn merge(stored: &mut Days, fresh: &Days) -> bool {
-    let mut changed = false;
-    for (account, by_day) in fresh {
-        for (day, by_model) in by_day {
-            for (model, bucket) in by_model {
-                let kept = stored
-                    .entry(*account)
-                    .or_default()
-                    .entry(day.clone())
-                    .or_default()
-                    .entry(model.clone())
-                    .or_insert_with(|| {
-                        changed = true;
-                        Bucket::default()
-                    });
-                let before = kept.clone();
-                kept.tokens.max(&bucket.tokens);
-                kept.cost = match (kept.cost, bucket.cost) {
-                    (Some(a), Some(b)) => Some(a.max(b)),
-                    (a, b) => a.or(b),
-                };
-                changed |= *kept != before;
-            }
-        }
-    }
-    changed
-}
-
-/// Drops days before `oldest`.
-fn prune(stored: &mut Days, oldest: &str) -> bool {
-    let mut changed = false;
-    for by_day in stored.values_mut() {
-        let before = by_day.len();
-        by_day.retain(|day, _| day.as_str() >= oldest);
-        changed |= by_day.len() != before;
-    }
-    changed
-}
-
-/// One row per model over the days from `from` to `to`, the costliest first.
-fn rows(
-    by_day: Option<&BTreeMap<String, BTreeMap<String, Bucket>>>,
-    from: &str,
-    to: &str,
-) -> Vec<ModelRow> {
-    let mut by_model: BTreeMap<String, Bucket> = BTreeMap::new();
-    for (_, models) in by_day
-        .into_iter()
-        .flatten()
-        .filter(|(day, _)| day.as_str() >= from && day.as_str() <= to)
+/// One row per model for an account over the given bands, the costliest first; fast mode is its own row.
+fn rows(totals: &[Total], account: AccountId, bands: &[Band]) -> Vec<ModelRow> {
+    let mut by_name: BTreeMap<String, ModelRow> = BTreeMap::new();
+    for total in totals
+        .iter()
+        .filter(|t| t.account == account && bands.contains(&t.band))
     {
-        for (model, bucket) in models {
-            let sum = by_model.entry(model.clone()).or_insert_with(|| Bucket {
-                tokens: Tokens::default(),
-                cost: Some(0.0),
-            });
-            sum.tokens.add(&bucket.tokens);
-            sum.cost = sum.cost.zip(bucket.cost).map(|(a, b)| a + b);
-        }
+        let name = prices::name_of(&total.model);
+        let name = if total.fast {
+            format!("{name} (fast)")
+        } else {
+            name
+        };
+        let row = by_name.entry(name.clone()).or_insert_with(|| ModelRow {
+            model: name,
+            tokens: Tokens::default(),
+            cost: Some(0.0),
+        });
+        // Dated and undated ids of one model share a row.
+        row.tokens.add(&total.tokens);
+        row.cost = row.cost.zip(total.cost).map(|(a, b)| a + b);
     }
-    let mut rows: Vec<ModelRow> = by_model
-        .into_iter()
-        .map(|(key, bucket)| {
-            let (id, fast) = key
-                .strip_suffix(" fast")
-                .map_or((key.as_str(), false), |id| (id, true));
-            let name = prices::name_of(id);
-            ModelRow {
-                model: if fast { format!("{name} (fast)") } else { name },
-                tokens: bucket.tokens,
-                cost: bucket.cost,
-            }
-        })
-        .collect();
+    let mut rows: Vec<ModelRow> = by_name.into_values().collect();
     rows.sort_by(|a, b| {
         b.cost
             .unwrap_or(-1.0)
@@ -377,37 +320,6 @@ fn rows(
             .then(b.tokens.total().cmp(&a.tokens.total()))
     });
     rows
-}
-
-/// The stored totals, and whether this build may write them: a newer build's file is shown from fresh counts and left alone.
-fn load(file: &Path) -> (Days, bool) {
-    let Ok(text) = fs::read_to_string(file) else {
-        return (Days::new(), true);
-    };
-    match serde_json::from_str::<Stored>(&text) {
-        Ok(stored) if stored.version <= STORE_VERSION => (stored.days, true),
-        Ok(_) => (Days::new(), false),
-        Err(_) => {
-            // Set aside rather than overwritten, so nothing kept is lost to a bad write.
-            let _ = fs::rename(file, file.with_extension("json.unreadable"));
-            eprintln!("tokens: the daily totals file can't be read; it was set aside");
-            (Days::new(), true)
-        }
-    }
-}
-
-fn save(file: &Path, days: &Days) -> io::Result<()> {
-    let stored = Stored {
-        version: STORE_VERSION,
-        days: days.clone(),
-    };
-    let text = serde_json::to_string(&stored)?;
-    if let Some(dir) = file.parent() {
-        fs::create_dir_all(dir)?;
-    }
-    let temp = file.with_extension("json.saving");
-    fs::write(&temp, text)?;
-    fs::rename(&temp, file)
 }
 
 #[cfg(test)]
