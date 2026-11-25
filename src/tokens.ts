@@ -38,11 +38,11 @@ export function usageTokens(): Promise<AccountTokens[]> {
   });
 }
 
-/** "950", "34k", "1.2M". */
+const COMPACT = new Intl.NumberFormat("en-US", { notation: "compact" });
+
+/** "950", "34K", "1.2M"; rounding rolls over, so 999,600 reads "1M". */
 export function countText(count: number): string {
-  if (count < 1000) return String(count);
-  if (count < 1_000_000) return `${String(Math.round(count / 1000))}k`;
-  return `${(count / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
+  return COMPACT.format(count);
 }
 
 /** "$3.10", "<$0.01", or "no price". */

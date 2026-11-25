@@ -77,15 +77,16 @@ function tokensCard(root: HTMLElement): HTMLElement {
 
 test("tokens and their numbers read plainly", () => {
   expect(countText(950)).toBe("950");
-  expect(countText(34_400)).toBe("34k");
+  expect(countText(34_400)).toBe("34K");
   expect(countText(1_200_000)).toBe("1.2M");
   expect(countText(3_000_000)).toBe("3M");
+  expect(countText(999_600)).toBe("1M");
   expect(costText(3.104)).toBe("$3.10");
   expect(costText(0.004)).toBe("<$0.01");
   expect(costText(0)).toBe("$0.00");
   expect(costText(null)).toBe("no price");
   expect(tokensText(model("x", 1_200_000, null).tokens)).toBe(
-    "1.2M in · 34k out · 8.1M cache read · 450k cache write",
+    "1.2M in · 34K out · 8.1M cache read · 450K cache write",
   );
   expect(totalCost([model("a", 1, 1.5), model("b", 1, null)])).toBe(1.5);
 });
@@ -113,8 +114,8 @@ test("the Usage card lists tokens per account and model for the picked range, pr
   const rows = () =>
     [...section.querySelectorAll(".token-row")].map((r) => r.textContent);
   expect(rows()).toEqual([
-    "Opus 5.5$3.101.2M in · 34k out · 8.1M cache read · 450k cache write",
-    "claude-opus-4-5no price5 in · 34k out · 8.1M cache read · 450k cache write",
+    "Opus 5.5$3.101.2M in · 34K out · 8.1M cache read · 450K cache write",
+    "claude-opus-4-5no price5 in · 34K out · 8.1M cache read · 450K cache write",
   ]);
   expect(section.querySelector(".token-account-head")?.textContent).toBe(
     "work$3.10",
@@ -129,4 +130,25 @@ test("the Usage card lists tokens per account and model for the picked range, pr
   expect(month?.getAttribute("aria-pressed")).toBe("true");
   expect(section.querySelectorAll(".token-account")).toHaveLength(2);
   expect(rows()[1]).toMatch(/^Haiku 5\.5<\$0\.01900 in/);
+});
+
+test("a first count that fails says why and doesn't claim to be counting", async () => {
+  const pty = ptyCore();
+  const root = await renderApp(() => OPEN_PANEL, {
+    ...pty.core,
+    tree_load: () => ({ tree: TREE, notice: null }),
+    panel_changes: () => ({ kind: "notRepo" }),
+    panel_prs: () => [],
+    panel_connectors: () => ({ servers: [], unreadable: [] }),
+    panel_skills: () => [],
+    usage_tokens: () => {
+      throw new Error("the accounts file is not valid");
+    },
+  });
+  await open(root, "planner");
+  await settle();
+
+  const section = tokensCard(root);
+  expect(section.textContent).toContain("the accounts file is not valid");
+  expect(section.textContent).not.toContain("Counting tokens");
 });

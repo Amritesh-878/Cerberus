@@ -62,7 +62,14 @@ export function TokenUsage(props: { profiles: Profiles }) {
         </span>
       </div>
       <Show when={error()}>{(message) => <Note>{message()}</Note>}</Show>
-      <Show when={counts()} fallback={<Note>Counting tokens…</Note>}>
+      <Show
+        when={counts()}
+        fallback={
+          <Show when={error() === undefined}>
+            <Note>Counting tokens…</Note>
+          </Show>
+        }
+      >
         <For each={used()} fallback={<Note>No replies in this range</Note>}>
           {(account) => (
             <div class="token-account">
