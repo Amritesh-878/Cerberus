@@ -297,6 +297,45 @@ fn a_store_from_a_newer_build_is_left_alone_and_a_broken_one_set_aside() {
 }
 
 #[test]
+fn a_store_held_by_another_program_is_left_alone_and_counted_once_it_is_free() {
+    let dir = TestDir::new();
+    let home = dir.path().join("acc");
+    chat(
+        &home,
+        "cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd",
+        &[reply_line(
+            "m1",
+            "2026-11-25T09:00:00Z",
+            "claude-opus-5-5",
+            11,
+            1,
+        )],
+    );
+    let file = dir.path().join("usage.db");
+    drop(Store::open(&file).unwrap());
+    // Another program holds the store with an exclusive lock, so no one else can even read it.
+    let holder = rusqlite::Connection::open(&file).unwrap();
+    holder
+        .pragma_update(None, "locking_mode", "EXCLUSIVE")
+        .unwrap();
+    holder
+        .execute_batch("BEGIN EXCLUSIVE; CREATE TABLE IF NOT EXISTS held (x); COMMIT;")
+        .unwrap();
+    let mut ledger = Ledger::new(file.clone());
+
+    let held = ledger.view(&[(1, home.clone())], 0, NOW);
+
+    assert!(held.is_empty(), "nothing counted while it is held");
+    assert!(
+        !file.with_extension("db.unreadable").exists(),
+        "the file is not set aside"
+    );
+    drop(holder);
+    let free = ledger.view(&[(1, home)], 0, NOW);
+    assert_eq!(input_of(&free[0].today, "Opus 5.5"), 11);
+}
+
+#[test]
 fn an_appended_tail_is_read_alone_and_a_rewritten_file_whole() {
     let dir = TestDir::new();
     let home = dir.path().join("acc");

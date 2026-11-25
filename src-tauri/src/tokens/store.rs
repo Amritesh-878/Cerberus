@@ -4,13 +4,16 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use rusqlite::{Connection, params};
+use std::time::Duration;
+
+use rusqlite::{Connection, ErrorCode, params};
 
 use crate::accounts::AccountId;
 use crate::tokens::read::Reply;
 use crate::tokens::{Recorded, Tokens};
 
 const VERSION: i64 = 1;
+const BUSY_WAIT: Duration = Duration::from_secs(1);
 const REPLIES: &str = "
     CREATE TABLE replies (
         id INTEGER PRIMARY KEY,
@@ -67,6 +70,14 @@ pub struct Store {
     connection: Connection,
 }
 
+/// Only a file SQLite says is no database, or a damaged one, is set aside; busy, locked and every other error leave it be.
+fn not_a_store(e: &rusqlite::Error) -> bool {
+    matches!(
+        e.sqlite_error_code(),
+        Some(ErrorCode::NotADatabase | ErrorCode::DatabaseCorrupt)
+    )
+}
+
 /// A stable 64-bit FNV-1a hash of a message id, so the file holds no ids and a reply is still recognised.
 fn key_of(id: &str) -> i64 {
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
@@ -86,18 +97,24 @@ fn unsigned(n: i64) -> u64 {
 }
 
 impl Store {
-    /// Opens or makes the store. A newer build's file is left alone and this run keeps its counts in memory; an unreadable one is set aside.
+    /// Opens or makes the store, or `None` to try again next look; a newer file is left alone, only a non-database is set aside.
     pub fn open(file: &Path) -> Option<Self> {
         match Self::open_file(file) {
             Ok(Some(store)) => Some(store),
             Ok(None) => Self::in_memory(),
-            Err(e) => {
+            Err(e) if not_a_store(&e) => {
                 eprintln!("tokens: the reply store can't be read ({e}); it was set aside");
                 let _ = fs::rename(file, file.with_extension("db.unreadable"));
                 Self::open_file(file)
                     .ok()
                     .flatten()
                     .or_else(Self::in_memory)
+            }
+            Err(e) => {
+                eprintln!(
+                    "tokens: the reply store can't be opened now ({e}); counting waits for the next look"
+                );
+                None
             }
         }
     }
@@ -107,6 +124,8 @@ impl Store {
             let _ = fs::create_dir_all(dir);
         }
         let connection = Connection::open(file)?;
+        // A store held by another program is tried again on the next look, so the card doesn't wait long for it.
+        connection.busy_timeout(BUSY_WAIT)?;
         let version: i64 = connection.query_row("PRAGMA user_version", [], |row| row.get(0))?;
         if version > VERSION {
             return Ok(None);

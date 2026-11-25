@@ -58,8 +58,8 @@ pub struct Recorded {
 /// What the chat files hold that the store doesn't yet, read a file's new lines at a time.
 pub struct Ledger {
     file: PathBuf,
+    /// `None` until the store opens; a busy one is tried again on the next look.
     store: Option<Store>,
-    opened: bool,
     recorded: HashMap<PathBuf, Recorded>,
     /// The last answer, with the day, offset and accounts it was for; it stands while nothing new is recorded.
     last: Option<(i64, i32, Vec<AccountId>, Vec<AccountTokens>)>,
@@ -88,7 +88,6 @@ impl Ledger {
         Self {
             file,
             store: None,
-            opened: false,
             recorded: HashMap::new(),
             last: None,
         }
@@ -101,10 +100,9 @@ impl Ledger {
         offset_minutes: i32,
         now_ms: u64,
     ) -> Vec<AccountTokens> {
-        if !self.opened {
+        if self.store.is_none() {
             self.store = Store::open(&self.file);
             self.recorded = self.store.as_ref().map(Store::progress).unwrap_or_default();
-            self.opened = true;
         }
         let oldest_ms = now_ms.saturating_sub(KEEP_DAYS * DAY_MS);
         let mut changed = self.record(accounts, oldest_ms);
