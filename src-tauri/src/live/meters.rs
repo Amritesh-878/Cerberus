@@ -36,6 +36,30 @@ pub struct Meter {
     pub silent: bool,
 }
 
+/// One account's share of a window's bar.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Segment {
+    pub account: AccountId,
+    /// 0 to 100; `None` when there is no reading for the window now running.
+    pub used: Option<f64>,
+    /// Unix seconds.
+    pub resets_at: Option<u64>,
+    /// Set for a reading kept from before this start: when it came, in Unix milliseconds.
+    pub as_of: Option<u64>,
+    /// For a segment with no reading now: when the last one came, in Unix milliseconds.
+    pub last_reading: Option<u64>,
+    pub silent: bool,
+}
+
+/// Every account's use of each window, one bar per window, the soonest reset first.
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Pool {
+    pub five_hour: Vec<Segment>,
+    pub seven_day: Vec<Segment>,
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 struct Kept {
     five_hour: Option<(u64, Window)>,
@@ -165,6 +189,36 @@ impl Meters {
     }
 }
 
+impl Meters {
+    /// Each account in `accounts` gets a segment; readings come first by soonest reset, then the ones without one.
+    pub fn pool(&self, accounts: &[AccountId], now_s: u64) -> Pool {
+        let bar = |pick: fn(&Kept) -> Option<(u64, Window)>| {
+            let mut segments: Vec<Segment> = accounts
+                .iter()
+                .map(|&account| {
+                    let kept = self.by_account.get(&account).and_then(pick);
+                    let running = kept.filter(|(_, w)| w.resets_at > now_s);
+                    Segment {
+                        account,
+                        used: running.map(|(_, w)| w.used),
+                        resets_at: running.map(|(_, w)| w.resets_at),
+                        as_of: running.map(|(at, _)| at).filter(|&at| at < self.since_ms),
+                        last_reading: kept.filter(|_| running.is_none()).map(|(at, _)| at),
+                        silent: self.silent(account),
+                    }
+                })
+                .collect();
+            // Stable, so accounts with no reading keep the app's order.
+            segments.sort_by_key(|s| (s.resets_at.is_none(), s.resets_at));
+            segments
+        };
+        Pool {
+            five_hour: bar(|k| k.five_hour),
+            seven_day: bar(|k| k.seven_day),
+        }
+    }
+}
+
 fn newer(kept: &mut Option<(u64, Window)>, at: u64, found: Option<Window>) {
     if let Some(found) = found
         && kept.is_none_or(|(was, _)| at >= was)
@@ -244,7 +298,7 @@ impl Warner {
     }
 }
 
-/// Accounts other than `from` below the line; one with nothing reported yet counts as below.
+/// Accounts other than `from` below the line, the most left in the 5-hour window first; one with nothing reported yet counts as below, after the known ones.
 pub fn offers(
     meters: &Meters,
     accounts: &[AccountId],
@@ -252,16 +306,21 @@ pub fn offers(
     warn_at: u8,
     now_s: u64,
 ) -> Vec<AccountId> {
-    accounts
+    let mut below: Vec<(AccountId, Option<f64>)> = accounts
         .iter()
         .copied()
         .filter(|&a| a != from)
-        .filter(|&a| {
-            meters
-                .five_hour(a, now_s)
-                .is_none_or(|w| w.used < f64::from(warn_at))
-        })
-        .collect()
+        .map(|a| (a, meters.five_hour(a, now_s).map(|w| w.used)))
+        .filter(|(_, used)| used.is_none_or(|u| u < f64::from(warn_at)))
+        .collect();
+    // Stable, so equal readings and unknown accounts keep the app's order.
+    below.sort_by(|(_, a), (_, b)| match (a, b) {
+        (Some(a), Some(b)) => a.total_cmp(b),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => std::cmp::Ordering::Equal,
+    });
+    below.into_iter().map(|(a, _)| a).collect()
 }
 
 #[cfg(test)]
@@ -388,6 +447,61 @@ mod tests {
         // A window the new report left out keeps its old time.
         assert_eq!(after.seven_day.and_then(|w| w.as_of), Some(5_000));
         assert_eq!(restarted.kept()[0].at, 9_500);
+    }
+
+    #[test]
+    fn the_pool_shows_every_account_soonest_reset_first_and_the_unread_ones_last() {
+        let mut meters = Meters::default();
+        let mut later = status(1, Some(30.0), None);
+        later.five_hour = Some(Window {
+            used: 30.0,
+            resets_at: RESET + 600,
+        });
+        meters.report(1, &later);
+        meters.report(2, &status(2, Some(70.0), Some(10.0)));
+        meters.report(
+            4,
+            &Status {
+                five_hour: Some(Window {
+                    used: 50.0,
+                    resets_at: NOW - 1,
+                }),
+                ..status(3, None, None)
+            },
+        );
+
+        let pool = meters.pool(&[1, 2, 3, 4], NOW);
+
+        let order: Vec<_> = pool.five_hour.iter().map(|s| (s.account, s.used)).collect();
+        assert_eq!(
+            order,
+            [(2, Some(70.0)), (1, Some(30.0)), (3, None), (4, None)]
+        );
+        assert_eq!(
+            pool.five_hour[3].last_reading,
+            Some(3),
+            "its window has reset since"
+        );
+        assert_eq!(pool.five_hour[2].last_reading, None, "never read");
+        let week: Vec<_> = pool.seven_day.iter().map(|s| s.account).collect();
+        assert_eq!(week, [2, 1, 3, 4]);
+    }
+
+    #[test]
+    fn offers_put_the_most_left_first_and_the_unread_after() {
+        let mut meters = Meters::default();
+        meters.report(1, &status(1, Some(60.0), None));
+        meters.report(2, &status(2, Some(20.0), None));
+        meters.report(3, &status(3, Some(95.0), None));
+
+        let order = offers(&meters, &[0, 1, 2, 3, 4, 5], 1, 90, NOW);
+
+        assert_eq!(
+            order,
+            [2, 0, 4, 5],
+            "3 is past the line, 1 is the one moving away"
+        );
+        assert_eq!(offers(&meters, &[1, 2, 3], 2, 90, NOW), [1]);
     }
 
     #[test]
