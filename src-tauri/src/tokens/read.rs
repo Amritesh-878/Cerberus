@@ -1,5 +1,8 @@
 //! A chat file's replies as token counts: only the id, model, time and usage of each assistant record are read.
 
+use std::collections::HashMap;
+use std::io::{self, BufRead};
+
 use memchr::memmem;
 use serde::Deserialize;
 
@@ -64,21 +67,54 @@ struct Written {
 /// Claude Code's stand-in for replies it made itself, which no API call priced.
 const SYNTHETIC: &str = "<synthetic>";
 
-/// Each assistant reply in the file once; a message written as several records keeps its last.
-pub fn replies(bytes: &[u8]) -> Vec<Reply> {
-    let usage = memmem::Finder::new(b"\"usage\"");
-    let mut found: Vec<Reply> = Vec::new();
-    for line in bytes.split(|&b| b == b'\n') {
+/// A chat file's replies so far, once per message id; a message written as several records keeps its last.
+#[derive(Debug, Clone, Default)]
+pub struct Parsed {
+    pub replies: Vec<Reply>,
+    index: HashMap<String, usize>,
+}
+
+impl Parsed {
+    fn line(&mut self, usage: &memmem::Finder<'_>, line: &[u8]) {
         if usage.find(line).is_none() {
-            continue;
+            return;
         }
-        let Some(reply) = reply(line) else { continue };
-        match found.iter_mut().rev().find(|r| r.id == reply.id) {
-            Some(earlier) => *earlier = reply,
-            None => found.push(reply),
+        let Some(reply) = reply(line) else { return };
+        match self.index.get(&reply.id) {
+            Some(&at) => self.replies[at] = reply,
+            None => {
+                self.index.insert(reply.id.clone(), self.replies.len());
+                self.replies.push(reply);
+            }
         }
     }
-    found
+
+    /// Reads to the end, one line at a time; returns the bytes up to the last complete line, where the next read starts.
+    pub fn read_lines(&mut self, from: &mut impl BufRead) -> io::Result<u64> {
+        let usage = memmem::Finder::new(b"\"usage\"");
+        let mut line = Vec::new();
+        let mut complete = 0u64;
+        loop {
+            line.clear();
+            let n = from.read_until(b'\n', &mut line)?;
+            if n == 0 {
+                return Ok(complete);
+            }
+            // A last line still being written is read now and again next time, which the id makes harmless.
+            self.line(&usage, &line);
+            if line.ends_with(b"\n") {
+                complete += n as u64;
+            }
+        }
+    }
+}
+
+/// Each assistant reply in `bytes` once.
+#[cfg(test)]
+pub fn replies(bytes: &[u8]) -> Vec<Reply> {
+    let mut parsed = Parsed::default();
+    let _ = parsed.read_lines(&mut &bytes[..]);
+    parsed.replies
 }
 
 fn reply(line: &[u8]) -> Option<Reply> {
@@ -147,6 +183,23 @@ mod tests {
             }]
         );
         assert!(!format!("{found:?}").contains("FAKE-SECRET"));
+    }
+
+    #[test]
+    fn a_line_still_being_written_is_read_again_and_counted_once() {
+        let full = format!("{}\n", CHAT.lines().nth(2).unwrap());
+        let (head, tail) = full.split_at(full.len() / 2);
+        let mut parsed = Parsed::default();
+
+        let first = parsed.read_lines(&mut head.as_bytes()).unwrap();
+        assert_eq!(first, 0, "nothing complete yet");
+        assert!(parsed.replies.is_empty());
+        let rest = parsed.read_lines(&mut full.as_bytes()).unwrap();
+
+        assert_eq!(rest as usize, full.len());
+        assert_eq!(parsed.replies.len(), 1);
+        assert_eq!(parsed.replies[0].tokens.output, 42);
+        assert!(!tail.is_empty());
     }
 
     #[test]

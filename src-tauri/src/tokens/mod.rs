@@ -7,7 +7,7 @@ mod read;
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
-use std::io;
+use std::io::{self, BufReader, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::UNIX_EPOCH;
@@ -15,13 +15,12 @@ use std::time::UNIX_EPOCH;
 use serde::{Deserialize, Serialize};
 
 use crate::accounts::AccountId;
-use crate::tokens::read::Reply;
+use crate::tokens::read::Parsed;
 
 /// Days kept in Cerberus's own store, past the 30 the card shows.
 const KEEP_DAYS: i64 = 90;
 const STORE_VERSION: u32 = 1;
-// A chat file is a few MiB; one far larger is not read whole into memory.
-const MOST_FILE: u64 = 512 * 1024 * 1024;
+const DAY_MS: u64 = 86_400_000;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -70,11 +69,13 @@ struct Stored {
     days: Days,
 }
 
-/// A chat file's replies, kept until the file changes.
+/// A chat file's replies so far, and where reading it next starts.
 struct Read {
     len: u64,
     modified: u64,
-    replies: Arc<Vec<Reply>>,
+    /// Bytes up to the last complete line read.
+    offset: u64,
+    parsed: Arc<Parsed>,
 }
 
 /// The chat files read so far and the store of daily totals.
@@ -121,7 +122,7 @@ impl Ledger {
         offset_minutes: i32,
         now_ms: u64,
     ) -> Vec<AccountTokens> {
-        let fresh = self.scan(accounts, offset_minutes);
+        let fresh = self.scan(accounts, offset_minutes, now_ms);
         let today = days::day_of(now_ms, offset_minutes);
         let (mut stored, writable) = self
             .stored
@@ -159,17 +160,27 @@ impl Ledger {
     }
 
     /// Every reply in every account's chat files, each message once, the first account in order keeping a copied one.
-    fn scan(&mut self, accounts: &[(AccountId, PathBuf)], offset_minutes: i32) -> Days {
+    fn scan(
+        &mut self,
+        accounts: &[(AccountId, PathBuf)],
+        offset_minutes: i32,
+        now_ms: u64,
+    ) -> Days {
+        // A file untouched for longer holds only days the store no longer keeps.
+        let oldest_ms = now_ms.saturating_sub(KEEP_DAYS.unsigned_abs() * DAY_MS);
         let mut seen: HashSet<String> = HashSet::new();
         let mut days = Days::new();
         let mut present: HashSet<PathBuf> = HashSet::new();
         for (account, config_dir) in accounts {
             for (path, len, modified) in chat_files(config_dir) {
+                if modified < oldest_ms && !self.read.contains_key(&path) {
+                    continue;
+                }
                 present.insert(path.clone());
-                let Some(replies) = self.replies_of(&path, len, modified) else {
+                let Some(parsed) = self.replies_of(&path, len, modified) else {
                     continue;
                 };
-                for reply in replies.iter() {
+                for reply in &parsed.replies {
                     if !seen.insert(reply.id.clone()) {
                         continue;
                     }
@@ -200,28 +211,46 @@ impl Ledger {
         days
     }
 
-    fn replies_of(&mut self, path: &Path, len: u64, modified: u64) -> Option<Arc<Vec<Reply>>> {
-        if let Some(read) = self.read.get(path)
-            && read.len == len
-            && read.modified == modified
-        {
-            return Some(Arc::clone(&read.replies));
+    /// The file's replies, reading only what was appended since last time; a file that shrank or changed in place is read again whole.
+    fn replies_of(&mut self, path: &Path, len: u64, modified: u64) -> Option<Arc<Parsed>> {
+        if let Some(read) = self.read.get_mut(path) {
+            if read.len == len && read.modified == modified {
+                return Some(Arc::clone(&read.parsed));
+            }
+            if len > read.len {
+                let parsed = Arc::make_mut(&mut read.parsed);
+                match read_from(path, read.offset, parsed) {
+                    Ok(more) => {
+                        read.offset += more;
+                        read.len = len;
+                        read.modified = modified;
+                        return Some(Arc::clone(&read.parsed));
+                    }
+                    Err(e) => eprintln!("tokens: could not read a chat file's new lines: {e}"),
+                }
+            }
         }
-        if len > MOST_FILE {
-            return None;
-        }
-        let bytes = fs::read(path).ok()?;
-        let replies = Arc::new(read::replies(&bytes));
+        let mut parsed = Parsed::default();
+        let offset = read_from(path, 0, &mut parsed).ok()?;
+        let parsed = Arc::new(parsed);
         self.read.insert(
             path.to_path_buf(),
             Read {
                 len,
                 modified,
-                replies: Arc::clone(&replies),
+                offset,
+                parsed: Arc::clone(&parsed),
             },
         );
-        Some(replies)
+        Some(parsed)
     }
+}
+
+/// Reads a file's lines from `offset` into `parsed`; returns how far the complete lines went.
+fn read_from(path: &Path, offset: u64, parsed: &mut Parsed) -> io::Result<u64> {
+    let mut file = fs::File::open(path)?;
+    file.seek(SeekFrom::Start(offset))?;
+    parsed.read_lines(&mut BufReader::with_capacity(1 << 20, file))
 }
 
 /// Each chat file and each subagent file under an account's `projects`, with its size and change time.

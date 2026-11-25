@@ -207,9 +207,168 @@ fn an_unchanged_file_is_not_read_again() {
     );
     let mut ledger = Ledger::new(dir.path().join("usage.json"));
     ledger.view(&[(1, home.clone())], 0, NOW);
-    let first = Arc::clone(&ledger.read[&file].replies);
+    let first = Arc::clone(&ledger.read[&file].parsed);
 
     ledger.view(&[(1, home)], 0, NOW);
 
-    assert!(Arc::ptr_eq(&first, &ledger.read[&file].replies));
+    assert!(Arc::ptr_eq(&first, &ledger.read[&file].parsed));
+}
+
+#[test]
+fn an_appended_tail_is_read_alone_and_a_rewritten_file_whole() {
+    let dir = TestDir::new();
+    let home = dir.path().join("acc");
+    let mut lines = vec![reply_line(
+        "m1",
+        "2026-11-25T09:00:00Z",
+        "claude-opus-5-5",
+        100,
+        1,
+    )];
+    let file = chat(&home, "66666666-6666-4666-8666-666666666666", &lines);
+    let mut ledger = Ledger::new(dir.path().join("usage.json"));
+    ledger.view(&[(1, home.clone())], 0, NOW);
+    let first_offset = ledger.read[&file].offset;
+
+    // Appended as Claude Code does, with a second line still half written.
+    let second = reply_line("m2", "2026-11-25T09:01:00Z", "claude-opus-5-5", 200, 2);
+    let third = reply_line("m3", "2026-11-25T09:02:00Z", "claude-opus-5-5", 400, 4);
+    let mut out = fs::OpenOptions::new().append(true).open(&file).unwrap();
+    std::io::Write::write_all(&mut out, format!("\n{second}\n{}", &third[..20]).as_bytes())
+        .unwrap();
+    let view = ledger.view(&[(1, home.clone())], 0, NOW);
+
+    assert_eq!(row(&view[0].today, "Opus 5.5").tokens.input, 300);
+    let read = &ledger.read[&file];
+    assert!(read.offset > first_offset);
+    assert_eq!(
+        read.offset as usize,
+        fs::read(&file).unwrap().len() - 20,
+        "the half line is read again"
+    );
+
+    std::io::Write::write_all(&mut out, format!("{}\n", &third[20..]).as_bytes()).unwrap();
+    drop(out);
+    let view = ledger.view(&[(1, home.clone())], 0, NOW);
+    assert_eq!(row(&view[0].today, "Opus 5.5").tokens.input, 700);
+
+    // Rewritten shorter: read again from the start, so the dropped reply no longer counts as fresh.
+    lines.push(reply_line(
+        "m9",
+        "2026-11-25T09:05:00Z",
+        "claude-opus-5-5",
+        5,
+        0,
+    ));
+    fs::write(&file, lines.join("\n")).unwrap();
+    ledger.view(&[(1, home)], 0, NOW);
+    let ids: Vec<&str> = ledger.read[&file]
+        .parsed
+        .replies
+        .iter()
+        .map(|r| r.id.as_str())
+        .collect();
+    assert_eq!(ids, ["m1", "m9"]);
+}
+
+#[test]
+fn a_file_untouched_for_90_days_is_not_read() {
+    let dir = TestDir::new();
+    let home = dir.path().join("acc");
+    let file = chat(
+        &home,
+        "77777777-7777-4777-8777-777777777777",
+        &[reply_line(
+            "m1",
+            "2026-08-01T09:00:00Z",
+            "claude-opus-5-5",
+            1,
+            1,
+        )],
+    );
+    let old = std::time::SystemTime::now() - std::time::Duration::from_secs(100 * 86_400);
+    fs::File::options()
+        .write(true)
+        .open(&file)
+        .unwrap()
+        .set_modified(old)
+        .unwrap();
+    let now_ms = u64::try_from(
+        std::time::SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis(),
+    )
+    .unwrap();
+    let mut ledger = Ledger::new(dir.path().join("usage.json"));
+
+    ledger.view(&[(1, home)], 0, now_ms);
+
+    assert!(!ledger.read.contains_key(&file));
+}
+
+/// Times the first scan, a refresh after an append, and a refresh with nothing new; prints them.
+#[test]
+#[ignore = "benchmark: TOKENS_BENCH_DIR=<folder of acc-*/projects> cargo test --release --lib bench_ -- --ignored --nocapture"]
+fn bench_first_scan_then_refreshes() {
+    let Some(root) = std::env::var_os("TOKENS_BENCH_DIR").map(PathBuf::from) else {
+        return;
+    };
+    let mut homes: Vec<PathBuf> = fs::read_dir(&root)
+        .unwrap()
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.join("projects").is_dir())
+        .collect();
+    homes.sort();
+    let accounts: Vec<(AccountId, PathBuf)> = (1..).zip(homes).collect();
+    let largest = accounts
+        .iter()
+        .flat_map(|(_, home)| chat_files(home))
+        .max_by_key(|(_, len, _)| *len)
+        .map(|(path, _, _)| path)
+        .unwrap();
+    let dir = TestDir::new();
+    let mut ledger = Ledger::new(dir.path().join("usage.json"));
+    let now_ms = u64::try_from(
+        std::time::SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis(),
+    )
+    .unwrap();
+
+    let started = std::time::Instant::now();
+    ledger.view(&accounts, 0, now_ms);
+    let first = started.elapsed();
+
+    let mut out = fs::OpenOptions::new().append(true).open(&largest).unwrap();
+    let mut appended = 0;
+    for n in 0..400 {
+        let line = format!(
+            "{}\n",
+            reply_line(
+                &format!("bench_{n}"),
+                "2026-11-25T09:00:00Z",
+                "claude-opus-5-5",
+                1,
+                1
+            )
+        );
+        appended += line.len();
+        std::io::Write::write_all(&mut out, line.as_bytes()).unwrap();
+    }
+    drop(out);
+    let started = std::time::Instant::now();
+    ledger.view(&accounts, 0, now_ms);
+    let refresh = started.elapsed();
+
+    let started = std::time::Instant::now();
+    ledger.view(&accounts, 0, now_ms);
+    let idle = started.elapsed();
+
+    println!(
+        "files {}, first scan {first:?}, refresh after {appended} bytes appended {refresh:?}, refresh with nothing new {idle:?}",
+        ledger.read.len()
+    );
 }
