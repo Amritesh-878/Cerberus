@@ -3289,6 +3289,69 @@ button.card-row:focus-visible,
   outline-offset: 1px;
 }
 
+.token-usage {
+  margin-top: 10px;
+}
+
+.token-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.token-ranges {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.token-ranges .row-button[aria-pressed="true"] {
+  color: var(--text);
+  background: var(--selected);
+}
+
+.token-account {
+  margin-top: 6px;
+}
+
+.token-account-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.token-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  column-gap: 8px;
+  padding-left: 18px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dim);
+}
+
+.token-detail {
+  grid-column: 1 / -1;
+  font-size: 11px;
+  color: var(--faint);
+}
+
+.token-account-head .token-cost {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.token-note {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: var(--faint);
+}
+
 .pool-detail {
   margin: 2px 0 0;
   font-size: 12px;

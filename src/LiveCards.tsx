@@ -11,6 +11,7 @@ import {
   type TabLive,
 } from "./live";
 import type { PanelState } from "./panelPrefs";
+import { TokenUsage } from "./TokenUsage";
 
 /** Seconds since the epoch, ticking once a minute so a window that resets leaves the meter. */
 function createClock() {
@@ -259,6 +260,9 @@ export function UsageCard(props: {
             {pickedText() ?? "Tap a segment for its account, use and reset."}
           </p>
         </Show>
+      </Show>
+      <Show when={props.profiles.accounts.length > 0}>
+        <TokenUsage profiles={props.profiles} />
       </Show>
     </Card>
   );
