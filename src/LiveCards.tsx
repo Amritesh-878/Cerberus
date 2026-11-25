@@ -1,24 +1,18 @@
-import { createSignal, For, onCleanup, Show } from "solid-js";
+import { createSignal, Index, onCleanup, Show } from "solid-js";
 
-import {
-  type Account,
-  accountColor,
-  type Profiles,
-  savedColor,
-} from "./accounts";
-import { resetText } from "./board";
+import { accountColor, type Profiles, savedColor } from "./accounts";
 import { Card, Note } from "./Cards";
-import { AccountDot } from "./icons";
 import {
+  currentUse,
   meterLevel,
-  untilText,
-  windowState,
-  type WindowState,
-  type Meter,
   percentText,
+  type Pool,
+  type Segment,
+  segmentText,
   type TabLive,
 } from "./live";
 import type { PanelState } from "./panelPrefs";
+import { TokenUsage } from "./TokenUsage";
 
 /** Seconds since the epoch, ticking once a minute so a window that resets leaves the meter. */
 function createClock() {
@@ -135,66 +129,101 @@ export function ContextCard(props: {
   );
 }
 
-function WindowLine(props: {
+/** One window's bar: a segment per account in its colour, the soonest reset first; a tap picks one to read. */
+function PoolBar(props: {
   name: string;
-  state: WindowState;
+  label: string;
+  segments: Segment[];
+  profiles: Profiles;
   warnAt: number;
-  color: string;
   nowS: number;
+  picked: string | undefined;
+  onPick: (key: string | undefined) => void;
 }) {
-  const known = () => (props.state.kind === "known" ? props.state : undefined);
+  const nameOf = (id: number) =>
+    props.profiles.accounts.find((a) => a.id === id)?.name ?? "An account";
   return (
-    <div class="usage-line" classList={{ kept: known()?.asOf != null }}>
+    <div class="pool-line">
       <span class="usage-name">{props.name}</span>
-      <Show
-        when={known()}
-        fallback={
-          <span class="usage-unknown">
-            {props.state.kind === "reset"
-              ? `Reset at ${resetText(props.state.resetsAt)} · updates after a reply`
-              : "unknown"}
-          </span>
-        }
+      <div
+        class="pool-bar"
+        role="group"
+        aria-label={`${props.label} use by account`}
       >
-        {(w) => (
-          <>
-            <Bar
-              used={w().used}
-              level={meterLevel(w().used, props.warnAt)}
-              color={props.color}
-              label={`${props.name === "5h" ? "5-hour" : "7-day"} used`}
-            />
-            <span
-              class="usage-meta"
-              title={`Resets ${resetText(w().resetsAt)}`}
-            >
-              {/* The account's row already shows the 5-hour use. */}
-              {props.name === "5h" ? "" : `${percentText(w().used)} · `}
-              {untilText(w().resetsAt, props.nowS)}
-            </span>
-            <Show when={w().asOf}>
-              {(asOf) => (
-                <span class="usage-asof">
-                  as of {resetText(Math.floor(asOf() / 1000))}
+        {/* By position, so a live update keeps each button, its focus and its title. */}
+        <Index each={props.segments}>
+          {(segment) => {
+            const key = () => `${props.name}:${String(segment().account)}`;
+            const used = () => currentUse(segment(), props.nowS);
+            const text = () =>
+              segmentText(nameOf(segment().account), segment(), props.nowS);
+            const level = () => {
+              const now = used();
+              return now === null ? "ok" : meterLevel(now, props.warnAt);
+            };
+            return (
+              <button
+                type="button"
+                class="pool-seg"
+                classList={{
+                  unread: used() === null,
+                  kept: segment().asOf !== null,
+                  picked: props.picked === key(),
+                  warn: level() === "warn",
+                  full: level() === "full",
+                }}
+                title={text()}
+                aria-label={text()}
+                aria-pressed={props.picked === key()}
+                onClick={() => {
+                  props.onPick(props.picked === key() ? undefined : key());
+                }}
+              >
+                <span class="pool-track">
+                  <span
+                    class="pool-fill"
+                    style={{
+                      width: `${String(Math.min(100, used() ?? 0))}%`,
+                      background:
+                        level() === "ok"
+                          ? accountColor(
+                              segment().account,
+                              savedColor(props.profiles, segment().account),
+                            )
+                          : undefined,
+                    }}
+                  />
                 </span>
-              )}
-            </Show>
-          </>
-        )}
-      </Show>
+              </button>
+            );
+          }}
+        </Index>
+      </div>
     </div>
   );
 }
 
-/** One row per account: its 5-hour and 7-day use from the newest report of any of its tabs. */
+/** Each window as one bar with a segment per account; tapping a segment says its account, use and reset. */
 export function UsageCard(props: {
   profiles: Profiles;
-  meters: Meter[];
+  pool: Pool;
   state: PanelState;
 }) {
   const now = createClock();
-  const meterOf = (account: Account) =>
-    props.meters.find((m) => m.account === account.id);
+  const [picked, setPicked] = createSignal<string>();
+  const pickedText = () => {
+    const key = picked();
+    if (key === undefined) return undefined;
+    const [window, id] = key.split(":");
+    const segments =
+      window === "5h" ? props.pool.fiveHour : props.pool.sevenDay;
+    const segment = segments.find((s) => String(s.account) === id);
+    if (!segment) return undefined;
+    const name =
+      props.profiles.accounts.find((a) => a.id === segment.account)?.name ??
+      "An account";
+    return `${window === "5h" ? "5-hour" : "7-day"} · ${segmentText(name, segment, now())}`;
+  };
   return (
     <Card
       id="usage"
@@ -206,52 +235,37 @@ export function UsageCard(props: {
         when={props.profiles.live}
         fallback={<Note>Live cards are off in Accounts</Note>}
       >
-        <For each={props.profiles.accounts} fallback={<Note>No accounts</Note>}>
-          {(account) => (
-            <div class="usage-account">
-              <div class="usage-head">
-                <AccountDot
-                  id={account.id}
-                  color={savedColor(props.profiles, account.id)}
-                />
-                <span class="row-main">{account.name}</span>
-                <span class="usage-top" title="5-hour use">
-                  {(() => {
-                    const five = windowState(meterOf(account)?.fiveHour, now());
-                    return five.kind === "known" ? percentText(five.used) : "";
-                  })()}
-                </span>
-              </div>
-              <Show
-                when={meterOf(account)?.silent !== true}
-                fallback={
-                  <p class="usage-silent">This plan doesn't report usage</p>
-                }
-              >
-                <WindowLine
-                  name="5h"
-                  state={windowState(meterOf(account)?.fiveHour, now())}
-                  warnAt={props.profiles.warnAt}
-                  color={accountColor(
-                    account.id,
-                    savedColor(props.profiles, account.id),
-                  )}
-                  nowS={now()}
-                />
-                <WindowLine
-                  name="7d"
-                  state={windowState(meterOf(account)?.sevenDay, now())}
-                  warnAt={props.profiles.warnAt}
-                  color={accountColor(
-                    account.id,
-                    savedColor(props.profiles, account.id),
-                  )}
-                  nowS={now()}
-                />
-              </Show>
-            </div>
-          )}
-        </For>
+        <Show
+          when={props.profiles.accounts.length > 0}
+          fallback={<Note>No accounts</Note>}
+        >
+          <PoolBar
+            name="5h"
+            label="5-hour"
+            segments={props.pool.fiveHour}
+            profiles={props.profiles}
+            warnAt={props.profiles.warnAt}
+            nowS={now()}
+            picked={picked()}
+            onPick={setPicked}
+          />
+          <PoolBar
+            name="7d"
+            label="7-day"
+            segments={props.pool.sevenDay}
+            profiles={props.profiles}
+            warnAt={props.profiles.warnAt}
+            nowS={now()}
+            picked={picked()}
+            onPick={setPicked}
+          />
+          <p class="pool-detail">
+            {pickedText() ?? "Tap a segment for its account, use and reset."}
+          </p>
+        </Show>
+      </Show>
+      <Show when={props.profiles.accounts.length > 0}>
+        <TokenUsage profiles={props.profiles} />
       </Show>
     </Card>
   );

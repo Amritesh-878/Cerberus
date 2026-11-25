@@ -86,6 +86,7 @@ function view(tokens: number, cacheExpiresAt: number | null = null): LiveView {
       },
     ],
     meters: [],
+    pool: { fiveHour: [], sevenDay: [] },
     warnings: [],
   };
 }

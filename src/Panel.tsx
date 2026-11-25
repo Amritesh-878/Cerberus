@@ -364,7 +364,7 @@ export function Panel(props: {
           <Show when={!otherCli()}>
             <UsageCard
               profiles={props.profiles}
-              meters={props.live.meters}
+              pool={props.live.pool}
               state={props.state}
             />
           </Show>

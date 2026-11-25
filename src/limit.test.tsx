@@ -212,7 +212,12 @@ test("a move from the low-limit popup types continue too, in one click", async (
     resetsAt: RESET,
     offers: [0],
   };
-  await emitEvent("live", { tabs: [], meters: [], warnings: [warning] });
+  await emitEvent("live", {
+    tabs: [],
+    meters: [],
+    pool: { fiveHour: [], sevenDay: [] },
+    warnings: [warning],
+  });
   await emitEvent("live-warning", warning);
   await settle();
 
@@ -233,6 +238,7 @@ test("a meter's 5-hour window at 100% opens the popup for the tab that reported 
   const full = {
     tabs: [],
     meters: [],
+    pool: { fiveHour: [], sevenDay: [] },
     warnings: [{ account: 1, tab: 2, used: 100, resetsAt: RESET, offers: [0] }],
   };
 
@@ -298,13 +304,19 @@ test("a later live view refreshes the shown popup's offers without opening anoth
     resetsAt: RESET,
     offers: [0],
   };
-  await emitEvent("live", { tabs: [], meters: [], warnings: [warning] });
+  await emitEvent("live", {
+    tabs: [],
+    meters: [],
+    pool: { fiveHour: [], sevenDay: [] },
+    warnings: [warning],
+  });
   await settle();
   expect(popup()?.textContent).toContain("personal");
 
   await emitEvent("live", {
     tabs: [],
     meters: [],
+    pool: { fiveHour: [], sevenDay: [] },
     warnings: [{ ...warning, offers: [] }],
   });
   await settle();

@@ -16,11 +16,14 @@ import {
 } from "./harness";
 import {
   elapsedText,
+  currentUse,
   type LiveView,
   meterLevel,
+  resetWhen,
+  type Segment,
+  segmentText,
   untilText,
   warningText,
-  windowState,
 } from "./live";
 import type { SavedTree } from "./saved";
 
@@ -103,6 +106,18 @@ function card(root: HTMLElement, title: string): HTMLElement {
   return found;
 }
 
+function segment(account: number, set: Partial<Segment>): Segment {
+  return {
+    account,
+    used: null,
+    resetsAt: null,
+    asOf: null,
+    lastReading: null,
+    silent: false,
+    ...set,
+  };
+}
+
 const VIEW: LiveView = {
   tabs: [
     {
@@ -126,6 +141,13 @@ const VIEW: LiveView = {
       sevenDay: { used: 41, resetsAt: RESET + 86_400 },
     },
   ],
+  pool: {
+    fiveHour: [segment(1, { used: 87.2, resetsAt: RESET }), segment(0, {})],
+    sevenDay: [
+      segment(1, { used: 41, resetsAt: RESET + 86_400 }),
+      segment(0, {}),
+    ],
+  },
   warnings: [],
 };
 
@@ -175,82 +197,119 @@ test("the context card shows the shown chat's use, and Compact types /compact wi
   expect(live.writes).toEqual(["\x1b[200~/compact\x1b[201~"]);
 });
 
-test("an account whose plan doesn't report usage says so instead of empty bars", async () => {
-  const live = liveCore();
-  const root = await renderApp(live.profiles, live.core);
-  await open(root, "planner");
-  await emitEvent("live", {
-    ...VIEW,
-    meters: [{ account: 1, fiveHour: null, sevenDay: null, silent: true }],
-  });
-  await settle();
+function bars(root: HTMLElement): HTMLElement[][] {
+  return [...card(root, "Usage").querySelectorAll(".pool-bar")].map((bar) => [
+    ...bar.querySelectorAll<HTMLElement>(".pool-seg"),
+  ]);
+}
 
-  const work = card(root, "Usage").querySelector(
-    ".usage-account + .usage-account",
-  );
-  expect(work?.querySelector(".usage-silent")?.textContent).toBe(
-    "This plan doesn't report usage",
-  );
-  expect(work?.querySelectorAll(".usage-line")).toHaveLength(0);
-});
+const detail = (root: HTMLElement) =>
+  card(root, "Usage").querySelector(".pool-detail")?.textContent;
 
-test("usage kept from before a restart shows dimmed with its time, and a reset window says so", async () => {
-  const live = liveCore();
-  const root = await renderApp(live.profiles, live.core);
-  await open(root, "planner");
-  await emitEvent("live", {
-    ...VIEW,
-    meters: [
-      {
-        account: 1,
-        fiveHour: { used: 30, resetsAt: RESET, asOf: Date.now() - 600_000 },
-        sevenDay: { used: 41, resetsAt: 1, reset: true },
-      },
-    ],
-  });
-  await settle();
-
-  const work = card(root, "Usage").querySelector(
-    ".usage-account + .usage-account",
-  );
-  const lines = [...(work?.querySelectorAll(".usage-line") ?? [])];
-  expect(lines[0]?.classList.contains("kept")).toBe(true);
-  expect(lines[0]?.textContent).toMatch(/5hin .+as of .+$/);
-  // Never a bare "reset": when it reset, and that a reply brings new numbers.
-  expect(lines[1]?.textContent).toBe(
-    `7dReset at ${resetText(1)} · updates after a reply`,
-  );
-  expect(
-    card(root, "Usage").querySelector(".card-title")?.getAttribute("title"),
-  ).toContain("an account updates after a reply in one of its tabs");
-});
-
-test("usage has a row per account, unknown until one of its tabs reports", async () => {
+test("each window is one bar with a segment per account, and a tap says its account, use and reset", async () => {
   const live = liveCore();
   const root = await renderApp(live.profiles, live.core);
   await open(root, "planner");
   await emitEvent("live", VIEW);
   await settle();
 
-  const rows = [
-    ...card(root, "Usage").querySelectorAll<HTMLElement>(".usage-account"),
-  ].map((row) => row.textContent);
-
-  expect(rows[0]).toBe("personal5hunknown7dunknown");
-  expect(rows[1]).toMatch(/^work87%5hin \d+d \d+h7d41% · in .+$/);
-  const work = card(root, "Usage").querySelector(
-    ".usage-account + .usage-account",
-  );
-  // 87% is past the 85% warning, so the 5-hour bar turns amber; the 7-day keeps the account's colour.
-  const bars = [...(work?.querySelectorAll(".meter") ?? [])];
-  expect(bars[0]?.classList.contains("warn")).toBe(true);
-  expect(bars[1]?.classList.contains("warn")).toBe(false);
+  const [five, seven] = bars(root);
+  expect(five).toHaveLength(2);
+  expect(seven).toHaveLength(2);
+  // 87% is past the 85% warning, so its 5-hour segment turns amber; the 7-day keeps the account's colour.
+  expect(five?.[0]?.classList.contains("warn")).toBe(true);
+  expect(seven?.[0]?.classList.contains("warn")).toBe(false);
   expect(
-    (bars[1]?.firstElementChild as HTMLElement | null)?.style.background,
+    seven?.[0]?.querySelector<HTMLElement>(".pool-fill")?.style.background,
   ).not.toBe("");
-  expect(work?.querySelector(".usage-meta")?.getAttribute("title")).toMatch(
-    /^Resets /,
+  expect(five?.[1]?.classList.contains("unread")).toBe(true);
+  expect(five?.[1]?.getAttribute("title")).toBe("personal: no reading yet");
+
+  five?.[0]?.click();
+  await settle();
+  expect(detail(root)).toMatch(
+    new RegExp(
+      `^5-hour · work: 87% · resets ${resetWhen(RESET, Math.floor(Date.now() / 1000))}, in \\d+d \\d+h$`,
+    ),
   );
+  expect(five?.[0]?.getAttribute("aria-pressed")).toBe("true");
+  five?.[0]?.click();
+  await settle();
+  expect(detail(root)).toBe("Tap a segment for its account, use and reset.");
+});
+
+test("a silent plan, a reading kept from before a restart and a window with no reading since each say so", async () => {
+  const live = liveCore();
+  const root = await renderApp(live.profiles, live.core);
+  await open(root, "planner");
+  const keptAt = Date.now() - 600_000;
+  await emitEvent("live", {
+    ...VIEW,
+    pool: {
+      fiveHour: [
+        segment(1, { used: 30, resetsAt: RESET, asOf: keptAt }),
+        segment(0, { silent: true }),
+      ],
+      sevenDay: [segment(1, { lastReading: keptAt }), segment(0, {})],
+    },
+  });
+  await settle();
+
+  const [five, seven] = bars(root);
+  const at = resetText(Math.floor(keptAt / 1000));
+  expect(five?.[0]?.classList.contains("kept")).toBe(true);
+  expect(five?.[0]?.getAttribute("title")).toMatch(
+    new RegExp(`· as of ${at}$`),
+  );
+  expect(five?.[1]?.getAttribute("title")).toBe(
+    "personal: this plan doesn't report usage",
+  );
+  seven?.[0]?.click();
+  await settle();
+  expect(detail(root)).toBe(`7-day · work: no reading since ${at}`);
+  expect(
+    card(root, "Usage").querySelector(".card-title")?.getAttribute("title"),
+  ).toContain("an account updates after a reply in one of its tabs");
+});
+
+test("a reading past its reset reads as no reading since it came, in the text and the bar", async () => {
+  const live = liveCore();
+  const root = await renderApp(live.profiles, live.core);
+  await open(root, "planner");
+  const readAt = Date.now() - 3_600_000;
+  const nowS = Math.floor(Date.now() / 1000);
+  const past = segment(1, {
+    used: 70,
+    resetsAt: nowS - 60,
+    lastReading: readAt,
+  });
+  await emitEvent("live", {
+    ...VIEW,
+    pool: { fiveHour: [past, segment(0, {})], sevenDay: VIEW.pool.sevenDay },
+  });
+  await settle();
+
+  const [five] = bars(root);
+  expect(five?.[0]?.classList.contains("unread")).toBe(true);
+  expect(five?.[0]?.querySelector<HTMLElement>(".pool-fill")?.style.width).toBe(
+    "0%",
+  );
+  expect(five?.[0]?.getAttribute("title")).toBe(
+    `work: no reading since ${resetText(Math.floor(readAt / 1000))}`,
+  );
+  expect(currentUse(past, nowS)).toBeNull();
+});
+
+test("segmentText reads plainly", () => {
+  expect(
+    segmentText("work", segment(1, { used: 12.4, resetsAt: 3600 }), 0),
+  ).toBe(`work: 12% · resets ${resetText(3600)}, in 1h 0m`);
+  expect(segmentText("work", segment(1, {}), 0)).toBe("work: no reading yet");
+  const weekAway = 3 * 86_400;
+  expect(resetWhen(weekAway, 0, "en-US")).toBe(
+    `${new Date(weekAway * 1000).toLocaleDateString("en-US", { weekday: "short" })} ${resetText(weekAway, "en-US")}`,
+  );
+  expect(resetWhen(3600, 0, "en-US")).toBe(resetText(3600, "en-US"));
 });
 
 const WARNING = {
@@ -527,7 +586,7 @@ test("the tasks card lists running then finished tasks by description, and a cli
   expect(live.writes).toEqual(["\x1b[200~/tasks\x1b[201~"]);
 });
 
-test("the warning text, elapsed time and a window past its reset", () => {
+test("the warning text, elapsed time and time to a reset", () => {
   expect(elapsedText(45_000)).toBe("45s");
   expect(elapsedText(192_000)).toBe("3m 12s");
   expect(elapsedText(3_840_000)).toBe("1h 04m");
@@ -535,17 +594,6 @@ test("the warning text, elapsed time and a window past its reset", () => {
   expect(warningText("work", { used: 86.6, resetsAt: 0 }, "en-US")).toMatch(
     /^work is at 87%, resets \d{1,2}:\d{2} (am|pm)$/,
   );
-  expect(windowState({ used: 50, resetsAt: 100 }, 99)).toEqual({
-    kind: "known",
-    used: 50,
-    resetsAt: 100,
-    asOf: null,
-  });
-  expect(windowState({ used: 50, resetsAt: 100 }, 100).kind).toBe("reset");
-  expect(windowState({ used: 50, resetsAt: 200, reset: true }, 100).kind).toBe(
-    "reset",
-  );
-  expect(windowState(null, 0).kind).toBe("unknown");
   expect(untilText(10_000 + 2 * 3600 + 10 * 60, 10_000)).toBe("in 2h 10m");
   expect(untilText(10_000 + 45 * 60, 10_000)).toBe("in 45m");
   expect(untilText(10_000 + 3 * 86_400 + 4 * 3600, 10_000)).toBe("in 3d 4h");

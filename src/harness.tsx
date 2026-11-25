@@ -119,7 +119,12 @@ export async function renderApp(
         case "services_view":
           return { folded: false, services: [] };
         case "live_view":
-          return { tabs: [], meters: [], warnings: [] };
+          return {
+            tabs: [],
+            meters: [],
+            pool: { fiveHour: [], sevenDay: [] },
+            warnings: [],
+          };
         case "live_offers":
           return [];
         case "panel_written":

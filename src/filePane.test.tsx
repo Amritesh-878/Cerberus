@@ -85,6 +85,7 @@ function liveView(outputs: Output[]): LiveView {
       },
     ],
     meters: [],
+    pool: { fiveHour: [], sevenDay: [] },
     warnings: [],
   };
 }

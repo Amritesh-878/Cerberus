@@ -36,27 +36,6 @@ export function meterLevel(
   return used >= warnAt ? "warn" : "ok";
 }
 
-/** How a usage window reads now: its numbers, reset since (Claude Code starts a new one on the next reply), or nothing known. */
-export type WindowState =
-  | { kind: "unknown" }
-  | { kind: "reset"; resetsAt: number }
-  | { kind: "known"; used: number; resetsAt: number; asOf: number | null };
-
-export function windowState(
-  window: LiveWindow | null | undefined,
-  nowS: number,
-): WindowState {
-  if (!window) return { kind: "unknown" };
-  if (window.reset === true || window.resetsAt <= nowS)
-    return { kind: "reset", resetsAt: window.resetsAt };
-  return {
-    kind: "known",
-    used: window.used,
-    resetsAt: window.resetsAt,
-    asOf: window.asOf ?? null,
-  };
-}
-
 export interface TabLive {
   tab: TabId;
   account: AccountId;
@@ -152,14 +131,80 @@ export interface LiveWarning {
   offers: AccountId[];
 }
 
+/** One account's share of a window's bar. */
+export interface Segment {
+  account: AccountId;
+  /** 0 to 100; `null` when there is no reading for the window now running. */
+  used: number | null;
+  /** Unix seconds. */
+  resetsAt: number | null;
+  /** A reading kept from before this start: when it came, in Unix milliseconds. */
+  asOf: number | null;
+  /** When the last reading came, in Unix milliseconds, whether or not its window still runs. */
+  lastReading: number | null;
+  silent: boolean;
+}
+
+/** Every account's use of each window, the soonest reset first, then the accounts with no reading. */
+export interface Pool {
+  fiveHour: Segment[];
+  sevenDay: Segment[];
+}
+
 export interface LiveView {
   tabs: TabLive[];
   /** Only accounts that reported; any other is unknown. */
   meters: Meter[];
+  pool: Pool;
   warnings: LiveWarning[];
 }
 
-export const EMPTY_VIEW: LiveView = { tabs: [], meters: [], warnings: [] };
+export const EMPTY_VIEW: LiveView = {
+  tabs: [],
+  meters: [],
+  pool: { fiveHour: [], sevenDay: [] },
+  warnings: [],
+};
+
+/** A reset's clock time, with its weekday when it is a day or more away. */
+export function resetWhen(
+  resetsAt: number,
+  nowS: number,
+  locale?: string,
+): string {
+  const time = resetText(resetsAt, locale);
+  if (resetsAt - nowS < 86_400) return time;
+  const day = new Date(resetsAt * 1000).toLocaleDateString(locale, {
+    weekday: "short",
+  });
+  return `${day} ${time}`;
+}
+
+/** The segment's use while its window still runs at `nowS`, else `null`: a reading past its reset is no reading. */
+export function currentUse(segment: Segment, nowS: number): number | null {
+  if (segment.used === null || segment.resetsAt === null) return null;
+  return segment.resetsAt > nowS ? segment.used : null;
+}
+
+/** What hovering or tapping a segment says: the account, its use and its reset, or why there is none. */
+export function segmentText(
+  name: string,
+  segment: Segment,
+  nowS: number,
+): string {
+  if (segment.silent) return `${name}: this plan doesn't report usage`;
+  const used = currentUse(segment, nowS);
+  if (used === null || segment.resetsAt === null) {
+    return segment.lastReading === null
+      ? `${name}: no reading yet`
+      : `${name}: no reading since ${resetText(Math.floor(segment.lastReading / 1000))}`;
+  }
+  const kept =
+    segment.asOf === null
+      ? ""
+      : ` · as of ${resetText(Math.floor(segment.asOf / 1000))}`;
+  return `${name}: ${percentText(used)} · resets ${resetWhen(segment.resetsAt, nowS)}, ${untilText(segment.resetsAt, nowS)}${kept}`;
+}
 
 /** Whole percent, as the cards and the warning show it. */
 export function percentText(used: number): string {

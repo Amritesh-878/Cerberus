@@ -296,6 +296,7 @@ test("a coder tab started by hand sends a handoff it chooses, starting at the ne
       },
     ],
     meters: [],
+    pool: { fiveHour: [], sevenDay: [] },
     warnings: [],
   });
   await settle();

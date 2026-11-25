@@ -26,7 +26,7 @@ use serde::Serialize;
 use crate::accounts::{AccountId, KeptUsage};
 use crate::bridge::link;
 use crate::live::event::{Event, Line, MOST_LINE, PIPE_VAR, TOKEN_VAR, Tasks};
-pub use crate::live::meters::{DEFAULT_WARN_AT, Meter, Warning};
+pub use crate::live::meters::{DEFAULT_WARN_AT, Meter, Pool, Warning};
 use crate::live::meters::{Meters, Warner};
 pub use crate::live::settings::Shell;
 use crate::live::work::{Output, Running, Work};
@@ -81,6 +81,8 @@ pub struct View {
     pub tabs: Vec<TabLive>,
     /// Only accounts that reported; any other is unknown.
     pub meters: Vec<Meter>,
+    /// Every account's use of each window, for one bar per window.
+    pub pool: Pool,
     pub warnings: Vec<Warning>,
 }
 
@@ -342,6 +344,7 @@ impl Core {
                 })
                 .collect(),
             meters: state.meters.view(now),
+            pool: state.meters.pool(&accounts, now),
             warnings: state.warner.view(&state.meters, &accounts, warn_at, now),
         }
     }
