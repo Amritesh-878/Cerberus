@@ -18,6 +18,7 @@ import {
   elapsedText,
   type LiveView,
   meterLevel,
+  resetWhen,
   type Segment,
   segmentText,
   untilText,
@@ -227,7 +228,7 @@ test("each window is one bar with a segment per account, and a tap says its acco
   await settle();
   expect(detail(root)).toMatch(
     new RegExp(
-      `^5-hour · work: 87% · resets ${resetText(RESET)}, in \\d+d \\d+h$`,
+      `^5-hour · work: 87% · resets ${resetWhen(RESET, Math.floor(Date.now() / 1000))}, in \\d+d \\d+h$`,
     ),
   );
   expect(five?.[0]?.getAttribute("aria-pressed")).toBe("true");
@@ -275,6 +276,11 @@ test("segmentText reads plainly", () => {
     segmentText("work", segment(1, { used: 12.4, resetsAt: 3600 }), 0),
   ).toBe(`work: 12% · resets ${resetText(3600)}, in 1h 0m`);
   expect(segmentText("work", segment(1, {}), 0)).toBe("work: no reading yet");
+  const weekAway = 3 * 86_400;
+  expect(resetWhen(weekAway, 0, "en-US")).toBe(
+    `${new Date(weekAway * 1000).toLocaleDateString("en-US", { weekday: "short" })} ${resetText(weekAway, "en-US")}`,
+  );
+  expect(resetWhen(3600, 0, "en-US")).toBe(resetText(3600, "en-US"));
 });
 
 const WARNING = {

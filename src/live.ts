@@ -166,6 +166,20 @@ export const EMPTY_VIEW: LiveView = {
   warnings: [],
 };
 
+/** A reset's clock time, with its weekday when it is a day or more away. */
+export function resetWhen(
+  resetsAt: number,
+  nowS: number,
+  locale?: string,
+): string {
+  const time = resetText(resetsAt, locale);
+  if (resetsAt - nowS < 86_400) return time;
+  const day = new Date(resetsAt * 1000).toLocaleDateString(locale, {
+    weekday: "short",
+  });
+  return `${day} ${time}`;
+}
+
 /** What hovering or tapping a segment says: the account, its use and its reset, or why there is none. */
 export function segmentText(
   name: string,
@@ -182,7 +196,7 @@ export function segmentText(
     segment.asOf === null
       ? ""
       : ` · as of ${resetText(Math.floor(segment.asOf / 1000))}`;
-  return `${name}: ${percentText(segment.used)} · resets ${resetText(segment.resetsAt)}, ${untilText(segment.resetsAt, nowS)}${kept}`;
+  return `${name}: ${percentText(segment.used)} · resets ${resetWhen(segment.resetsAt, nowS)}, ${untilText(segment.resetsAt, nowS)}${kept}`;
 }
 
 /** Whole percent, as the cards and the warning show it. */
