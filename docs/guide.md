@@ -291,12 +291,23 @@ it is open, its width, the folded cards, their order, starred skills and dismiss
   kind, and how long it ran (counted from when Cerberus first saw it, since Claude Code gives no start
   time). A click types `/tasks` into the chat for you to send, where Claude Code shows the output.
   There is no stop button: Claude Code offers no way to stop one from outside the chat.
-- **Usage:** one row per account with its 5-hour and 7-day plan use and how long until each resets
-  ("in 2h 10m"; hover for the clock time), from the newest reply of any tab on that account. Bars
-  take the account's colour, turn amber at the warning percentage and red at 100%. The last numbers are kept in the profiles file (numbers
-  and times only), so after a restart they show dimmed with "as of" and the time they came, until a
-  new reply. A window past its reset reads "reset". "Unknown" until a tab on the account has ever
-  had a reply; an account signed in with an API key never reports one.
+- **Usage:** each window, 5-hour and 7-day, is one bar with a segment per account in the account's
+  colour, the soonest reset first, from the newest reply of any tab on that account. A segment turns
+  amber at the warning percentage and red at 100%. Hover or tap a segment for its account, its use and
+  its reset ("work: 62% · resets 6:40 pm, in 2h 10m"). The last numbers are kept in the profiles file
+  (numbers and times only), so after a restart a segment shows dimmed with "as of" and the time they
+  came, until a new reply. An account with no reading for the window now running is a grey segment:
+  "no reading since 3:10 pm", or "no reading yet" until a tab on it has had a reply. An account
+  signed in with an API key never reports one, and after a few replies its segment says the plan
+  doesn't report usage.
+- **Tokens,** under the bars: for **Today**, **7 days** or **30 days**, each account's input,
+  output, cache read and cache write tokens per model, with what they would cost at API list prices
+  ("API price estimate, not your bill"; a subscription is billed by its plan). A model Cerberus has
+  no price for shows its tokens with "no price". The counts come from the usage numbers in each
+  account's chat files and its subagents' files, read in memory; no message text is kept. A chat
+  copied to another account by a move counts once. Daily totals are kept in `usage.json` for 90
+  days, so they outlive chats Claude Code deletes. The first count after a start reads every chat
+  file once, then only the files that changed; the section reads again every 5 minutes while shown.
 - **Changes:** one row per repo among the tab's folders, the main folder's first: lines added and
   removed on the branch since it left the remote's default branch (`origin/HEAD`, else `main` or
   `master`), uncommitted and untracked files included. **Create PR**
@@ -423,7 +434,8 @@ Context card says the chat can't report.
 default) shows a popup over the tab that crossed it: "work is at 87%, resets 6:40 pm". It comes
 once per account per 5-hour window. When that tab isn't on screen, or the window isn't focused, the
 popup waits for it and, with desktop alerts on, a notification says so. Like the limit popup below, it has one **Move to
-<account>** button for each signed-in account below the line, the first as the default, and
+<account>** button for each signed-in account below the line, the one with the most of its 5-hour window left
+first, as the default (accounts with no reading yet come after the ones with one), and
 **Not now**. An account's button moves the chat in one click; nothing moves without it. **Not now**
 leaves a small bar over the chat: **Show** opens the popup again, and **Dismiss** hides it until
 the next window.
@@ -554,7 +566,8 @@ them.
 When a chat hits its usage limit, from Claude Code's limit message or its 5-hour meter at 100%, a
 popup says so ("Work is out until 7:18 am"), once per chat per limit window, with a desktop
 notification when the tab isn't shown. Under "Move planner to:" it has one button per signed-in
-account below the warning line, the first one as the default, and **Not now**, which leaves the tab
+account below the warning line, the one with the most of its 5-hour window left first, as the default,
+and **Not now**, which leaves the tab
 as it is. An account's button runs the same move as above, without a second confirm (the popup's
 click is it). Once the moved chat is
 ready, `continue` is typed into it for you to send, so Claude carries on with the request that hit
@@ -760,6 +773,7 @@ WSLg, but not yet on a full desktop.
 | zsh suggestion files (`shell/zsh`) | same folder | same folder | `~/.local/share/com.cerberus.terminal` |
 | MCP config for messages between accounts (`mcp.json`) | same folder | same folder | `~/.local/share/com.cerberus.terminal` |
 | Status line settings for live cards (`live/tab-<id>.json`) | same folder | same folder | `~/.local/share/com.cerberus.terminal` |
+| Daily token totals (`usage.json`) | same folder | same folder | `~/.local/share/com.cerberus.terminal` |
 
 Uninstalling on Windows keeps this folder unless you tick the box to delete the app data. An
 unreadable `profiles.json` is kept as `profiles.json.bad` and the app offers to start fresh.
