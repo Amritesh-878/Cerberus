@@ -24,6 +24,7 @@ mod services;
 mod sessions;
 mod suggestions;
 mod tasks;
+mod tokens;
 #[cfg(windows)]
 mod winsec;
 mod wrapper;
@@ -122,6 +123,9 @@ pub fn run() {
                 let _ = handle.emit("tree-save", failure);
             };
             app.manage(Saved::open(&config_dir.join(saved::FILE_NAME), report));
+            app.manage(tokens::app::TokenLedger(std::sync::Mutex::new(
+                tokens::Ledger::new(paths.app_data_dir()?.join("usage.json")),
+            )));
             panel::start_cleanup(app.handle().clone());
             let services = Services::new(
                 &config_dir,
@@ -207,6 +211,7 @@ pub fn run() {
             panel::panel_skills,
             messages::set_messages,
             cards::live_view,
+            tokens::app::usage_tokens,
             cards::live_dismiss,
             cards::live_offers,
             cards::live_open_output,
