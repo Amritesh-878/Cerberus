@@ -1,8 +1,9 @@
-import { createSignal, For, onCleanup, Show } from "solid-js";
+import { createSignal, Index, onCleanup, Show } from "solid-js";
 
 import { accountColor, type Profiles, savedColor } from "./accounts";
 import { Card, Note } from "./Cards";
 import {
+  currentUse,
   meterLevel,
   percentText,
   type Pool,
@@ -149,22 +150,24 @@ function PoolBar(props: {
         role="group"
         aria-label={`${props.label} use by account`}
       >
-        <For each={props.segments}>
+        {/* By position, so a live update keeps each button, its focus and its title. */}
+        <Index each={props.segments}>
           {(segment) => {
-            const key = () => `${props.name}:${String(segment.account)}`;
+            const key = () => `${props.name}:${String(segment().account)}`;
+            const used = () => currentUse(segment(), props.nowS);
             const text = () =>
-              segmentText(nameOf(segment.account), segment, props.nowS);
-            const level = () =>
-              segment.used === null
-                ? "ok"
-                : meterLevel(segment.used, props.warnAt);
+              segmentText(nameOf(segment().account), segment(), props.nowS);
+            const level = () => {
+              const now = used();
+              return now === null ? "ok" : meterLevel(now, props.warnAt);
+            };
             return (
               <button
                 type="button"
                 class="pool-seg"
                 classList={{
-                  unread: segment.used === null,
-                  kept: segment.asOf !== null,
+                  unread: used() === null,
+                  kept: segment().asOf !== null,
                   picked: props.picked === key(),
                   warn: level() === "warn",
                   full: level() === "full",
@@ -180,12 +183,12 @@ function PoolBar(props: {
                   <span
                     class="pool-fill"
                     style={{
-                      width: `${String(Math.min(100, segment.used ?? 0))}%`,
+                      width: `${String(Math.min(100, used() ?? 0))}%`,
                       background:
                         level() === "ok"
                           ? accountColor(
-                              segment.account,
-                              savedColor(props.profiles, segment.account),
+                              segment().account,
+                              savedColor(props.profiles, segment().account),
                             )
                           : undefined,
                     }}
@@ -194,7 +197,7 @@ function PoolBar(props: {
               </button>
             );
           }}
-        </For>
+        </Index>
       </div>
     </div>
   );

@@ -47,7 +47,7 @@ pub struct Segment {
     pub resets_at: Option<u64>,
     /// Set for a reading kept from before this start: when it came, in Unix milliseconds.
     pub as_of: Option<u64>,
-    /// For a segment with no reading now: when the last one came, in Unix milliseconds.
+    /// When the last reading came, in Unix milliseconds, whether or not its window is still running.
     pub last_reading: Option<u64>,
     pub silent: bool,
 }
@@ -203,7 +203,8 @@ impl Meters {
                         used: running.map(|(_, w)| w.used),
                         resets_at: running.map(|(_, w)| w.resets_at),
                         as_of: running.map(|(at, _)| at).filter(|&at| at < self.since_ms),
-                        last_reading: kept.filter(|_| running.is_none()).map(|(at, _)| at),
+                        // Kept for a running reading too, so the webview can say when it came once its reset passes.
+                        last_reading: kept.map(|(at, _)| at),
                         silent: self.silent(account),
                     }
                 })
@@ -483,6 +484,11 @@ mod tests {
             "its window has reset since"
         );
         assert_eq!(pool.five_hour[2].last_reading, None, "never read");
+        assert_eq!(
+            pool.five_hour[0].last_reading,
+            Some(2),
+            "a running reading says when it came too"
+        );
         let week: Vec<_> = pool.seven_day.iter().map(|s| s.account).collect();
         assert_eq!(week, [2, 1, 3, 4]);
     }

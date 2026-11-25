@@ -16,6 +16,7 @@ import {
 } from "./harness";
 import {
   elapsedText,
+  currentUse,
   type LiveView,
   meterLevel,
   resetWhen,
@@ -269,6 +270,34 @@ test("a silent plan, a reading kept from before a restart and a window with no r
   expect(
     card(root, "Usage").querySelector(".card-title")?.getAttribute("title"),
   ).toContain("an account updates after a reply in one of its tabs");
+});
+
+test("a reading past its reset reads as no reading since it came, in the text and the bar", async () => {
+  const live = liveCore();
+  const root = await renderApp(live.profiles, live.core);
+  await open(root, "planner");
+  const readAt = Date.now() - 3_600_000;
+  const nowS = Math.floor(Date.now() / 1000);
+  const past = segment(1, {
+    used: 70,
+    resetsAt: nowS - 60,
+    lastReading: readAt,
+  });
+  await emitEvent("live", {
+    ...VIEW,
+    pool: { fiveHour: [past, segment(0, {})], sevenDay: VIEW.pool.sevenDay },
+  });
+  await settle();
+
+  const [five] = bars(root);
+  expect(five?.[0]?.classList.contains("unread")).toBe(true);
+  expect(five?.[0]?.querySelector<HTMLElement>(".pool-fill")?.style.width).toBe(
+    "0%",
+  );
+  expect(five?.[0]?.getAttribute("title")).toBe(
+    `work: no reading since ${resetText(Math.floor(readAt / 1000))}`,
+  );
+  expect(currentUse(past, nowS)).toBeNull();
 });
 
 test("segmentText reads plainly", () => {

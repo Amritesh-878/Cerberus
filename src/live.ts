@@ -140,7 +140,7 @@ export interface Segment {
   resetsAt: number | null;
   /** A reading kept from before this start: when it came, in Unix milliseconds. */
   asOf: number | null;
-  /** With no reading now: when the last one came, in Unix milliseconds. */
+  /** When the last reading came, in Unix milliseconds, whether or not its window still runs. */
   lastReading: number | null;
   silent: boolean;
 }
@@ -180,6 +180,12 @@ export function resetWhen(
   return `${day} ${time}`;
 }
 
+/** The segment's use while its window still runs at `nowS`, else `null`: a reading past its reset is no reading. */
+export function currentUse(segment: Segment, nowS: number): number | null {
+  if (segment.used === null || segment.resetsAt === null) return null;
+  return segment.resetsAt > nowS ? segment.used : null;
+}
+
 /** What hovering or tapping a segment says: the account, its use and its reset, or why there is none. */
 export function segmentText(
   name: string,
@@ -187,7 +193,8 @@ export function segmentText(
   nowS: number,
 ): string {
   if (segment.silent) return `${name}: this plan doesn't report usage`;
-  if (segment.used === null || segment.resetsAt === null) {
+  const used = currentUse(segment, nowS);
+  if (used === null || segment.resetsAt === null) {
     return segment.lastReading === null
       ? `${name}: no reading yet`
       : `${name}: no reading since ${resetText(Math.floor(segment.lastReading / 1000))}`;
@@ -196,7 +203,7 @@ export function segmentText(
     segment.asOf === null
       ? ""
       : ` · as of ${resetText(Math.floor(segment.asOf / 1000))}`;
-  return `${name}: ${percentText(segment.used)} · resets ${resetWhen(segment.resetsAt, nowS)}, ${untilText(segment.resetsAt, nowS)}${kept}`;
+  return `${name}: ${percentText(used)} · resets ${resetWhen(segment.resetsAt, nowS)}, ${untilText(segment.resetsAt, nowS)}${kept}`;
 }
 
 /** Whole percent, as the cards and the warning show it. */

@@ -3352,6 +3352,13 @@ button.card-row:focus-visible,
   color: var(--faint);
 }
 
+/* A touch screen gets a 44px target; the drawn bar stays thin. */
+@media (pointer: coarse) {
+  .pool-seg {
+    height: 44px;
+  }
+}
+
 .pool-detail {
   margin: 2px 0 0;
   font-size: 12px;
