@@ -307,7 +307,8 @@ it is open, its width, the folded cards, their order, starred skills and dismiss
   account's chat files and its subagents' files, read in memory; no message text is kept. A chat
   copied to another account by a move counts once. Daily totals are kept in `usage.json` for 90
   days, so they outlive chats Claude Code deletes. The first count after a start reads every chat
-  file once, then only the files that changed; the section reads again every 5 minutes while shown.
+  file changed in the last 90 days once; after that only the lines added since are read. The section
+  reads again every 5 minutes while shown.
 - **Changes:** one row per repo among the tab's folders, the main folder's first: lines added and
   removed on the branch since it left the remote's default branch (`origin/HEAD`, else `main` or
   `master`), uncommitted and untracked files included. **Create PR**
