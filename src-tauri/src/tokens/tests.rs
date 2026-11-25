@@ -336,6 +336,58 @@ fn a_store_held_by_another_program_is_left_alone_and_counted_once_it_is_free() {
 }
 
 #[test]
+fn a_held_store_from_a_newer_build_is_neither_moved_nor_written_and_then_opens_in_memory() {
+    let dir = TestDir::new();
+    let home = dir.path().join("acc");
+    chat(
+        &home,
+        "efefefef-efef-4fef-8fef-efefefefefef",
+        &[reply_line(
+            "m1",
+            "2026-11-25T09:00:00Z",
+            "claude-opus-5-5",
+            13,
+            1,
+        )],
+    );
+    let file = dir.path().join("usage.db");
+    let holder = rusqlite::Connection::open(&file).unwrap();
+    holder.execute_batch("CREATE TABLE later (x)").unwrap();
+    holder.pragma_update(None, "user_version", 2).unwrap();
+    holder
+        .pragma_update(None, "locking_mode", "EXCLUSIVE")
+        .unwrap();
+    holder
+        .execute_batch("BEGIN EXCLUSIVE; INSERT INTO later VALUES (1); COMMIT;")
+        .unwrap();
+    let mut ledger = Ledger::new(file.clone());
+
+    let held = ledger.view(&[(1, home.clone())], 0, NOW);
+
+    assert!(held.is_empty(), "nothing counted while it is held");
+    assert!(!file.with_extension("db.unreadable").exists());
+    drop(holder);
+    let free = ledger.view(&[(1, home)], 0, NOW);
+    assert_eq!(
+        input_of(&free[0].today, "Opus 5.5"),
+        13,
+        "counted in memory"
+    );
+    let newer = rusqlite::Connection::open(&file).unwrap();
+    let version: i64 = newer
+        .query_row("PRAGMA user_version", [], |r| r.get(0))
+        .unwrap();
+    let tables: i64 = newer
+        .query_row(
+            "SELECT count(*) FROM sqlite_master WHERE name = 'replies'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!((version, tables), (2, 0), "the newer file is untouched");
+}
+
+#[test]
 fn an_appended_tail_is_read_alone_and_a_rewritten_file_whole() {
     let dir = TestDir::new();
     let home = dir.path().join("acc");
