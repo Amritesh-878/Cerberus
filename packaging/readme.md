@@ -19,6 +19,32 @@ uploads nothing.
 Never replace an asset on a published release, since winget and anyone who checked the hash
 rely on it. Fix forward with a new version.
 
+## AUR (`cerberus-bin`)
+
+`aur/PKGBUILD` installs a release's .deb (the four binaries in `/usr/bin`, the desktop file and
+icons) and the licence. `aur/.SRCINFO` is `makepkg --printsrcinfo` of it; the gate's `aur` job
+fails if the two differ, then builds the package in an `archlinux:base-devel` container and runs
+`namcap` (`aur/check.sh`).
+
+For a tagged release, `release.yml` runs `aur/update.sh` to set `pkgver`, `pkgrel=1` and both
+hashes, builds the package from the new .deb, and attaches `cerberus-bin.PKGBUILD` and
+`cerberus-bin.SRCINFO` to the draft. It does not push to the AUR, which needs an AUR account and
+its SSH key. After publishing the release, the maintainer pushes it:
+
+```sh
+git clone ssh://aur@aur.archlinux.org/cerberus-bin.git
+cd cerberus-bin
+# Copy the two release assets in as PKGBUILD and .SRCINFO, then:
+makepkg -si          # optional: install it once to check
+git add PKGBUILD .SRCINFO
+git commit -m "Update to <version>"
+git push
+```
+
+The first push creates the package. Add a `# Maintainer:` line to the PKGBUILD there; it is not
+kept here. Commit the new `PKGBUILD` and `.SRCINFO` to `aur/` after each release too, so the gate
+checks the current one.
+
 ## winget
 
 `winget/` holds the three manifest files for the first submission, with placeholders:
