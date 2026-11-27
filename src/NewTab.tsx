@@ -2,6 +2,7 @@ import {
   createMemo,
   createSignal,
   For,
+  Index,
   Match,
   onCleanup,
   onMount,
@@ -180,37 +181,38 @@ export function NewTab(props: {
           </div>
         </Show>
         <div class="menu-sep" role="separator" />
-        <For each={entries()}>
+        {/* Rows keep their buttons when the programs are listed again, so the focused one keeps focus. */}
+        <Index each={entries()}>
           {(entry) => (
             <button
               type="button"
               class="menu-item"
-              aria-label={entry.kind === "claude" ? "Claude Code" : undefined}
-              disabled={!entry.choice}
+              aria-label={entry().kind === "claude" ? "Claude Code" : undefined}
+              disabled={!entry().choice}
               onClick={() => {
-                launch(entry.choice);
+                launch(entry().choice);
               }}
             >
               <Switch>
-                <Match when={entry.kind === "claude"}>
+                <Match when={entry().kind === "claude"}>
                   <ClaudeIcon size={14} />
                 </Match>
-                <Match when={entry.kind === "shell"}>
+                <Match when={entry().kind === "shell"}>
                   <ShellIcon />
                 </Match>
-                <Match when={entry.choice}>
+                <Match when={entry().choice}>
                   {(choice) => <ProgramIcon program={choice().id} />}
                 </Match>
               </Switch>
               <span class="menu-text">
-                {entry.kind === "shell" ? "Shell" : entry.choice?.label}
+                {entry().kind === "shell" ? "Shell" : entry().choice?.label}
               </span>
-              <Show when={entry === primary()}>
+              <Show when={entry() === primary()}>
                 <span class="menu-key">Enter</span>
               </Show>
             </button>
           )}
-        </For>
+        </Index>
         <Show when={props.programs && !claude()}>
           <p class="menu-note-line">
             Claude Code isn't installed. {claudeChoice()?.searched}
