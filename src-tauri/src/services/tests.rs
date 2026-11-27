@@ -42,6 +42,7 @@ fn test_shell() -> Option<ProgramChoice> {
         is_shell: true,
         install_command: None,
         install_shell: None,
+        searched: None,
     })
 }
 

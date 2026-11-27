@@ -1,4 +1,15 @@
-import { createSignal, For, onCleanup, onMount, Show, untrack } from "solid-js";
+import {
+  createMemo,
+  createSignal,
+  For,
+  Index,
+  Match,
+  onCleanup,
+  onMount,
+  Show,
+  Switch,
+  untrack,
+} from "solid-js";
 
 import { backdropDismiss } from "./backdrop";
 import {
@@ -15,6 +26,11 @@ import { installed, OTHER_CLIS, shellChoice } from "./tab";
 import type { Project, TabId, TreeTab } from "./tree";
 
 const WIDTH = 280;
+
+interface Entry {
+  kind: "claude" | "shell" | "cli";
+  choice: ProgramChoice | undefined;
+}
 
 export interface Launch {
   choice: ProgramChoice;
@@ -39,10 +55,26 @@ export function NewTab(props: {
   );
   const [parentId, setParentId] = createSignal<TabId | null>(null);
   const claude = () => installed(props.programs ?? [], "claude");
+  const claudeChoice = () => props.programs?.find((p) => p.id === "claude");
+  const installShellLabel = () => {
+    const id = claudeChoice()?.installShell ?? null;
+    const named = props.programs?.find((p) => p.id === id)?.label;
+    return named ?? "a shell";
+  };
   const shell = () => shellChoice(props.profiles, props.programs ?? []);
   // Listed only when installed; the guide says how to install them.
   const otherClis = () =>
     OTHER_CLIS.flatMap((id) => installed(props.programs ?? [], id) ?? []);
+  // Without Claude Code, Antigravity CLI then Codex CLI come first, so Enter opens one of them.
+  const entries = createMemo((): Entry[] => {
+    const shellEntry: Entry = { kind: "shell", choice: shell() };
+    const clis = otherClis().map((choice): Entry => ({ kind: "cli", choice }));
+    const found = claude();
+    return found
+      ? [{ kind: "claude", choice: found }, shellEntry, ...clis]
+      : [...clis, shellEntry];
+  });
+  const primary = () => entries().find((entry) => entry.choice !== undefined);
   const [height, setHeight] = createSignal(0);
   const [viewport, setViewport] = createSignal({
     width: innerWidth,
@@ -62,7 +94,6 @@ export function NewTab(props: {
       props.onLaunch({ choice, accountId: accountId(), parentId: parentId() });
   };
 
-  let primary: HTMLButtonElement | undefined;
   let box: HTMLDivElement | undefined;
   onMount(() => {
     const onResize = () => {
@@ -83,7 +114,10 @@ export function NewTab(props: {
       observer.disconnect();
       window.removeEventListener("resize", onResize);
     });
-    (primary?.disabled ? box?.querySelector("button") : primary)?.focus();
+    (
+      box?.querySelector<HTMLButtonElement>(".menu-item:not(:disabled)") ??
+      box?.querySelector("button")
+    )?.focus();
   });
 
   return (
@@ -147,49 +181,50 @@ export function NewTab(props: {
           </div>
         </Show>
         <div class="menu-sep" role="separator" />
-        <button
-          type="button"
-          class="menu-item"
-          aria-label="Claude Code"
-          disabled={!claude()}
-          ref={(el) => {
-            primary = el;
-          }}
-          onClick={() => {
-            launch(claude());
-          }}
-        >
-          <ClaudeIcon size={14} />
-          <span class="menu-text">Claude Code</span>
-          <span class="menu-key">Enter</span>
-        </button>
-        <button
-          type="button"
-          class="menu-item"
-          disabled={!shell()}
-          onClick={() => {
-            launch(shell());
-          }}
-        >
-          <ShellIcon />
-          <span class="menu-text">Shell</span>
-        </button>
-        <For each={otherClis()}>
-          {(choice) => (
+        {/* Rows keep their buttons when the programs are listed again, so the focused one keeps focus. */}
+        <Index each={entries()}>
+          {(entry) => (
             <button
               type="button"
               class="menu-item"
+              aria-label={entry().kind === "claude" ? "Claude Code" : undefined}
+              disabled={!entry().choice}
               onClick={() => {
-                launch(choice);
+                launch(entry().choice);
               }}
             >
-              <ProgramIcon program={choice.id} />
-              <span class="menu-text">{choice.label}</span>
+              <Switch>
+                <Match when={entry().kind === "claude"}>
+                  <ClaudeIcon size={14} />
+                </Match>
+                <Match when={entry().kind === "shell"}>
+                  <ShellIcon />
+                </Match>
+                <Match when={entry().choice}>
+                  {(choice) => <ProgramIcon program={choice().id} />}
+                </Match>
+              </Switch>
+              <span class="menu-text">
+                {entry().kind === "shell" ? "Shell" : entry().choice?.label}
+              </span>
+              <Show when={entry() === primary()}>
+                <span class="menu-key">Enter</span>
+              </Show>
             </button>
           )}
-        </For>
+        </Index>
         <Show when={props.programs && !claude()}>
-          <p class="menu-note-line">Claude Code isn't installed.</p>
+          <p class="menu-note-line">
+            Claude Code isn't installed. {claudeChoice()?.searched}
+          </p>
+          <Show when={claudeChoice()?.installCommand}>
+            {(command) => (
+              <p class="menu-note-line">
+                To install it, run <code class="menu-command">{command()}</code>{" "}
+                in {installShellLabel()}.
+              </p>
+            )}
+          </Show>
         </Show>
         <Show when={props.programsError !== undefined}>
           <p class="menu-note-line error">

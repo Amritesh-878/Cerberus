@@ -22,12 +22,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # Tauri's documented Linux build packages: WebKitGTK, the tray library and their headers.
+      # Tauri's documented Linux build packages, plus zsh and fish for the tests that read each shell's PATH.
       - name: Install the Linux build packages
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev zsh fish
 
       # v6.1.1 by commit. It installs the pnpm version package.json's packageManager names.
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115

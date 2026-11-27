@@ -26,6 +26,8 @@ export interface ProgramChoice {
   installCommand: string | null;
   /** The shell `installCommand` is written for; `null` means the user's own. */
   installShell: string | null;
+  /** Where the core looked, while the program is missing. */
+  searched: string | null;
 }
 
 export interface Size {

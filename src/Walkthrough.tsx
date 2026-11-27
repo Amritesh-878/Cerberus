@@ -17,13 +17,14 @@ import type { Statuses } from "./statuses";
 import {
   finishBlocker,
   nextStep,
+  otherCliOnly,
   previousStep,
   type Step,
   STEP_HEADINGS,
   STEP_LEADS,
   STEP_TITLES,
   stepDone,
-  STEPS,
+  stepsFor,
 } from "./steps";
 import { installed, shellChoice, type Tab, tabFor } from "./tab";
 
@@ -41,9 +42,12 @@ interface Props {
 }
 
 export function Walkthrough(props: Props) {
-  const [step, setStep] = createSignal<Step>(
+  const [chosen, setStep] = createSignal<Step>(
     untrack(() => props.start ?? "install"),
   );
+  const steps = () => stepsFor(props.programs);
+  // A step setup no longer has, such as Accounts once only another AI CLI is installed, shows the first.
+  const step = () => (steps().includes(chosen()) ? chosen() : "install");
   const done = (s: Step) => stepDone(s, props.profiles, props.programs);
   const [saveError, setSaveError] = createSignal<string>();
   const saved = (profiles: Profiles) => {
@@ -85,7 +89,7 @@ export function Walkthrough(props: Props) {
         </button>
       </header>
       <ol class="steps">
-        <For each={STEPS}>
+        <For each={steps()}>
           {(s, i) => (
             <li classList={{ current: s === step(), done: done(s) }}>
               <button
@@ -151,7 +155,7 @@ export function Walkthrough(props: Props) {
         {(error) => <p class="error">Setup progress not saved: {error()}</p>}
       </Show>
       <nav class="step-nav">
-        <Show when={previousStep(step())}>
+        <Show when={previousStep(step(), steps())}>
           {(back) => (
             <button
               type="button"
@@ -165,13 +169,15 @@ export function Walkthrough(props: Props) {
         </Show>
         <span class="spacer" />
         <Show
-          when={nextStep(step())}
+          when={nextStep(step(), steps())}
           fallback={
             <button
               type="button"
               class="go"
-              title={finishBlocker(props.profiles)}
-              disabled={finishBlocker(props.profiles) !== undefined}
+              title={finishBlocker(props.profiles, props.programs)}
+              disabled={
+                finishBlocker(props.profiles, props.programs) !== undefined
+              }
               onClick={() => {
                 leave();
               }}
@@ -236,6 +242,14 @@ function InstallStep(props: {
           Could not list programs: {String(props.programsError)}
         </p>
       </Show>
+      <Show when={otherCliOnly(props.programs)}>
+        {(other) => (
+          <p class="step-ok">
+            <CheckIcon /> {other().label} is installed, so tabs can run it now.
+            Claude Code and its accounts are optional.
+          </p>
+        )}
+      </Show>
       <Show
         when={claude()}
         fallback={
@@ -244,6 +258,9 @@ function InstallStep(props: {
               Claude Code isn't installed yet. To install it, run this in{" "}
               {shellLabel()}:
             </p>
+            <Show when={choice()?.searched}>
+              {(searched) => <p class="hint">{searched()}</p>}
+            </Show>
             <pre>{command()}</pre>
             <p class="step-actions">
               <button

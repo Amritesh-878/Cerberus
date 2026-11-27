@@ -19,6 +19,8 @@ pub struct ProgramChoice {
     pub install_command: Option<&'static str>,
     /// The shell `install_command` is written for; `None` means the user's own.
     pub install_shell: Option<&'static str>,
+    /// Where Cerberus looked, shown while the program is missing.
+    pub searched: Option<String>,
 }
 
 // Claude Code's image-paste key: Alt+V on Windows, Ctrl+V elsewhere.
@@ -35,6 +37,24 @@ const CLAUDE_INSTALL: (&str, Option<&str>) = (
 #[cfg(not(windows))]
 const CLAUDE_INSTALL: (&str, Option<&str>) =
     ("curl -fsSL https://claude.ai/install.sh | bash", None);
+
+/// Under the home folder, where installers put `claude` and `agy` though an app started from a launcher may lack them on PATH.
+#[cfg(unix)]
+const INSTALL_DIRS: [&str; 4] = [".local/bin", ".claude/local", ".npm-global/bin", ".bun/bin"];
+
+#[cfg(unix)]
+fn searched() -> String {
+    let dirs: Vec<String> = INSTALL_DIRS.iter().map(|d| format!("~/{d}")).collect();
+    match dirs.split_last() {
+        Some((last, rest)) => format!("Looked on PATH and in {} and {last}.", rest.join(", ")),
+        None => "Looked on PATH.".to_owned(),
+    }
+}
+
+#[cfg(windows)]
+fn searched() -> String {
+    "Looked on PATH.".to_owned()
+}
 
 /// Other AI CLIs a tab can run as a plain program, by id and label.
 const OTHER_CLIS: [(&str, &str); 2] = [("agy", "Antigravity CLI"), ("codex", "Codex CLI")];
@@ -79,6 +99,8 @@ pub fn pick_shell(choices: Vec<ProgramChoice>, saved: Option<&str>) -> Option<Pr
 
 pub struct Finder {
     dirs: Vec<PathBuf>,
+    /// Searched after PATH, so a program the login shell's PATH misses is still found.
+    fallback: Vec<PathBuf>,
     exts: Vec<String>,
     #[cfg(windows)]
     program_files: Option<PathBuf>,
@@ -89,6 +111,7 @@ pub struct Finder {
     /// Where Antigravity's installer puts `agy`, which an app started before the install has no PATH entry for.
     agy_dirs: Vec<PathBuf>,
     is_file: Box<dyn Fn(&Path) -> bool + Send + Sync>,
+    is_antigravity: Box<dyn Fn(&Path) -> bool + Send + Sync>,
 }
 
 impl Finder {
@@ -105,8 +128,20 @@ impl Finder {
         // Unix programs carry no extension, so the bare name is the one candidate.
         #[cfg(unix)]
         let exts = vec![String::new()];
+        #[cfg(unix)]
+        let fallback = env::var_os("HOME")
+            .map(|home| {
+                INSTALL_DIRS
+                    .iter()
+                    .map(|d| Path::new(&home).join(d))
+                    .collect()
+            })
+            .unwrap_or_default();
+        #[cfg(windows)]
+        let fallback = Vec::new();
         Self {
             dirs,
+            fallback,
             exts,
             #[cfg(windows)]
             program_files: env::var_os("ProgramFiles").map(PathBuf::from),
@@ -129,6 +164,7 @@ impl Finder {
             is_file: Box::new(Path::is_file),
             #[cfg(unix)]
             is_file: Box::new(is_executable),
+            is_antigravity: Box::new(crate::agy::is_antigravity),
         }
     }
 
@@ -146,10 +182,11 @@ impl Finder {
         };
         let skip = key(skip);
         self.dirs.retain(|dir| key(dir) != skip);
+        self.fallback.retain(|dir| key(dir) != skip);
         self
     }
 
-    /// Resolves a name the way `cmd` does: a path as given, else each PATH dir with each PATHEXT.
+    /// Resolves a name the way `cmd` does: a path as given, else each PATH dir with each PATHEXT, then the fallback dirs.
     pub fn find(&self, name: &str) -> Option<PathBuf> {
         let given = Path::new(name);
         if given.components().count() > 1 || given.is_absolute() {
@@ -157,7 +194,7 @@ impl Finder {
         }
         // A bare name without an extension would match npm's extensionless sh shims.
         let has_ext = given.extension().is_some();
-        self.dirs.iter().find_map(|dir| {
+        self.dirs.iter().chain(&self.fallback).find_map(|dir| {
             let exact = has_ext.then(|| dir.join(name));
             exact
                 .into_iter()
@@ -183,30 +220,34 @@ impl Finder {
             .find(|bash| (self.is_file)(bash))
     }
 
-    /// Antigravity's `agy`: from PATH only when its folder is the installer's or names it, else from the installer's folder.
+    /// Antigravity's `agy`: the first on PATH, then in the installer's folder, that is Antigravity's.
     fn agy(&self) -> Option<PathBuf> {
-        // Another program may be called `agy`, so only PATH folders that are the installer's or name it are searched.
-        let ours = |dir: &&PathBuf| {
-            let named = dir.to_string_lossy().to_lowercase();
-            self.agy_dirs.contains(dir) || named.contains("antigravity") || named.contains("agy")
+        // Another program may be called `agy`, so one outside the installer's folder or a folder naming it must prove it.
+        let ours = |candidate: &PathBuf| {
+            let dir = candidate.parent().unwrap_or(candidate);
+            self.agy_dirs.iter().any(|d| d == dir)
+                || crate::agy::names_it(dir)
+                || (self.is_antigravity)(candidate)
         };
         self.dirs
             .iter()
-            .filter(ours)
             .chain(&self.agy_dirs)
             .flat_map(|dir| {
                 self.exts
                     .iter()
                     .map(move |ext| dir.join(format!("agy{ext}")))
             })
-            .find(|candidate| (self.is_file)(candidate))
+            .filter(|candidate| (self.is_file)(candidate))
+            .find(ours)
     }
 
     pub fn choices(&self) -> Vec<ProgramChoice> {
+        let program = shown(self.find("claude"));
         let claude = ProgramChoice {
             id: "claude".to_owned(),
             label: "Claude Code".to_owned(),
-            program: shown(self.find("claude")),
+            searched: program.is_none().then(searched),
+            program,
             args: Vec::new(),
             image_paste_key: Some(CLAUDE_IMAGE_PASTE),
             is_shell: false,
@@ -226,6 +267,7 @@ impl Finder {
             is_shell: false,
             install_command: None,
             install_shell: None,
+            searched: None,
         });
         std::iter::once(claude)
             .chain(self.shells())
@@ -363,6 +405,7 @@ fn shell(id: &str, label: &str, path: Option<PathBuf>, args: &[&str]) -> Program
         is_shell: true,
         install_command: None,
         install_shell: None,
+        searched: None,
     }
 }
 
@@ -384,10 +427,12 @@ mod tests {
         let files: HashSet<PathBuf> = files.iter().map(PathBuf::from).collect();
         Finder {
             dirs: path.iter().map(PathBuf::from).collect(),
+            fallback: Vec::new(),
             exts: vec![".exe".to_owned(), ".cmd".to_owned()],
             program_files: Some(PathBuf::from(r"C:\Program Files")),
             agy_dirs: vec![PathBuf::from(r"C:\Users\u\AppData\Local\agy\bin")],
             is_file: Box::new(move |p| files.contains(p)),
+            is_antigravity: Box::new(|_| false),
         }
     }
 
@@ -539,6 +584,8 @@ mod tests {
             Some("irm https://claude.ai/install.ps1 | iex")
         );
         assert_eq!(choices[0].install_shell, Some("powershell"));
+        assert_eq!(choices[0].searched.as_deref(), Some("Looked on PATH."));
+        assert_eq!(choices[1].searched, None);
         let shells: Vec<_> = choices.iter().map(|c| c.is_shell).collect();
         assert_eq!(shells, [false, true, true, false, false]);
     }
@@ -895,12 +942,79 @@ mod tests {
         let files: HashSet<PathBuf> = files.iter().map(PathBuf::from).collect();
         Finder {
             dirs: path.iter().map(PathBuf::from).collect(),
+            fallback: INSTALL_DIRS
+                .iter()
+                .map(|d| Path::new("/Users/u").join(d))
+                .collect(),
             exts: vec![String::new()],
             login_shell: login.map(PathBuf::from),
             etc_shells: MAC_ETC_SHELLS.to_owned(),
             agy_dirs: vec![PathBuf::from("/Users/u/.local/bin")],
             is_file: Box::new(move |p| files.contains(p)),
+            // Stands in for the link and help checks, which `agy`'s own tests cover on real files.
+            is_antigravity: Box::new(|p| p.starts_with("/usr/local/bin")),
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_agy_on_path_that_proves_to_be_antigravitys_is_found_and_another_is_not() {
+        let program = |f: Finder| f.choices().into_iter().find(|c| c.id == "agy")?.program;
+
+        assert_eq!(
+            program(unix_finder(
+                &["/usr/bin", "/usr/local/bin"],
+                &["/usr/bin/agy", "/usr/local/bin/agy"],
+                None
+            ))
+            .as_deref(),
+            Some("/usr/local/bin/agy")
+        );
+        assert_eq!(
+            program(unix_finder(&["/usr/bin"], &["/usr/bin/agy"], None)),
+            None
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn claude_is_found_in_its_install_folders_when_path_lacks_them() {
+        for dir in [
+            "/Users/u/.local/bin",
+            "/Users/u/.claude/local",
+            "/Users/u/.npm-global/bin",
+            "/Users/u/.bun/bin",
+        ] {
+            let claude = format!("{dir}/claude");
+            let f = unix_finder(&["/usr/bin"], &[&claude], None);
+
+            assert_eq!(f.find("claude"), Some(PathBuf::from(&claude)), "{dir}");
+            let choice = f.choices().into_iter().next().unwrap();
+            assert_eq!(choice.program.as_deref(), Some(claude.as_str()));
+            assert_eq!(choice.searched, None);
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_path_claude_comes_before_the_install_folders_and_a_missing_one_says_where_it_looked() {
+        let f = unix_finder(
+            &["/opt/homebrew/bin"],
+            &["/opt/homebrew/bin/claude", "/Users/u/.local/bin/claude"],
+            None,
+        );
+        assert_eq!(
+            f.find("claude"),
+            Some(PathBuf::from("/opt/homebrew/bin/claude"))
+        );
+
+        let missing = unix_finder(&["/usr/bin"], &[], None).choices();
+        assert_eq!(
+            missing[0].searched.as_deref(),
+            Some(
+                "Looked on PATH and in ~/.local/bin, ~/.claude/local, ~/.npm-global/bin and ~/.bun/bin."
+            )
+        );
     }
 
     #[cfg(unix)]

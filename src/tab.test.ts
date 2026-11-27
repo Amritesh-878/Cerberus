@@ -13,6 +13,7 @@ const GIT_BASH = {
   isShell: true,
   installCommand: null,
   installShell: null,
+  searched: null,
 };
 
 test("an installed program opens a tab under its account", () => {
@@ -84,6 +85,7 @@ test("a missing program opens no tab", () => {
         isShell: false,
         installCommand: null,
         installShell: null,
+        searched: null,
       },
       { account: null, cwd: null },
     ),
@@ -100,6 +102,7 @@ function program(id: string, path: string | null): ProgramChoice {
     isShell: id !== "claude",
     installCommand: null,
     installShell: null,
+    searched: null,
   };
 }
 

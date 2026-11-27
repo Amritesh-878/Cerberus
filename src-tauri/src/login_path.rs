@@ -54,17 +54,24 @@ pub fn adopt() {
 
 // fish quotes a list with spaces between items, so it joins `PATH` itself.
 fn script_for(shell: &Path) -> String {
-    if shell.file_name().is_some_and(|name| name == "fish") {
-        format!("printf '%s%s%s' {MARK} (string join : $PATH) {MARK}")
-    } else {
-        format!(r#"printf '%s%s%s' {MARK} "$PATH" {MARK}"#)
+    let name = shell.file_name().and_then(|name| name.to_str());
+    match name {
+        Some("fish") => format!("printf '%s%s%s' {MARK} (string join : $PATH) {MARK}"),
+        // A login bash skips `.bashrc` unless a profile file sources it, though a terminal's bash reads it.
+        Some("bash") => format!(
+            r#"[ -r ~/.bashrc ] && . ~/.bashrc >/dev/null 2>&1; printf '%s%s%s' {MARK} "$PATH" {MARK}"#
+        ),
+        _ => format!(r#"printf '%s%s%s' {MARK} "$PATH" {MARK}"#),
     }
 }
 
 fn read_within(shell: &Path, timeout: Duration) -> Option<String> {
+    read_login(crate::user_env::command(shell), shell, timeout)
+}
+
+fn read_login(mut command: Command, shell: &Path, timeout: Duration) -> Option<String> {
     let deadline = Instant::now() + timeout;
     // Its own session, since an interactive shell in a background group of the app's terminal stops on SIGTTOU.
-    let mut command = Command::new(shell);
     command
         .args(["-ilc", &script_for(shell)])
         .stdin(Stdio::null())
@@ -178,6 +185,68 @@ __CERBERUS_"
         assert!(script_for(Path::new("/opt/homebrew/bin/fish")).contains("(string join : $PATH)"));
         assert!(script_for(Path::new("/bin/zsh")).contains(r#""$PATH""#));
         assert!(script_for(Path::new("/bin/bash")).contains(r#""$PATH""#));
+        assert!(script_for(Path::new("/bin/bash")).contains(". ~/.bashrc"));
+        assert!(!script_for(Path::new("/bin/zsh")).contains("bashrc"));
+    }
+
+    /// A shell run as the app runs it, in a home whose rc file adds `~/ibin` only for interactive shells.
+    #[cfg(target_os = "linux")]
+    fn interactive_only(name: &str, rc: &str, body: &str) {
+        let shell = crate::programs::Finder::from_env()
+            .find(name)
+            .unwrap_or_else(|| panic!("{name} is installed; the Linux gate installs it"));
+        let home = crate::accounts::testdir::TestDir::new();
+        let file = home.path().join(rc);
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(&file, body).unwrap();
+        let mut command = Command::new(&shell);
+        command
+            .env_clear()
+            .env("HOME", home.path())
+            .env("PATH", "/usr/bin:/bin")
+            .env("ZDOTDIR", home.path())
+            .env("XDG_CONFIG_HOME", home.path().join(".config"));
+        let path = read_login(command, &shell, Duration::from_secs(20)).unwrap();
+        let ibin = home.path().join("ibin");
+        assert!(
+            path.split(':').any(|dir| Path::new(dir) == ibin),
+            "{name}: {path}"
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_folder_bash_adds_only_for_interactive_shells_is_read() {
+        interactive_only(
+            "bash",
+            ".bashrc",
+            "case $- in *i*) PATH=\"$HOME/ibin:$PATH\";; *) return;; esac
+",
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_folder_zsh_adds_only_for_interactive_shells_is_read() {
+        interactive_only(
+            "zsh",
+            ".zshrc",
+            "[[ -o interactive ]] && path=(\"$HOME/ibin\" $path)
+",
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_folder_fish_adds_only_for_interactive_shells_is_read() {
+        interactive_only(
+            "fish",
+            ".config/fish/config.fish",
+            "if status is-interactive
+    set -gx PATH $HOME/ibin $PATH
+end
+",
+        );
     }
 
     #[test]

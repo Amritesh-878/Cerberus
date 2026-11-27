@@ -52,6 +52,39 @@ test("the install step shows the command and shell the core reports", async () =
   expect(open?.disabled).toBe(false);
 });
 
+const AGY_ONLY = [
+  {
+    ...CHOICES[0],
+    program: null,
+    installCommand: "curl -fsSL x | bash",
+    installShell: null,
+    searched: "Looked on PATH and in ~/.local/bin.",
+  },
+  { ...CHOICES[1], id: "fish", label: "fish", program: "/usr/bin/fish" },
+  {
+    ...CHOICES[0],
+    id: "agy",
+    label: "Antigravity CLI",
+    program: "/usr/bin/agy",
+    imagePasteKey: null,
+    installCommand: null,
+  },
+];
+
+test("with only Antigravity CLI, setup is one step that finishes without an account", async () => {
+  const root = await renderApp(() => EMPTY, { list_programs: () => AGY_ONLY });
+
+  expect(
+    [...root.querySelectorAll(".steps .step-name")].map((s) => s.textContent),
+  ).toEqual(["Install"]);
+  expect(root.textContent).toContain(
+    "Antigravity CLI is installed, so tabs can run it now.",
+  );
+  expect(root.textContent).toContain("Looked on PATH and in ~/.local/bin.");
+  expect(root.textContent).not.toContain("Next");
+  expect(button(root, "Finish").disabled).toBe(false);
+});
+
 const GIT_BASH = {
   ...CHOICES[1],
   id: "git-bash",
@@ -523,16 +556,64 @@ test("the new tab box preselects the default account and shows its details", asy
   ).toBe("user@example.com · Pro");
 });
 
-test("Claude Code cannot be opened when it is not installed", async () => {
+function menuTexts(box: Element): (string | undefined)[] {
+  return [...box.querySelectorAll(".menu-item")].map((b) =>
+    b.querySelector(".menu-text")?.textContent.trim(),
+  );
+}
+
+test("without Claude Code the menu offers the shell first and says where it looked and how to install it", async () => {
   const root = await renderApp(() => SAVED, {
     ...ptyCore().core,
     list_programs: () =>
-      CHOICES.map((c) => (c.id === "claude" ? { ...c, program: null } : c)),
+      CHOICES.map((c) =>
+        c.id === "claude"
+          ? { ...c, program: null, searched: "Looked on PATH." }
+          : c,
+      ),
   });
   await newProject(root);
+  const box = newTabBox(root);
 
-  expect(button(newTabBox(root), "Claude Code").disabled).toBe(true);
-  expect(newTabBox(root).textContent).toContain("Claude Code isn't installed.");
+  expect(menuTexts(box)).toEqual(["Shell"]);
+  expect(document.activeElement?.textContent).toContain("Shell");
+  expect(box.textContent).toContain(
+    "Claude Code isn't installed. Looked on PATH.",
+  );
+  expect(box.querySelector(".menu-command")?.textContent).toBe(
+    "irm https://claude.ai/install.ps1 | iex",
+  );
+  expect(box.textContent).toContain("in PowerShell.");
+});
+
+test("an Antigravity CLI user gets it first in the menu, with the Enter key, and Claude Code below", async () => {
+  const pty = ptyCore();
+  const root = await renderApp(() => SAVED, {
+    ...pty.core,
+    list_programs: () => AGY_ONLY,
+  });
+  await newProject(root);
+  const box = newTabBox(root);
+
+  expect(menuTexts(box)).toEqual(["Antigravity CLI", "Shell"]);
+  expect(
+    box.querySelector(".menu-item .menu-key")?.parentElement?.textContent,
+  ).toContain("Antigravity CLI");
+  expect(document.activeElement?.textContent).toContain("Antigravity CLI");
+  const note = box.querySelector(".menu-note-line");
+  expect(note?.previousElementSibling?.classList.contains("menu-item")).toBe(
+    true,
+  );
+  expect(note?.textContent).toContain("Claude Code isn't installed.");
+  expect(box.textContent).toContain("in a shell.");
+
+  const focused = document.activeElement;
+  expect(focused).toBeInstanceOf(HTMLButtonElement);
+  if (focused instanceof HTMLButtonElement) focused.click();
+  await settle();
+  expect(field(field(pty.spawned[0], "request"), "program")).toBe(
+    "/usr/bin/agy",
+  );
 });
 
 test("signing in from the walkthrough returns to the same step", async () => {

@@ -8,6 +8,8 @@ import { type Gap, GAP_TEXT } from "./steps";
 export function Home(props: {
   /** The project the last shown tab is in, where the main button opens a new tab. */
   project: string | undefined;
+  /** The main button, named for the program the new tab menu puts first. */
+  newTabLabel: string;
   hasProjects: boolean;
   gaps: readonly Gap[];
   treeError: string | undefined;
@@ -88,7 +90,7 @@ export function Home(props: {
                 props.onNewTab(event.currentTarget.getBoundingClientRect());
               }}
             >
-              New Claude Code tab
+              {props.newTabLabel}
             </button>
             <button
               type="button"

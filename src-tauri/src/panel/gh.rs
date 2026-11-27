@@ -186,7 +186,7 @@ impl PrCache {
 }
 
 fn gh_command(gh: &Path, folder: &Path) -> Command {
-    let mut command = Command::new(gh);
+    let mut command = crate::user_env::command(gh);
     command
         .current_dir(folder)
         .env("GH_PROMPT_DISABLED", "1")

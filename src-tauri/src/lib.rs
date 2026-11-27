@@ -1,4 +1,5 @@
 mod accounts;
+mod agy;
 mod blocking;
 mod bridge;
 mod cards;
@@ -25,6 +26,7 @@ mod sessions;
 mod suggestions;
 mod tasks;
 mod tokens;
+mod user_env;
 #[cfg(windows)]
 mod winsec;
 mod wrapper;
@@ -77,6 +79,8 @@ pub fn live_helper() {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(target_os = "linux")]
+    user_env::keep_image_fds_from_children();
     #[cfg(unix)]
     login_path::adopt();
     let context = tauri::generate_context!();

@@ -26,6 +26,7 @@ export const CHOICES: ProgramChoice[] = [
     isShell: false,
     installCommand: "irm https://claude.ai/install.ps1 | iex",
     installShell: "powershell",
+    searched: null,
   },
   {
     id: "powershell",
@@ -36,6 +37,7 @@ export const CHOICES: ProgramChoice[] = [
     isShell: true,
     installCommand: null,
     installShell: null,
+    searched: null,
   },
 ];
 

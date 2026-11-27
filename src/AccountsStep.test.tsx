@@ -42,6 +42,7 @@ const CLAUDE: ProgramChoice = {
   isShell: false,
   installCommand: null,
   installShell: null,
+  searched: null,
 };
 
 let dispose: (() => void) | undefined;
