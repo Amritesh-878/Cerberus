@@ -1,7 +1,7 @@
 //! An AppImage's `AppRun` prepends the image's folders to `LD_LIBRARY_PATH` and others and saves no old value, so children lose those entries.
 
 use std::ffi::OsStr;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use portable_pty::CommandBuilder;
@@ -31,6 +31,37 @@ pub fn changes(vars: &[(String, String)]) -> Vec<Change> {
         .collect()
 }
 
+/// Where to work from instead of `cwd` when `AppRun` left it inside the image: the folder the image was started from, else home.
+pub fn start_dir(vars: &[(String, String)], cwd: &Path) -> Option<PathBuf> {
+    let get = |name: &str| vars.iter().find(|(n, _)| n == name).map(|(_, v)| v);
+    let (Some(_), Some(appdir)) = (get("APPIMAGE"), get("APPDIR")) else {
+        return None;
+    };
+    if !cwd.starts_with(appdir) {
+        return None;
+    }
+    ["OWD", "HOME"]
+        .into_iter()
+        .filter_map(get)
+        .find(|dir| dir.starts_with('/') && !Path::new(dir).starts_with(appdir))
+        .map(PathBuf::from)
+}
+
+/// Run first: a child that inherits a working folder inside the image keeps its mount busy after the app quits.
+pub fn leave_image_dir() {
+    let Ok(cwd) = std::env::current_dir() else {
+        return;
+    };
+    if let Some(dir) = start_dir(&own_vars(), &cwd)
+        && let Err(e) = std::env::set_current_dir(&dir)
+    {
+        eprintln!(
+            "could not leave the AppImage's folder for {}: {e}",
+            dir.display()
+        );
+    }
+}
+
 /// A `:` list without its entries inside the image, `None` when it has none there.
 fn outside(name: &str, value: &str, appdir: &Path) -> Option<Option<String>> {
     let entries: Vec<&str> = value.split(':').collect();
@@ -39,16 +70,20 @@ fn outside(name: &str, value: &str, appdir: &Path) -> Option<Option<String>> {
         return None;
     }
     let lead = entries.iter().take_while(|e| inside(e)).count();
-    // The GTK hook adds `/usr/share` right after the image's own folders.
-    let hook_added =
-        (name == "XDG_DATA_DIRS" && entries.get(lead) == Some(&"/usr/share")).then_some(lead);
+    let rest = entries.get(lead + 1..).unwrap_or_default();
+    // The GTK hook adds `/usr/share` right after the image's folders; it goes only when the user's value has its own, since a set value without it hides the system's data.
+    let hook_added = name == "XDG_DATA_DIRS"
+        && lead > 0
+        && entries.get(lead) == Some(&"/usr/share")
+        && (rest.contains(&"/usr/share") || rest.iter().all(|e| e.is_empty()));
     let kept: Vec<&str> = entries
         .iter()
         .enumerate()
-        .filter(|&(at, entry)| Some(at) != hook_added && !entry.is_empty() && !inside(entry))
+        .filter(|&(at, entry)| !(hook_added && at == lead) && !inside(entry))
         .map(|(_, entry)| *entry)
         .collect();
-    Some((!kept.is_empty()).then(|| kept.join(":")))
+    // Only empty parts left means the user never set it: `AppRun` joins the image's folders to an unset value with a `:`.
+    Some((!kept.iter().all(|e| e.is_empty())).then(|| kept.join(":")))
 }
 
 /// A process with the user's environment, for anything Cerberus starts outside a tab.
@@ -112,7 +147,7 @@ mod tests {
             (
                 "XDG_DATA_DIRS",
                 format!(
-                    "{d}/usr/share/:{d}/usr/share:/usr/share:/usr/local/share:/var/lib/flatpak/exports/share"
+                    "{d}/usr/share/:{d}/usr/share:/usr/share:/var/lib/flatpak/exports/share:/usr/local/share:/usr/share"
                 ),
             ),
             (
@@ -210,21 +245,73 @@ mod tests {
         );
     }
 
+    fn with(name: &str, value: String) -> Vec<(String, String)> {
+        let mut vars = image_env(&[]);
+        vars.retain(|(n, _)| n != name);
+        vars.push((name.to_owned(), value));
+        vars
+    }
+
     #[test]
-    fn the_gtk_hooks_usr_share_goes_but_the_users_own_stays() {
-        let cleaned = after(&image_env(&[]));
-        assert_eq!(
-            value(&cleaned, "XDG_DATA_DIRS"),
-            Some("/usr/local/share:/var/lib/flatpak/exports/share")
+    fn the_gtk_hooks_usr_share_goes_when_the_users_own_value_has_it() {
+        let vars = with(
+            "XDG_DATA_DIRS",
+            format!(
+                "{APPDIR}/usr/share/:{APPDIR}/usr/share:/usr/share:/usr/local/share:/usr/share"
+            ),
         );
 
-        let mut unset = image_env(&[]);
-        unset.retain(|(n, _)| n != "XDG_DATA_DIRS");
-        unset.push((
-            "XDG_DATA_DIRS".to_owned(),
+        assert_eq!(
+            value(&after(&vars), "XDG_DATA_DIRS"),
+            Some("/usr/local/share:/usr/share")
+        );
+    }
+
+    #[test]
+    fn the_gtk_hooks_usr_share_stays_when_the_users_own_value_lacks_it() {
+        let vars = with(
+            "XDG_DATA_DIRS",
+            format!(
+                "{APPDIR}/usr/share/:{APPDIR}/usr/share:/usr/share:/var/lib/flatpak/exports/share"
+            ),
+        );
+
+        assert_eq!(
+            value(&after(&vars), "XDG_DATA_DIRS"),
+            Some("/usr/share:/var/lib/flatpak/exports/share")
+        );
+    }
+
+    #[test]
+    fn an_xdg_data_dirs_the_user_never_set_is_unset_again() {
+        let vars = with(
+            "XDG_DATA_DIRS",
             format!("{APPDIR}/usr/share/:{APPDIR}/usr/share:/usr/share:"),
-        ));
-        assert_eq!(value(&after(&unset), "XDG_DATA_DIRS"), None);
+        );
+
+        assert_eq!(value(&after(&vars), "XDG_DATA_DIRS"), None);
+    }
+
+    #[test]
+    fn a_usr_share_with_no_image_folder_before_it_is_the_users() {
+        let vars = with(
+            "XDG_DATA_DIRS",
+            format!("/usr/share:{APPDIR}/usr/share:/opt/data"),
+        );
+
+        assert_eq!(
+            value(&after(&vars), "XDG_DATA_DIRS"),
+            Some("/usr/share:/opt/data")
+        );
+    }
+
+    #[test]
+    fn the_users_own_empty_path_parts_are_kept() {
+        let inner = with("PATH", format!("{APPDIR}/usr/bin/:/usr/bin::/opt/tools"));
+        let trailing = with("PATH", format!("{APPDIR}/usr/bin/:/usr/bin:"));
+
+        assert_eq!(value(&after(&inner), "PATH"), Some("/usr/bin::/opt/tools"));
+        assert_eq!(value(&after(&trailing), "PATH"), Some("/usr/bin:"));
     }
 
     #[test]
@@ -235,6 +322,23 @@ mod tests {
             value(&after(&vars), "MANPATH"),
             Some("/tmp/.mount_CerberAb12x/share/man")
         );
+    }
+
+    #[test]
+    fn a_working_folder_inside_the_image_becomes_the_one_it_was_started_from() {
+        let vars = image_env(&[]);
+        let inside = Path::new(APPDIR).join("usr");
+
+        assert_eq!(start_dir(&vars, &inside), Some(PathBuf::from("/home/u")));
+        assert_eq!(start_dir(&vars, Path::new("/home/u/code")), None);
+
+        let mut no_owd = with("HOME", "/home/v".to_owned());
+        no_owd.retain(|(n, _)| n != "OWD");
+        assert_eq!(start_dir(&no_owd, &inside), Some(PathBuf::from("/home/v")));
+
+        let mut plain = image_env(&[]);
+        plain.retain(|(n, _)| n != "APPIMAGE");
+        assert_eq!(start_dir(&plain, &inside), None);
     }
 
     #[test]
