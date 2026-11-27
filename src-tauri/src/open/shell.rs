@@ -51,36 +51,36 @@ pub fn console() -> ExitCode {
         .ok()
         .and_then(|exe| app_dir(&exe))
         .map(|dir| dir.join(APP));
-    console_starting(app)
+    exit_code(console_starting(app))
 }
 
-/// The AppImage's `cerberus` script runs the app's own binary; the image is started anew, since its mount ends with this process.
+/// The AppImage's `cerberus` script runs the app's own binary, which exits with this; the image is started anew, since its mount ends with this process.
 #[cfg(target_os = "linux")]
-pub fn appimage_console() -> ExitCode {
+pub fn appimage_console() -> i32 {
     console_starting(std::env::var_os("APPIMAGE").map(PathBuf::from))
 }
 
-fn console_starting(app: Option<PathBuf>) -> ExitCode {
+fn console_starting(app: Option<PathBuf>) -> i32 {
     let args = own_arguments();
     match checked(IDENTIFIER, &args) {
         Checked::Exit(code, message) => {
             say(code, &message);
-            exit_code(code)
+            code
         }
         Checked::Run(command, note) => match app.map(|app| start_app(&app, &command)) {
             Some(Ok(())) => {
                 if let Some(note) = note {
                     say(0, &note);
                 }
-                ExitCode::SUCCESS
+                0
             }
             Some(Err(e)) => {
                 say(1, &format!("could not start Cerberus: {e}"));
-                ExitCode::FAILURE
+                1
             }
             None => {
                 say(1, "could not find the folder this command runs from");
-                ExitCode::FAILURE
+                1
             }
         },
     }

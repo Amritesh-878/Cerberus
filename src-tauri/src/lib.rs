@@ -82,7 +82,7 @@ pub fn run() {
     // Before the login shell read, which can take seconds, since the command answers and exits.
     #[cfg(target_os = "linux")]
     if std::env::var_os(cli_link::CLI_VAR).is_some() {
-        open::appimage_console().exit_process();
+        std::process::exit(open::appimage_console());
     }
     #[cfg(unix)]
     login_path::adopt();
