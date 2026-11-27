@@ -134,7 +134,7 @@ fn runs(exe: &Path, image: Option<&Path>, home: &Path) -> String {
         let target = path
             .parent()
             .map_or(target.clone(), |dir| dir.join(&target));
-        return if target == exe.with_file_name(COMMAND) {
+        return if same_file(&target, &exe.with_file_name(COMMAND)) {
             "`cerberus` runs this app.".to_owned()
         } else if target.exists() {
             format!("`cerberus` runs {}.", target.display())
@@ -246,6 +246,14 @@ fn link(exe: &Path, home: &Path) -> Result<(), LinkError> {
     fs::create_dir_all(&dir)?;
     symlink(&target, &link)?;
     Ok(())
+}
+
+// A link written as `../x` and the app's own path name one file without matching as text.
+fn same_file(a: &Path, b: &Path) -> bool {
+    a == b
+        || fs::canonicalize(a)
+            .ok()
+            .is_some_and(|a| fs::canonicalize(b).ok() == Some(a))
 }
 
 fn is_our_script(path: &Path) -> bool {
