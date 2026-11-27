@@ -31,7 +31,7 @@ pub fn changes(vars: &[(String, String)]) -> Vec<Change> {
         .collect()
 }
 
-/// Where to work from instead of `cwd` when `AppRun` left it inside the image: the folder the image was started from, else home.
+/// Where a child works from instead of `cwd` when `AppRun` left it inside the image: the folder the image was started from, else home.
 pub fn start_dir(vars: &[(String, String)], cwd: &Path) -> Option<PathBuf> {
     let get = |name: &str| vars.iter().find(|(n, _)| n == name).map(|(_, v)| v);
     let (Some(_), Some(appdir)) = (get("APPIMAGE"), get("APPDIR")) else {
@@ -45,21 +45,6 @@ pub fn start_dir(vars: &[(String, String)], cwd: &Path) -> Option<PathBuf> {
         .filter_map(get)
         .find(|dir| dir.starts_with('/') && !Path::new(dir).starts_with(appdir))
         .map(PathBuf::from)
-}
-
-/// Run first: a child that inherits a working folder inside the image keeps its mount busy after the app quits.
-pub fn leave_image_dir() {
-    let Ok(cwd) = std::env::current_dir() else {
-        return;
-    };
-    if let Some(dir) = start_dir(&own_vars(), &cwd)
-        && let Err(e) = std::env::set_current_dir(&dir)
-    {
-        eprintln!(
-            "could not leave the AppImage's folder for {}: {e}",
-            dir.display()
-        );
-    }
 }
 
 /// A `:` list without its entries inside the image, `None` when it has none there.
@@ -89,11 +74,19 @@ fn outside(name: &str, value: &str, appdir: &Path) -> Option<Option<String>> {
 /// A process with the user's environment, for anything Cerberus starts outside a tab.
 pub fn command(program: impl AsRef<OsStr>) -> Command {
     let mut command = Command::new(program);
-    for (name, value) in changes(&own_vars()) {
+    let vars = own_vars();
+    for (name, value) in changes(&vars) {
         match value {
             Some(value) => command.env(name, value),
             None => command.env_remove(name),
         };
+    }
+    // The app stays in the image, whose WebKit starts its helpers by relative path; a child there would keep the mount busy.
+    if let Some(dir) = std::env::current_dir()
+        .ok()
+        .and_then(|cwd| start_dir(&vars, &cwd))
+    {
+        command.current_dir(dir);
     }
     command
 }

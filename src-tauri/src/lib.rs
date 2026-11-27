@@ -80,7 +80,6 @@ pub fn live_helper() {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    user_env::leave_image_dir();
     // Before the login shell read, which can take seconds, since the command answers and exits.
     #[cfg(target_os = "linux")]
     if std::env::var_os(cli_link::CLI_VAR).is_some() {
