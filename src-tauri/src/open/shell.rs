@@ -1,5 +1,5 @@
 use std::path::Path;
-use std::process::{Command as Process, ExitCode, Stdio};
+use std::process::{ExitCode, Stdio};
 
 use crate::open::{Checked, Command, check, pipe};
 use crate::saved::{self, TreeError};
@@ -84,7 +84,7 @@ fn app_dir(exe: &Path) -> Option<std::path::PathBuf> {
 
 /// Starts the app on its own, so closing the shell or pressing Ctrl+C leaves it running.
 fn start_app(app: &Path, command: &Command) -> std::io::Result<()> {
-    let mut process = Process::new(app);
+    let mut process = crate::user_env::command(app);
     if let Command::Open(spec) = command {
         process.arg("open").arg(spec.to_string());
     }

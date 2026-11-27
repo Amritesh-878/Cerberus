@@ -37,9 +37,9 @@ pub fn open(target: &OsStr) -> io::Result<()> {
 /// Opens a folder in the file manager or a URL in the browser, as a double-click would.
 #[cfg(unix)]
 pub fn open(target: &OsStr) -> io::Result<()> {
-    use std::process::{Command, Stdio};
+    use std::process::Stdio;
 
-    let mut command = Command::new(if cfg!(target_os = "macos") {
+    let mut command = crate::user_env::command(if cfg!(target_os = "macos") {
         "/usr/bin/open"
     } else {
         "xdg-open"

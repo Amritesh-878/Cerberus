@@ -281,7 +281,7 @@ pub fn add_worktree(
     if folder.exists() {
         return Err(format!("{} already exists", folder.display()));
     }
-    let mut command = std::process::Command::new(git);
+    let mut command = crate::user_env::command(git);
     command
         .args(["worktree", "add", "-b", branch, "--"])
         .arg(folder)

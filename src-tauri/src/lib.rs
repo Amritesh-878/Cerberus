@@ -25,6 +25,7 @@ mod sessions;
 mod suggestions;
 mod tasks;
 mod tokens;
+mod user_env;
 #[cfg(windows)]
 mod winsec;
 mod wrapper;

@@ -1,7 +1,6 @@
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::time::Duration;
 
 use crate::live::files::is_private;
@@ -60,7 +59,7 @@ impl Git {
     }
 
     fn output_within(&self, folder: &Path, args: &[&str], timeout: Duration) -> Option<String> {
-        let mut command = Command::new(&self.program);
+        let mut command = crate::user_env::command(&self.program);
         command
             .args(args)
             .current_dir(folder)
@@ -101,7 +100,7 @@ impl Git {
     }
 
     fn in_folder(&self, folder: &Path, args: &[&str]) -> Option<Vec<u8>> {
-        let mut command = Command::new(&self.program);
+        let mut command = crate::user_env::command(&self.program);
         command
             .args(args)
             .current_dir(folder)
@@ -360,6 +359,7 @@ fn text_lines(path: &Path) -> u64 {
 #[cfg(test)]
 pub(crate) mod tests {
     use std::fs;
+    use std::process::Command;
 
     use super::*;
     use crate::accounts::testdir::TestDir;

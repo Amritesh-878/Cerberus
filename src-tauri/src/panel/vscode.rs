@@ -48,9 +48,9 @@ fn resolve(
 
 /// Starts VS Code on the folder, detached, with the folder passed as an argument and no shell between.
 pub fn open(code: &Path, folder: &Path) -> io::Result<()> {
-    use std::process::{Command, Stdio};
+    use std::process::Stdio;
 
-    let mut command = Command::new(code);
+    let mut command = crate::user_env::command(code);
     command
         .arg(folder)
         .stdin(Stdio::null())

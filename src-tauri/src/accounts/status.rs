@@ -1,5 +1,4 @@
 use std::path::Path;
-use std::process::Command;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -38,7 +37,7 @@ pub fn read(claude: Option<&Path>, config_dir: Option<&Path>, timeout: Duration)
     let Some(claude) = claude else {
         return unknown("Claude Code is not installed");
     };
-    let mut command = Command::new(claude);
+    let mut command = crate::user_env::command(claude);
     command.args(["auth", "status", "--json"]);
     match config_dir {
         Some(dir) => command.env("CLAUDE_CONFIG_DIR", dir),

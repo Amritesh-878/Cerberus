@@ -308,6 +308,7 @@ fn command_for(request: &SpawnRequest) -> Result<CommandBuilder, PtyError> {
     for (name, value) in &request.env {
         command.env(name, value);
     }
+    crate::user_env::restore(&mut command);
     Ok(command)
 }
 
