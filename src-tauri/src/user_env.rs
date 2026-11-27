@@ -1,7 +1,7 @@
 //! An AppImage's `AppRun` prepends the image's folders to `LD_LIBRARY_PATH` and others and saves no old value, so children lose those entries.
 
 use std::ffi::OsStr;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use portable_pty::CommandBuilder;
@@ -29,6 +29,37 @@ pub fn changes(vars: &[(String, String)]) -> Vec<Change> {
             outside(name, value, appdir).map(|kept| (name.clone(), kept))
         })
         .collect()
+}
+
+/// Where to work from instead of `cwd` when `AppRun` left it inside the image: the folder the image was started from, else home.
+pub fn start_dir(vars: &[(String, String)], cwd: &Path) -> Option<PathBuf> {
+    let get = |name: &str| vars.iter().find(|(n, _)| n == name).map(|(_, v)| v);
+    let (Some(_), Some(appdir)) = (get("APPIMAGE"), get("APPDIR")) else {
+        return None;
+    };
+    if !cwd.starts_with(appdir) {
+        return None;
+    }
+    ["OWD", "HOME"]
+        .into_iter()
+        .filter_map(get)
+        .find(|dir| dir.starts_with('/') && !Path::new(dir).starts_with(appdir))
+        .map(PathBuf::from)
+}
+
+/// Run first: a child that inherits a working folder inside the image keeps its mount busy after the app quits.
+pub fn leave_image_dir() {
+    let Ok(cwd) = std::env::current_dir() else {
+        return;
+    };
+    if let Some(dir) = start_dir(&own_vars(), &cwd)
+        && let Err(e) = std::env::set_current_dir(&dir)
+    {
+        eprintln!(
+            "could not leave the AppImage's folder for {}: {e}",
+            dir.display()
+        );
+    }
 }
 
 /// A `:` list without its entries inside the image, `None` when it has none there.
@@ -291,6 +322,23 @@ mod tests {
             value(&after(&vars), "MANPATH"),
             Some("/tmp/.mount_CerberAb12x/share/man")
         );
+    }
+
+    #[test]
+    fn a_working_folder_inside_the_image_becomes_the_one_it_was_started_from() {
+        let vars = image_env(&[]);
+        let inside = Path::new(APPDIR).join("usr");
+
+        assert_eq!(start_dir(&vars, &inside), Some(PathBuf::from("/home/u")));
+        assert_eq!(start_dir(&vars, Path::new("/home/u/code")), None);
+
+        let mut no_owd = with("HOME", "/home/v".to_owned());
+        no_owd.retain(|(n, _)| n != "OWD");
+        assert_eq!(start_dir(&no_owd, &inside), Some(PathBuf::from("/home/v")));
+
+        let mut plain = image_env(&[]);
+        plain.retain(|(n, _)| n != "APPIMAGE");
+        assert_eq!(start_dir(&plain, &inside), None);
     }
 
     #[test]

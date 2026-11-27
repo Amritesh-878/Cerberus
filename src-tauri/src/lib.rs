@@ -79,6 +79,7 @@ pub fn live_helper() {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    user_env::leave_image_dir();
     #[cfg(unix)]
     login_path::adopt();
     let context = tauri::generate_context!();
