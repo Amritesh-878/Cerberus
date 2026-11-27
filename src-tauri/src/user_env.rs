@@ -105,6 +105,44 @@ pub fn restore(builder: &mut CommandBuilder) {
     }
 }
 
+/// The open files that point into the image, which the AppImage runtime leaves open for children to inherit.
+#[cfg(any(target_os = "linux", test))]
+fn image_fds(open: &[(i32, PathBuf)], appdir: &Path) -> Vec<i32> {
+    open.iter()
+        .filter(|(fd, target)| *fd > 2 && target.starts_with(appdir))
+        .map(|(fd, _)| *fd)
+        .collect()
+}
+
+/// Run first: a child holding the runtime's open folder in the image keeps that mount after the app, or the `cerberus` command, ends.
+#[cfg(target_os = "linux")]
+pub fn keep_image_fds_from_children() {
+    let vars = own_vars();
+    let get = |name: &str| vars.iter().find(|(n, _)| n == name).map(|(_, v)| v);
+    let (Some(_), Some(appdir)) = (get("APPIMAGE"), get("APPDIR")) else {
+        return;
+    };
+    let Ok(entries) = std::fs::read_dir("/proc/self/fd") else {
+        return;
+    };
+    let open: Vec<(i32, PathBuf)> = entries
+        .flatten()
+        .filter_map(|entry| {
+            let fd = entry.file_name().to_str()?.parse().ok()?;
+            Some((fd, std::fs::read_link(entry.path()).ok()?))
+        })
+        .collect();
+    for fd in image_fds(&open, Path::new(appdir)) {
+        // SAFETY: fcntl only changes the flag on a descriptor this process holds.
+        if unsafe { libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC) } == -1 {
+            eprintln!(
+                "could not keep a file in the AppImage from child programs: {}",
+                std::io::Error::last_os_error()
+            );
+        }
+    }
+}
+
 // A variable that isn't Unicode was not set by the start scripts, so it is left alone.
 fn own_vars() -> Vec<(String, String)> {
     std::env::vars_os()
@@ -332,6 +370,20 @@ mod tests {
         let mut plain = image_env(&[]);
         plain.retain(|(n, _)| n != "APPIMAGE");
         assert_eq!(start_dir(&plain, &inside), None);
+    }
+
+    #[test]
+    fn only_files_open_in_the_image_are_kept_from_children() {
+        let open = [
+            (0, PathBuf::from("/dev/pts/1")),
+            (1, PathBuf::from(APPDIR)),
+            (3, PathBuf::from("/home/u/Apps/Cerberus.AppImage")),
+            (1023, PathBuf::from(APPDIR)),
+            (40, Path::new(APPDIR).join("usr/lib/libgtk-3.so.0")),
+            (41, PathBuf::from("/tmp/.mount_CerberAb12x")),
+        ];
+
+        assert_eq!(image_fds(&open, Path::new(APPDIR)), [1023, 40]);
     }
 
     #[test]

@@ -79,6 +79,8 @@ pub fn live_helper() {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(target_os = "linux")]
+    user_env::keep_image_fds_from_children();
     #[cfg(unix)]
     login_path::adopt();
     let context = tauri::generate_context!();
