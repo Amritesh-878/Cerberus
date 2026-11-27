@@ -4,6 +4,7 @@ mod blocking;
 mod bridge;
 mod cards;
 mod cli_link;
+mod cli_script;
 mod commands;
 mod findchat;
 mod handback;
