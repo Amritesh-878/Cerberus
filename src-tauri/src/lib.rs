@@ -80,6 +80,8 @@ pub fn live_helper() {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(target_os = "linux")]
+    user_env::keep_image_fds_from_children();
     // Before the login shell read, which can take seconds, since the command answers and exits.
     #[cfg(target_os = "linux")]
     if std::env::var_os(cli_link::CLI_VAR).is_some() {
