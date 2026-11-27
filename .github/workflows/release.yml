@@ -191,7 +191,7 @@ jobs:
 
       - name: Build the package and lint it
         working-directory: /home/builder/aur
-        run: sh "$GITHUB_WORKSPACE/packaging/aur/check.sh"
+        run: bash "$GITHUB_WORKSPACE/packaging/aur/check.sh"
 
       - uses: actions/upload-artifact@v7
         with:

@@ -104,7 +104,7 @@ jobs:
 
       - name: Build the package and lint it
         working-directory: /home/builder/aur
-        run: sh "$GITHUB_WORKSPACE/packaging/aur/check.sh"
+        run: bash "$GITHUB_WORKSPACE/packaging/aur/check.sh"
 
   # The ruleset requires one check named `gate`; a skipped required job would count as a pass.
   gate:
