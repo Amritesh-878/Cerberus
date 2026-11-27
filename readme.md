@@ -65,11 +65,14 @@ adds it to the app menu:
 sudo apt install ./Cerberus_<version>_amd64.deb
 ```
 
-To use `cerberus` in a terminal from the .deb, click **Install `cerberus` command** in **Accounts**.
-It links `~/.local/bin/cerberus`, which must come before `/usr/bin` on your `PATH` (Ubuntu's
-`~/.profile` puts it first), since `/usr/bin/cerberus` is the app itself. Cerberus says so if it
-doesn't, and `cerberus-cli` always works. An AppImage can't link it, since its files are gone once
-it closes.
+On Arch, the AUR package `cerberus-bin` installs the release's .deb the same way.
+
+To use `cerberus` in a terminal from the .deb or the AUR package, click **Install `cerberus`
+command** in **Accounts**. It links `~/.local/bin/cerberus`, which must come before `/usr/bin` on
+your `PATH` (Ubuntu's `~/.profile` puts it first), since `/usr/bin/cerberus` is the app itself.
+Cerberus says so if it doesn't, and `cerberus-cli` always works. From the AppImage, the same button
+writes `~/.local/bin/cerberus` as a short script that runs the AppImage; if you move the AppImage,
+the command says where it was, and you click the button again from the new place.
 
 You also need [Claude Code](https://code.claude.com/docs/en/setup). Each release lists its files'
 SHA-256 so you can check a download.

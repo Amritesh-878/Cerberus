@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{ExitCode, Stdio};
 
 use crate::open::{Checked, Command, check, pipe};
@@ -47,31 +47,42 @@ fn exit_code(code: i32) -> ExitCode {
 
 /// The console command a shell runs: it waits for the answer, unlike the windowed app.
 pub fn console() -> ExitCode {
+    let app = std::env::current_exe()
+        .ok()
+        .and_then(|exe| app_dir(&exe))
+        .map(|dir| dir.join(APP));
+    exit_code(console_starting(app))
+}
+
+/// The AppImage's `cerberus` script runs the app's own binary, which exits with this; the image is started anew, since its mount ends with this process.
+#[cfg(target_os = "linux")]
+pub fn appimage_console() -> i32 {
+    console_starting(std::env::var_os("APPIMAGE").map(PathBuf::from))
+}
+
+fn console_starting(app: Option<PathBuf>) -> i32 {
     let args = own_arguments();
     match checked(IDENTIFIER, &args) {
         Checked::Exit(code, message) => {
             say(code, &message);
-            exit_code(code)
+            code
         }
-        Checked::Run(command, note) => {
-            let dir = std::env::current_exe().ok().and_then(|exe| app_dir(&exe));
-            match dir.map(|dir| start_app(&dir.join(APP), &command)) {
-                Some(Ok(())) => {
-                    if let Some(note) = note {
-                        say(0, &note);
-                    }
-                    ExitCode::SUCCESS
+        Checked::Run(command, note) => match app.map(|app| start_app(&app, &command)) {
+            Some(Ok(())) => {
+                if let Some(note) = note {
+                    say(0, &note);
                 }
-                Some(Err(e)) => {
-                    say(1, &format!("could not start Cerberus: {e}"));
-                    ExitCode::FAILURE
-                }
-                None => {
-                    say(1, "could not find the folder this command runs from");
-                    ExitCode::FAILURE
-                }
+                0
             }
-        }
+            Some(Err(e)) => {
+                say(1, &format!("could not start Cerberus: {e}"));
+                1
+            }
+            None => {
+                say(1, "could not find the folder this command runs from");
+                1
+            }
+        },
     }
 }
 
@@ -88,7 +99,9 @@ fn start_app(app: &Path, command: &Command) -> std::io::Result<()> {
     if let Command::Open(spec) = command {
         process.arg("open").arg(spec.to_string());
     }
+    // The app it starts must be the app, not the command again.
     process
+        .env_remove(crate::cli_link::CLI_VAR)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());

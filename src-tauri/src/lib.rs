@@ -4,6 +4,7 @@ mod blocking;
 mod bridge;
 mod cards;
 mod cli_link;
+mod cli_script;
 mod commands;
 mod findchat;
 mod handback;
@@ -81,6 +82,11 @@ pub fn live_helper() {
 pub fn run() {
     #[cfg(target_os = "linux")]
     user_env::keep_image_fds_from_children();
+    // Before the login shell read, which can take seconds, since the command answers and exits.
+    #[cfg(target_os = "linux")]
+    if std::env::var_os(cli_link::CLI_VAR).is_some() {
+        std::process::exit(open::appimage_console());
+    }
     #[cfg(unix)]
     login_path::adopt();
     let context = tauri::generate_context!();
@@ -190,6 +196,7 @@ pub fn run() {
             commands::tree_save,
             commands::continue_on_account,
             commands::install_cli,
+            commands::cli_state,
             panel::panel_changes,
             handback::handoff_message,
             handback::handoff_offer,

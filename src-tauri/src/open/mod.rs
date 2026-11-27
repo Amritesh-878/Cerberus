@@ -7,6 +7,8 @@ use std::{fmt, io};
 use serde::Serialize;
 
 pub use launch::{Pending, from_command_line, listen, on_second_launch, request};
+#[cfg(target_os = "linux")]
+pub use shell::appimage_console;
 pub use shell::console;
 
 use crate::saved::{ProjectId, SavedProject, SavedTab, SavedTree, TabId, TreeError};

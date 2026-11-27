@@ -155,9 +155,58 @@ jobs:
           retention-days: 1
           if-no-files-found: error
 
-  release:
+  # The AUR's cerberus-bin for this release, built from the .deb just made; pushing it to the AUR is a manual step.
+  aur:
     needs: build
-    if: github.event_name == 'push'
+    # makepkg takes no `-` in pkgver, and the AUR gets stable releases only.
+    if: github.event_name == 'push' && !contains(github.ref_name, '-')
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: installer-ubuntu-24.04
+          path: installer
+
+      - run: pacman -Syu --noconfirm namcap
+
+      - name: Point the PKGBUILD at this release
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          deb="installer/Cerberus_${version}_amd64.deb"
+          sh packaging/aur/update.sh "$version" "$(sha256sum "$deb" | cut -d' ' -f1)" "$(sha256sum LICENSE | cut -d' ' -f1)"
+          useradd -m builder
+          cp -r packaging/aur /home/builder/aur
+          # makepkg takes a source it finds beside the PKGBUILD, so the draft's .deb needs no download.
+          cp "$deb" /home/builder/aur/
+          chown -R builder /home/builder/aur
+          cd /home/builder/aur
+          sudo -u builder makepkg --printsrcinfo > .SRCINFO
+          mkdir -p "$GITHUB_WORKSPACE/aur-out"
+          cp PKGBUILD "$GITHUB_WORKSPACE/aur-out/cerberus-bin.PKGBUILD"
+          cp .SRCINFO "$GITHUB_WORKSPACE/aur-out/cerberus-bin.SRCINFO"
+
+      - name: Build the package and lint it
+        working-directory: /home/builder/aur
+        run: bash "$GITHUB_WORKSPACE/packaging/aur/check.sh"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: installer-aur
+          path: aur-out/*
+          retention-days: 1
+          if-no-files-found: error
+
+  release:
+    needs: [build, aur]
+    # A prerelease tag skips the AUR job, and still gets its draft.
+    if: >-
+      github.event_name == 'push' && !cancelled() && needs.build.result == 'success'
+      && (needs.aur.result == 'success' || needs.aur.result == 'skipped')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -176,7 +225,10 @@ jobs:
             Applications, run `xattr -dr com.apple.quarantine /Applications/Cerberus.app` once,
             or open it, close the warning and choose Open Anyway in System Settings > Privacy &
             Security. Linux (x86_64, preview): run the AppImage after `chmod +x`, or install the
-            .deb with `sudo apt install ./Cerberus_<version>_amd64.deb`.
+            .deb with `sudo apt install ./Cerberus_<version>_amd64.deb`. On Arch, the AUR package
+            `cerberus-bin` installs this release's .deb. From the AppImage, Accounts > Install
+            `cerberus` command writes `~/.local/bin/cerberus`, which runs the AppImage; install it
+            again if you move the AppImage.
         run: >
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft --verify-tag
           --title "Cerberus $GITHUB_REF_NAME" --notes "$NOTES" --generate-notes installer/*

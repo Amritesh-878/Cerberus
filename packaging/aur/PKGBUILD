@@ -1,0 +1,21 @@
+# The release workflow fills in pkgver and the .deb's hash; packaging/readme.md says how it reaches the AUR.
+pkgname=cerberus-bin
+pkgver=1.1.0
+pkgrel=1
+pkgdesc='Desktop terminal built around the Claude Code CLI'
+arch=('x86_64')
+url='https://github.com/Amritesh-878/Cerberus'
+license=('MIT')
+depends=('webkit2gtk-4.1' 'gtk3' 'hicolor-icon-theme')
+provides=('cerberus')
+conflicts=('cerberus')
+options=('!strip' '!debug')
+source=("https://github.com/Amritesh-878/Cerberus/releases/download/v${pkgver}/Cerberus_${pkgver}_amd64.deb"
+        "LICENSE-${pkgver}::https://raw.githubusercontent.com/Amritesh-878/Cerberus/v${pkgver}/LICENSE")
+sha256sums=('78b6153d51509035024343ee1c44a624fd83d1a93a66a7a7c629d527a8d46729'
+            'c256919bcba411f107ff4baee32fdc504c172fb2469dbb12153811b3aa604c21')
+
+package() {
+  bsdtar -xf "${srcdir}"/data.tar.* -C "${pkgdir}"
+  install -Dm644 "${srcdir}/LICENSE-${pkgver}" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+}

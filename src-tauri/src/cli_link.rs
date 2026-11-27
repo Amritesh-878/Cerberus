@@ -5,8 +5,10 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 const COMMAND: &str = "cerberus-cli";
-const LINK_DIR: &str = ".local/bin";
-const LINK_NAME: &str = "cerberus";
+pub const LINK_DIR: &str = ".local/bin";
+pub const LINK_NAME: &str = "cerberus";
+/// Set by the AppImage's script, so the app's own binary answers as the console command does.
+pub const CLI_VAR: &str = "CERBERUS_CLI";
 
 #[derive(Debug, thiserror::Error)]
 pub enum LinkError {
@@ -16,11 +18,13 @@ pub enum LinkError {
         "Cerberus is running from a disk image. Move it to Applications, open it from there, and try again"
     )]
     NotInstalled,
-    #[error("an AppImage can't link the `cerberus` command. Install the .deb for it")]
+    #[error(
+        "the AppImage didn't say where its file is (APPIMAGE is unset). Start Cerberus from the AppImage file"
+    )]
     AppImage,
     #[error("`{COMMAND}` is missing beside the app; reinstall Cerberus")]
     NoCommand,
-    #[error("~/{LINK_DIR}/{LINK_NAME} exists and isn't a link. Move it away and try again")]
+    #[error("~/{LINK_DIR}/{LINK_NAME} is a file Cerberus didn't make. Move it away and try again")]
     Taken,
     #[error("could not find your home folder")]
     NoHome,
@@ -42,7 +46,7 @@ pub struct Linked {
     pub path_line: Option<String>,
 }
 
-/// Links `~/.local/bin/cerberus` to the console command inside the running app.
+/// Links `~/.local/bin/cerberus` to the console command inside the running app, or writes a script that runs its AppImage.
 pub fn install(home: Option<PathBuf>) -> Result<Linked, LinkError> {
     if !cfg!(any(target_os = "macos", target_os = "linux")) {
         return Err(LinkError::Unsupported);
@@ -50,12 +54,116 @@ pub fn install(home: Option<PathBuf>) -> Result<Linked, LinkError> {
     let exe = std::env::current_exe()?;
     let home = home.ok_or(LinkError::NoHome)?;
     let shell = std::env::var("SHELL").ok();
-    link(&exe, &home)?;
+    let done = if let Some(extracted) = image_run(&exe, appdir().as_deref()) {
+        let image = appimage().ok_or(LinkError::AppImage)?;
+        crate::cli_script::write(&image, extracted, &home)?;
+        format!("Wrote ~/{LINK_DIR}/{LINK_NAME}, which runs this AppImage.")
+    } else {
+        link(&exe, &home)?;
+        format!("Linked ~/{LINK_DIR}/{LINK_NAME} to this app.")
+    };
     // The .deb's app is `/usr/bin/cerberus`, which a PATH with `/usr/bin` first would run instead.
     if let Some(first) = shadowing(&home, login_path(), Path::is_file) {
-        return Ok(linked_behind(&first, &home, shell.as_deref()));
+        return Ok(linked_behind(&done, &first, &home, shell.as_deref()));
     }
-    Ok(linked(&home, login_path(), shell.as_deref()))
+    Ok(linked(&done, &home, login_path(), shell.as_deref()))
+}
+
+/// What `~/.local/bin/cerberus` runs now, for Accounts to show before and after an install.
+pub fn state(home: Option<PathBuf>) -> Result<String, LinkError> {
+    if !cfg!(any(target_os = "macos", target_os = "linux")) {
+        return Err(LinkError::Unsupported);
+    }
+    let exe = std::env::current_exe()?;
+    let home = home.ok_or(LinkError::NoHome)?;
+    let shadow = shadowing(&home, login_path(), Path::is_file);
+    Ok(describe(
+        &exe,
+        appimage().as_deref(),
+        &home,
+        shadow.as_deref(),
+    ))
+}
+
+// The runtime sets it to the image file, which outlives the mount the app runs from.
+fn appimage() -> Option<PathBuf> {
+    std::env::var_os("APPIMAGE")
+        .map(PathBuf::from)
+        .filter(|p| p.is_absolute())
+}
+
+fn appdir() -> Option<PathBuf> {
+    std::env::var_os("APPDIR").map(PathBuf::from)
+}
+
+/// Whether the app runs from its AppImage, mounted (`false`) or extracted by `--appimage-extract-and-run` (`true`); both go away when it closes.
+fn image_run(exe: &Path, appdir: Option<&Path>) -> Option<bool> {
+    if exe.to_string_lossy().contains("/.mount_") {
+        return Some(false);
+    }
+    appdir.filter(|dir| exe.starts_with(dir)).map(|_| true)
+}
+
+/// The state line, from what `~/.local/bin/cerberus` is, what this app runs as, and a `cerberus` ahead of it on PATH.
+fn describe(exe: &Path, image: Option<&Path>, home: &Path, shadow: Option<&Path>) -> String {
+    let runs = runs(exe, image, home);
+    match shadow {
+        Some(first) => format!(
+            "{runs} But {} comes first on your login shell's PATH, so a shell runs that.",
+            first.display()
+        ),
+        None => runs,
+    }
+}
+
+fn runs(exe: &Path, image: Option<&Path>, home: &Path) -> String {
+    let path = home.join(LINK_DIR).join(LINK_NAME);
+    let packaged = exe.starts_with("/usr/bin");
+    let meta = match fs::symlink_metadata(&path) {
+        Ok(meta) => meta,
+        Err(_) if packaged => {
+            return "The package's /usr/bin/cerberus is the app itself, so `cerberus open` keeps the terminal until the app closes. Install the command for one that returns at once.".to_owned();
+        }
+        Err(_) => return "The `cerberus` command isn't installed.".to_owned(),
+    };
+    if meta.file_type().is_symlink() {
+        let Ok(target) = fs::read_link(&path) else {
+            return format!("~/{LINK_DIR}/{LINK_NAME} can't be read.");
+        };
+        // A relative target is read from the link's own folder.
+        let target = path
+            .parent()
+            .map_or(target.clone(), |dir| dir.join(&target));
+        return if same_file(&target, &exe.with_file_name(COMMAND)) {
+            "`cerberus` runs this app.".to_owned()
+        } else if target.exists() {
+            format!("`cerberus` runs {}.", target.display())
+        } else {
+            format!(
+                "`cerberus` points at {}, which is gone. Install it again.",
+                target.display()
+            )
+        };
+    }
+    let Some(runs) = fs::read_to_string(&path)
+        .ok()
+        .as_deref()
+        .and_then(crate::cli_script::image_of)
+    else {
+        return format!(
+            "~/{LINK_DIR}/{LINK_NAME} is a file Cerberus didn't make, so it is left as it is."
+        );
+    };
+    if Some(runs.as_path()) == image {
+        "`cerberus` runs this AppImage.".to_owned()
+    } else if runs.exists() {
+        format!("`cerberus` runs the AppImage at {}.", runs.display())
+    } else {
+        format!(
+            "`cerberus` runs the AppImage at {}, which has moved. Install it again.",
+            runs.display()
+        )
+    }
 }
 
 /// A `cerberus` in a login `PATH` folder ahead of the link's, which a shell would run instead.
@@ -73,9 +181,10 @@ fn shadowing(
         .find(|candidate| exists(candidate))
 }
 
-fn linked_behind(first: &Path, home: &Path, shell: Option<&str>) -> Linked {
+fn linked_behind(done: &str, first: &Path, home: &Path, shell: Option<&str>) -> Linked {
     let behind = format!(
-        "Linked ~/{LINK_DIR}/{LINK_NAME} to this app, but {} comes first on your login shell's PATH, so `cerberus` runs that.",
+        "{} But {} comes first on your login shell's PATH, so `cerberus` runs that.",
+        done,
         first.display()
     );
     match startup_line(home, shell) {
@@ -115,8 +224,7 @@ fn link(exe: &Path, home: &Path) -> Result<(), LinkError> {
     if is_temporary(exe) {
         return Err(LinkError::NotInstalled);
     }
-    // An AppImage runs from a mount under the temp folder that goes away when the app closes.
-    if exe.to_string_lossy().contains("/.mount_") {
+    if image_run(exe, appdir().as_deref()).is_some() {
         return Err(LinkError::AppImage);
     }
     let target = exe
@@ -127,7 +235,10 @@ fn link(exe: &Path, home: &Path) -> Result<(), LinkError> {
     let dir = home.join(LINK_DIR);
     let link = dir.join(LINK_NAME);
     match fs::symlink_metadata(&link) {
-        Ok(meta) if !meta.file_type().is_symlink() => return Err(LinkError::Taken),
+        // The AppImage's script is ours too, so a package install replaces it.
+        Ok(meta) if !meta.file_type().is_symlink() && !is_our_script(&link) => {
+            return Err(LinkError::Taken);
+        }
         Ok(_) => fs::remove_file(&link)?,
         Err(e) if e.kind() == io::ErrorKind::NotFound => {}
         Err(e) => return Err(e.into()),
@@ -135,6 +246,22 @@ fn link(exe: &Path, home: &Path) -> Result<(), LinkError> {
     fs::create_dir_all(&dir)?;
     symlink(&target, &link)?;
     Ok(())
+}
+
+// A link written as `../x` and the app's own path name one file without matching as text.
+fn same_file(a: &Path, b: &Path) -> bool {
+    a == b
+        || fs::canonicalize(a)
+            .ok()
+            .is_some_and(|a| fs::canonicalize(b).ok() == Some(a))
+}
+
+fn is_our_script(path: &Path) -> bool {
+    fs::read_to_string(path)
+        .ok()
+        .as_deref()
+        .and_then(crate::cli_script::image_of)
+        .is_some()
 }
 
 #[cfg(unix)]
@@ -148,8 +275,7 @@ fn symlink(_target: &Path, _link: &Path) -> io::Result<()> {
 }
 
 /// What to tell the user, from the login shell's `PATH` read at start (`None` when it could not be read).
-fn linked(home: &Path, login_path: Option<&str>, shell: Option<&str>) -> Linked {
-    let done = format!("Linked ~/{LINK_DIR}/{LINK_NAME} to this app.");
+fn linked(done: &str, home: &Path, login_path: Option<&str>, shell: Option<&str>) -> Linked {
     let dir = home.join(LINK_DIR);
     let on_path = login_path.map(|path| path.split(':').any(|d| Path::new(d) == dir));
     let missing = match on_path {
@@ -213,6 +339,7 @@ mod tests {
     use crate::accounts::testdir::TestDir;
 
     const HOME: &str = "/Users/u";
+    const DONE: &str = "Linked ~/.local/bin/cerberus to this app.";
 
     #[test]
     fn a_cerberus_ahead_of_the_link_on_path_is_reported_with_the_line_that_puts_the_link_first() {
@@ -227,7 +354,7 @@ mod tests {
         assert_eq!(shadowing(home, Some("/usr/local/bin"), |_| false), None);
         assert_eq!(shadowing(home, None, exists), None);
 
-        let told = linked_behind(deb, home, Some("/bin/zsh"));
+        let told = linked_behind(DONE, deb, home, Some("/bin/zsh"));
         assert!(
             told.message.contains("/usr/bin/cerberus comes first"),
             "{}",
@@ -237,7 +364,7 @@ mod tests {
             told.path_line.as_deref(),
             Some(r#"export PATH="$HOME/.local/bin:$PATH""#)
         );
-        let unknown = linked_behind(deb, home, Some("/opt/bin/nu"));
+        let unknown = linked_behind(DONE, deb, home, Some("/opt/bin/nu"));
         assert!(
             unknown.message.contains("cerberus-cli"),
             "{}",
@@ -250,11 +377,12 @@ mod tests {
     fn a_link_dir_on_the_login_path_needs_no_line() {
         let home = Path::new(HOME);
         let found = linked(
+            DONE,
             home,
             Some("/opt/homebrew/bin:/Users/u/.local/bin:/usr/bin"),
             Some("/bin/zsh"),
         );
-        let slashed = linked(home, Some("/usr/bin:/Users/u/.local/bin/"), None);
+        let slashed = linked(DONE, home, Some("/usr/bin:/Users/u/.local/bin/"), None);
 
         assert_eq!(found.path_line, None);
         assert!(
@@ -274,7 +402,10 @@ mod tests {
             "~/.local/bin",
             "/Users/u/.local/bin2",
         ] {
-            assert!(linked(home, Some(path), None).path_line.is_some(), "{path}");
+            assert!(
+                linked(DONE, home, Some(path), None).path_line.is_some(),
+                "{path}"
+            );
         }
     }
 
@@ -282,7 +413,7 @@ mod tests {
     fn a_missing_link_dir_gets_the_line_for_the_login_shell() {
         let path = Some("/opt/homebrew/bin:/usr/bin:/bin");
         let home = Path::new(HOME);
-        let line = |shell| linked(home, path, Some(shell)).path_line;
+        let line = |shell| linked(DONE, home, path, Some(shell)).path_line;
 
         assert_eq!(
             line("/bin/zsh").as_deref(),
@@ -296,13 +427,13 @@ mod tests {
             line("/bin/tcsh").as_deref(),
             Some(r#"setenv PATH "$HOME/.local/bin:$PATH""#)
         );
-        let bash = linked(home, path, Some("/bin/bash"));
+        let bash = linked(DONE, home, path, Some("/bin/bash"));
         assert!(bash.message.contains("~/.bash_profile"), "{}", bash.message);
         assert!(bash.message.contains("isn't on your login shell's PATH"));
-        let csh = linked(home, path, Some("/bin/csh"));
+        let csh = linked(DONE, home, path, Some("/bin/csh"));
         assert!(csh.message.contains("~/.cshrc"), "{}", csh.message);
         assert!(
-            linked(home, path, Some("/bin/ksh"))
+            linked(DONE, home, path, Some("/bin/ksh"))
                 .message
                 .contains("~/.profile")
         );
@@ -329,7 +460,7 @@ mod tests {
                 fs::write(home.path().join(file), "").unwrap();
             }
 
-            let advice = linked(home.path(), Some("/usr/bin"), Some(shell));
+            let advice = linked(DONE, home.path(), Some("/usr/bin"), Some(shell));
 
             assert!(
                 advice
@@ -359,7 +490,12 @@ mod tests {
 
     #[test]
     fn a_shell_of_unknown_syntax_gets_no_line_to_paste() {
-        let nu = linked(Path::new(HOME), Some("/usr/bin"), Some("/opt/local/bin/nu"));
+        let nu = linked(
+            DONE,
+            Path::new(HOME),
+            Some("/usr/bin"),
+            Some("/opt/local/bin/nu"),
+        );
 
         assert_eq!(nu.path_line, None);
         assert!(
@@ -371,7 +507,7 @@ mod tests {
 
     #[test]
     fn an_unread_login_path_still_gives_the_line() {
-        let unknown = linked(Path::new(HOME), None, None);
+        let unknown = linked(DONE, Path::new(HOME), None, None);
 
         assert!(
             unknown.message.contains("couldn't read"),
@@ -497,5 +633,148 @@ mod tests {
             fs::read_link(dir.join(LINK_NAME)).unwrap(),
             exe.with_file_name(COMMAND)
         );
+    }
+    const MOUNTED_EXE: &str = "/tmp/.mount_CerberAb12/usr/bin/cerberus";
+    #[cfg(unix)]
+    const MOUNTED: &str = MOUNTED_EXE;
+
+    #[cfg(unix)]
+    #[test]
+    fn accounts_says_what_the_command_runs_for_an_appimage() {
+        let root = TestDir::new();
+        let image = root.path().join("Cerberus.AppImage");
+        fs::write(&image, "").unwrap();
+        let elsewhere = root.path().join("older.AppImage");
+        fs::write(&elsewhere, "").unwrap();
+        let describe_now = || describe(Path::new(MOUNTED), Some(&image), root.path(), None);
+
+        assert_eq!(describe_now(), "The `cerberus` command isn't installed.");
+        crate::cli_script::write(&image, false, root.path()).unwrap();
+        assert_eq!(describe_now(), "`cerberus` runs this AppImage.");
+        crate::cli_script::write(&elsewhere, false, root.path()).unwrap();
+        assert!(
+            describe_now().contains("runs the AppImage at"),
+            "{}",
+            describe_now()
+        );
+        fs::remove_file(&elsewhere).unwrap();
+        assert!(
+            describe_now().ends_with("which has moved. Install it again."),
+            "{}",
+            describe_now()
+        );
+        fs::write(root.path().join(LINK_DIR).join(LINK_NAME), "mine").unwrap();
+        assert!(describe_now().contains("didn't make"), "{}", describe_now());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn accounts_says_what_the_command_runs_for_a_package_or_a_mac_app() {
+        let root = TestDir::new();
+        let packaged = Path::new("/usr/bin/cerberus");
+
+        assert!(
+            describe(packaged, None, root.path(), None)
+                .contains("/usr/bin/cerberus is the app itself"),
+            "{}",
+            describe(packaged, None, root.path(), None)
+        );
+        let dir = root.path().join(LINK_DIR);
+        fs::create_dir_all(&dir).unwrap();
+        std::os::unix::fs::symlink("/usr/bin/cerberus-cli", dir.join(LINK_NAME)).unwrap();
+        assert_eq!(
+            describe(packaged, None, root.path(), None),
+            "`cerberus` runs this app."
+        );
+
+        let exe = app(root.path());
+        let gone = root.path().join("removed-cerberus-cli");
+        fs::remove_file(dir.join(LINK_NAME)).unwrap();
+        std::os::unix::fs::symlink(&gone, dir.join(LINK_NAME)).unwrap();
+        assert_eq!(
+            describe(&exe, None, root.path(), None),
+            format!(
+                "`cerberus` points at {}, which is gone. Install it again.",
+                gone.display()
+            )
+        );
+        fs::remove_file(dir.join(LINK_NAME)).unwrap();
+        link(&exe, root.path()).unwrap();
+        assert_eq!(
+            describe(&exe, None, root.path(), None),
+            "`cerberus` runs this app."
+        );
+        assert_eq!(
+            describe(&exe, None, &root.path().join("nobody"), None),
+            "The `cerberus` command isn't installed."
+        );
+    }
+    #[test]
+    fn an_app_run_from_a_mounted_or_an_extracted_appimage_is_told_apart() {
+        let extracted = Path::new("/tmp/appimage_extracted_0a1b");
+
+        assert_eq!(image_run(Path::new(MOUNTED_EXE), None), Some(false));
+        assert_eq!(
+            image_run(&extracted.join("usr/bin/cerberus"), Some(extracted)),
+            Some(true)
+        );
+        assert_eq!(
+            image_run(Path::new("/usr/bin/cerberus"), Some(extracted)),
+            None
+        );
+        assert_eq!(image_run(Path::new("/usr/bin/cerberus"), None), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn accounts_says_when_a_cerberus_earlier_on_path_runs_instead() {
+        let root = TestDir::new();
+        let exe = app(root.path());
+        link(&exe, root.path()).unwrap();
+
+        let told = describe(
+            &exe,
+            None,
+            root.path(),
+            Some(Path::new("/usr/bin/cerberus")),
+        );
+
+        assert_eq!(
+            told,
+            "`cerberus` runs this app. But /usr/bin/cerberus comes first on your login shell's PATH, so a shell runs that."
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_relative_link_is_read_from_its_own_folder() {
+        let root = TestDir::new();
+        let exe = app(root.path());
+        let dir = root.path().join(LINK_DIR);
+        fs::create_dir_all(&dir).unwrap();
+        std::os::unix::fs::symlink(
+            "../../Cerberus.app/Contents/MacOS/cerberus-cli",
+            dir.join(LINK_NAME),
+        )
+        .unwrap();
+
+        assert_eq!(
+            describe(&exe, None, root.path(), None),
+            "`cerberus` runs this app."
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_package_install_replaces_the_appimage_script_but_not_a_users_file() {
+        let root = TestDir::new();
+        let exe = app(root.path());
+        let path = root.path().join(LINK_DIR).join(LINK_NAME);
+        crate::cli_script::write(Path::new("/home/u/Cerberus.AppImage"), false, root.path())
+            .unwrap();
+
+        link(&exe, root.path()).unwrap();
+
+        assert_eq!(fs::read_link(&path).unwrap(), exe.with_file_name(COMMAND));
     }
 }
