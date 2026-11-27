@@ -96,3 +96,12 @@ export function stepDone(
   if (step === "accounts") return profiles.accounts.length > 0;
   return false;
 }
+
+/** The start page's main button, for the program the new tab menu puts first; programs still loading count as Claude Code. */
+export function newTabLabel(
+  programs: readonly ProgramChoice[] | undefined,
+): string {
+  if (!programs || installed(programs, "claude")) return "New Claude Code tab";
+  const other = otherCliOnly(programs);
+  return other ? `New ${other.label} tab` : "New tab";
+}

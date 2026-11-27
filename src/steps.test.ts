@@ -3,6 +3,7 @@ import { expect, test } from "vitest";
 import type { Profiles } from "./accounts";
 import {
   finishBlocker,
+  newTabLabel,
   nextStep,
   otherCliOnly,
   previousStep,
@@ -124,4 +125,13 @@ test("with Claude Code installed, or no AI CLI at all, setup keeps every step", 
   expect(otherCliOnly(neither)).toBeUndefined();
   expect(finishBlocker(none, neither)).toBe("Add an account first.");
   expect(otherCliOnly(undefined)).toBeUndefined();
+});
+
+test("the start page's main button names the program the menu puts first", () => {
+  expect(newTabLabel(undefined)).toBe("New Claude Code tab");
+  expect(newTabLabel([CLAUDE, AGY])).toBe("New Claude Code tab");
+  expect(newTabLabel([{ ...CLAUDE, program: null }, AGY])).toBe(
+    "New Antigravity CLI tab",
+  );
+  expect(newTabLabel([{ ...CLAUDE, program: null }])).toBe("New tab");
 });

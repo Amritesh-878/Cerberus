@@ -109,7 +109,7 @@ import { Sidebar } from "./Sidebar";
 import { createSavedWidth } from "./savedWidth";
 import { createSplit, dropSide, type Side as Half } from "./split";
 import { createStatuses } from "./statuses";
-import { setupGaps, type Step, stepFor } from "./steps";
+import { newTabLabel, setupGaps, type Step, stepFor } from "./steps";
 import { installed, shellChoice, type Tab, tabFor, tabKind } from "./tab";
 import { ShortcutsSheet } from "./ShortcutsSheet";
 import type { TabDragEvents } from "./tabDrag";
@@ -2099,6 +2099,7 @@ export function App() {
                       fallback={
                         <Home
                           project={homeProject()?.name}
+                          newTabLabel={newTabLabel(programList())}
                           hasProjects={tree().projects.length > 0}
                           gaps={setupGaps(loaded(), programList())}
                           treeError={treeError()}
