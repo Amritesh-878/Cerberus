@@ -1137,6 +1137,12 @@ kbd {
   color: var(--dim);
 }
 
+/* An install command is one long word, so it breaks anywhere rather than widen the menu. */
+.popover .menu-command {
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
 .popover .menu-note-line.error {
   color: #f07070;
 }

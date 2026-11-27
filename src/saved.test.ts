@@ -15,6 +15,7 @@ const CLAUDE: ProgramChoice = {
   isShell: false,
   installCommand: null,
   installShell: null,
+  searched: null,
 };
 
 const SHELL: ProgramChoice = {
@@ -26,6 +27,7 @@ const SHELL: ProgramChoice = {
   isShell: true,
   installCommand: null,
   installShell: null,
+  searched: null,
 };
 
 const PROFILES: Profiles = {

@@ -4,9 +4,11 @@ import type { Profiles } from "./accounts";
 import {
   finishBlocker,
   nextStep,
+  otherCliOnly,
   previousStep,
   setupGaps,
   stepDone,
+  stepsFor,
   stepFor,
 } from "./steps";
 
@@ -62,6 +64,7 @@ const CLAUDE = {
   isShell: false,
   installCommand: null,
   installShell: null,
+  searched: null,
 };
 
 test("a finished setup leaves nothing for the start page to say", () => {
@@ -89,4 +92,36 @@ test("a step shows done once what it sets up exists", () => {
   expect(stepDone("install", PROFILES, [CLAUDE])).toBe(true);
   expect(stepDone("accounts", none, [CLAUDE])).toBe(false);
   expect(stepDone("defaults", PROFILES, [CLAUDE])).toBe(false);
+});
+
+const AGY = {
+  ...CLAUDE,
+  id: "agy",
+  label: "Antigravity CLI",
+  program: "/usr/bin/agy",
+};
+
+test("with only another AI CLI, setup is the install step and finishes with no account", () => {
+  const none = { ...PROFILES, accounts: [], defaultAccount: null };
+  const agyOnly = [{ ...CLAUDE, program: null }, AGY];
+
+  expect(otherCliOnly(agyOnly)?.label).toBe("Antigravity CLI");
+  expect(stepsFor(agyOnly)).toEqual(["install"]);
+  expect(nextStep("install", stepsFor(agyOnly))).toBeUndefined();
+  expect(finishBlocker(none, agyOnly)).toBeUndefined();
+  expect(setupGaps(none, agyOnly)).toEqual([]);
+});
+
+test("with Claude Code installed, or no AI CLI at all, setup keeps every step", () => {
+  const none = { ...PROFILES, accounts: [], defaultAccount: null };
+  const neither = [
+    { ...CLAUDE, program: null },
+    { ...AGY, program: null },
+  ];
+
+  expect(otherCliOnly([CLAUDE, AGY])).toBeUndefined();
+  expect(stepsFor([CLAUDE, AGY])).toEqual(["install", "accounts", "defaults"]);
+  expect(otherCliOnly(neither)).toBeUndefined();
+  expect(finishBlocker(none, neither)).toBe("Add an account first.");
+  expect(otherCliOnly(undefined)).toBeUndefined();
 });
