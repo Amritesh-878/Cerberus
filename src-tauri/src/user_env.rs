@@ -39,16 +39,20 @@ fn outside(name: &str, value: &str, appdir: &Path) -> Option<Option<String>> {
         return None;
     }
     let lead = entries.iter().take_while(|e| inside(e)).count();
-    // The GTK hook adds `/usr/share` right after the image's own folders.
-    let hook_added =
-        (name == "XDG_DATA_DIRS" && entries.get(lead) == Some(&"/usr/share")).then_some(lead);
+    let rest = entries.get(lead + 1..).unwrap_or_default();
+    // The GTK hook adds `/usr/share` right after the image's folders; it goes only when the user's value has its own, since a set value without it hides the system's data.
+    let hook_added = name == "XDG_DATA_DIRS"
+        && lead > 0
+        && entries.get(lead) == Some(&"/usr/share")
+        && (rest.contains(&"/usr/share") || rest.iter().all(|e| e.is_empty()));
     let kept: Vec<&str> = entries
         .iter()
         .enumerate()
-        .filter(|&(at, entry)| Some(at) != hook_added && !entry.is_empty() && !inside(entry))
+        .filter(|&(at, entry)| !(hook_added && at == lead) && !inside(entry))
         .map(|(_, entry)| *entry)
         .collect();
-    Some((!kept.is_empty()).then(|| kept.join(":")))
+    // Only empty parts left means the user never set it: `AppRun` joins the image's folders to an unset value with a `:`.
+    Some((!kept.iter().all(|e| e.is_empty())).then(|| kept.join(":")))
 }
 
 /// A process with the user's environment, for anything Cerberus starts outside a tab.
@@ -112,7 +116,7 @@ mod tests {
             (
                 "XDG_DATA_DIRS",
                 format!(
-                    "{d}/usr/share/:{d}/usr/share:/usr/share:/usr/local/share:/var/lib/flatpak/exports/share"
+                    "{d}/usr/share/:{d}/usr/share:/usr/share:/var/lib/flatpak/exports/share:/usr/local/share:/usr/share"
                 ),
             ),
             (
@@ -210,39 +214,73 @@ mod tests {
         );
     }
 
-    #[test]
-    fn the_gtk_hooks_usr_share_goes_but_the_users_own_stays() {
-        let cleaned = after(&image_env(&[]));
-        assert_eq!(
-            value(&cleaned, "XDG_DATA_DIRS"),
-            Some("/usr/local/share:/var/lib/flatpak/exports/share")
-        );
-
-        let mut unset = image_env(&[]);
-        unset.retain(|(n, _)| n != "XDG_DATA_DIRS");
-        unset.push((
-            "XDG_DATA_DIRS".to_owned(),
-            format!("{APPDIR}/usr/share/:{APPDIR}/usr/share:/usr/share:"),
-        ));
-        assert_eq!(value(&after(&unset), "XDG_DATA_DIRS"), None);
+    fn with(name: &str, value: String) -> Vec<(String, String)> {
+        let mut vars = image_env(&[]);
+        vars.retain(|(n, _)| n != name);
+        vars.push((name.to_owned(), value));
+        vars
     }
 
     #[test]
-    fn a_users_xdg_data_dirs_without_usr_share_comes_back_as_it_was() {
-        let mut vars = image_env(&[]);
-        vars.retain(|(n, _)| n != "XDG_DATA_DIRS");
-        // The hook's `/usr/share` always follows the image's folders, so the rest is the user's own value.
-        vars.push((
-            "XDG_DATA_DIRS".to_owned(),
+    fn the_gtk_hooks_usr_share_goes_when_the_users_own_value_has_it() {
+        let vars = with(
+            "XDG_DATA_DIRS",
             format!(
-                "{APPDIR}/usr/share/:{APPDIR}/usr/share:/usr/share:/opt/share:/usr/local/share"
+                "{APPDIR}/usr/share/:{APPDIR}/usr/share:/usr/share:/usr/local/share:/usr/share"
             ),
-        ));
+        );
 
         assert_eq!(
             value(&after(&vars), "XDG_DATA_DIRS"),
-            Some("/opt/share:/usr/local/share")
+            Some("/usr/local/share:/usr/share")
         );
+    }
+
+    #[test]
+    fn the_gtk_hooks_usr_share_stays_when_the_users_own_value_lacks_it() {
+        let vars = with(
+            "XDG_DATA_DIRS",
+            format!(
+                "{APPDIR}/usr/share/:{APPDIR}/usr/share:/usr/share:/var/lib/flatpak/exports/share"
+            ),
+        );
+
+        assert_eq!(
+            value(&after(&vars), "XDG_DATA_DIRS"),
+            Some("/usr/share:/var/lib/flatpak/exports/share")
+        );
+    }
+
+    #[test]
+    fn an_xdg_data_dirs_the_user_never_set_is_unset_again() {
+        let vars = with(
+            "XDG_DATA_DIRS",
+            format!("{APPDIR}/usr/share/:{APPDIR}/usr/share:/usr/share:"),
+        );
+
+        assert_eq!(value(&after(&vars), "XDG_DATA_DIRS"), None);
+    }
+
+    #[test]
+    fn a_usr_share_with_no_image_folder_before_it_is_the_users() {
+        let vars = with(
+            "XDG_DATA_DIRS",
+            format!("/usr/share:{APPDIR}/usr/share:/opt/data"),
+        );
+
+        assert_eq!(
+            value(&after(&vars), "XDG_DATA_DIRS"),
+            Some("/usr/share:/opt/data")
+        );
+    }
+
+    #[test]
+    fn the_users_own_empty_path_parts_are_kept() {
+        let inner = with("PATH", format!("{APPDIR}/usr/bin/:/usr/bin::/opt/tools"));
+        let trailing = with("PATH", format!("{APPDIR}/usr/bin/:/usr/bin:"));
+
+        assert_eq!(value(&after(&inner), "PATH"), Some("/usr/bin::/opt/tools"));
+        assert_eq!(value(&after(&trailing), "PATH"), Some("/usr/bin:"));
     }
 
     #[test]
