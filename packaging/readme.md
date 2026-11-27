@@ -28,7 +28,7 @@ fails if the two differ, then builds the package in an `archlinux:base-devel` co
 
 For a tagged release, `release.yml` runs `aur/update.sh` to set `pkgver`, `pkgrel=1` and both
 hashes, builds the package from the new .deb, and attaches `cerberus-bin.PKGBUILD` and
-`cerberus-bin.SRCINFO` to the draft. It does not push to the AUR, which needs an AUR account and
+`cerberus-bin.SRCINFO` to the draft (a prerelease tag, one with a `-`, gets none). It does not push to the AUR, which needs an AUR account and
 its SSH key. After publishing the release, the maintainer pushes it:
 
 ```sh

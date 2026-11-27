@@ -158,7 +158,8 @@ jobs:
   # The AUR's cerberus-bin for this release, built from the .deb just made; pushing it to the AUR is a manual step.
   aur:
     needs: build
-    if: github.event_name == 'push'
+    # makepkg takes no `-` in pkgver, and the AUR gets stable releases only.
+    if: github.event_name == 'push' && !contains(github.ref_name, '-')
     runs-on: ubuntu-latest
     container: archlinux:base-devel
     steps:
@@ -202,7 +203,10 @@ jobs:
 
   release:
     needs: [build, aur]
-    if: github.event_name == 'push'
+    # A prerelease tag skips the AUR job, and still gets its draft.
+    if: >-
+      github.event_name == 'push' && !cancelled() && needs.build.result == 'success'
+      && (needs.aur.result == 'success' || needs.aur.result == 'skipped')
     runs-on: ubuntu-latest
     permissions:
       contents: write

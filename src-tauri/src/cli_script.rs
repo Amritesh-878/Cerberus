@@ -9,9 +9,14 @@ use crate::cli_link::{CLI_VAR, LINK_DIR, LINK_NAME, LinkError};
 /// The script's second line, so a reinstall replaces it and a user's own file is never taken for it.
 const SCRIPT_MARK: &str = "# Written by Cerberus to run its AppImage as the `cerberus` command.";
 
-/// The shell script for `image`; it says where the image was when it has moved.
-fn script_for(image: &Path) -> String {
+/// The shell script for `image`, which says where the image was when it has moved; `extracted` keeps `--appimage-extract-and-run`'s way of starting it.
+fn script_for(image: &Path, extracted: bool) -> String {
     let quoted = image.to_string_lossy().replace('\'', r"'\''");
+    let extract = if extracted {
+        "APPIMAGE_EXTRACT_AND_RUN=1 "
+    } else {
+        ""
+    };
     format!(
         "#!/bin/sh
 {SCRIPT_MARK}
@@ -21,7 +26,7 @@ if [ ! -x \"$appimage\" ]; then
   echo \"Open Cerberus from where it is now and choose Install \\`cerberus\\` command in Accounts.\" >&2
   exit 1
 fi
-{CLI_VAR}=1 exec \"$appimage\" \"$@\"
+{extract}{CLI_VAR}=1 exec \"$appimage\" \"$@\"
 "
     )
 }
@@ -40,7 +45,7 @@ pub fn image_of(text: &str) -> Option<PathBuf> {
 }
 
 /// Writes the script beside any older one of ours or a link, but never over a user's own file.
-pub fn write(image: &Path, home: &Path) -> Result<(), LinkError> {
+pub fn write(image: &Path, extracted: bool, home: &Path) -> Result<(), LinkError> {
     let dir = home.join(LINK_DIR);
     let path = dir.join(LINK_NAME);
     match fs::symlink_metadata(&path) {
@@ -61,7 +66,7 @@ pub fn write(image: &Path, home: &Path) -> Result<(), LinkError> {
     fs::create_dir_all(&dir)?;
     // Written beside and renamed over, so a shell never runs half a script.
     let partial = dir.join(format!(".{LINK_NAME}.partial"));
-    fs::write(&partial, script_for(image))?;
+    fs::write(&partial, script_for(image, extracted))?;
     make_executable(&partial)?;
     fs::rename(&partial, &path)?;
     Ok(())
@@ -90,13 +95,25 @@ mod tests {
             "/home/u/Apps/Cerberus_1.1.0_amd64.AppImage",
             "/home/u/it's here/Cerberus.AppImage",
         ] {
-            let script = script_for(Path::new(image));
+            let script = script_for(Path::new(image), false);
 
             assert!(script.starts_with("#!/bin/sh\n"));
             assert!(script.contains(&format!("{CLI_VAR}=1 exec \"$appimage\" \"$@\"")));
             assert_eq!(image_of(&script), Some(PathBuf::from(image)), "{image}");
         }
         assert_eq!(image_of("#!/bin/sh\necho mine\n"), None);
+    }
+
+    #[test]
+    fn an_appimage_started_by_extracting_it_is_run_that_way_again() {
+        let image = Path::new("/home/u/Apps/Cerberus.AppImage");
+
+        assert!(
+            script_for(image, true)
+                .contains(&format!("APPIMAGE_EXTRACT_AND_RUN=1 {CLI_VAR}=1 exec"))
+        );
+        assert!(!script_for(image, false).contains("APPIMAGE_EXTRACT_AND_RUN"));
+        assert_eq!(image_of(&script_for(image, true)).as_deref(), Some(image));
     }
 
     #[cfg(unix)]
@@ -107,7 +124,7 @@ mod tests {
         fs::create_dir_all(image.parent().unwrap()).unwrap();
         fs::write(&image, "#!/bin/sh\nprintf '%s|' \"$CERBERUS_CLI\" \"$@\"\n").unwrap();
         make_executable(&image).unwrap();
-        write(&image, root.path()).unwrap();
+        write(&image, false, root.path()).unwrap();
         let command = root.path().join(LINK_DIR).join(LINK_NAME);
         let run = || {
             std::process::Command::new(&command)
@@ -135,8 +152,8 @@ mod tests {
         let old = Path::new("/home/u/old/Cerberus.AppImage");
         let new = Path::new("/home/u/new/Cerberus.AppImage");
 
-        write(old, root.path()).unwrap();
-        write(new, root.path()).unwrap();
+        write(old, false, root.path()).unwrap();
+        write(new, false, root.path()).unwrap();
         assert_eq!(
             image_of(&fs::read_to_string(&path).unwrap()).as_deref(),
             Some(new)
@@ -144,7 +161,7 @@ mod tests {
 
         fs::remove_file(&path).unwrap();
         std::os::unix::fs::symlink("/usr/bin/cerberus-cli", &path).unwrap();
-        write(new, root.path()).unwrap();
+        write(new, false, root.path()).unwrap();
         assert!(
             !fs::symlink_metadata(&path)
                 .unwrap()
@@ -153,7 +170,10 @@ mod tests {
         );
 
         fs::write(&path, "#!/bin/sh\necho mine\n").unwrap();
-        assert!(matches!(write(new, root.path()), Err(LinkError::Taken)));
+        assert!(matches!(
+            write(new, false, root.path()),
+            Err(LinkError::Taken)
+        ));
         assert_eq!(fs::read_to_string(&path).unwrap(), "#!/bin/sh\necho mine\n");
     }
 }

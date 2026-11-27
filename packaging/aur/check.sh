@@ -1,6 +1,6 @@
 #!/bin/bash
 # Builds the package in this folder as the `builder` user, checks what it installs, and fails on namcap errors.
-set -eu
+set -euo pipefail
 
 # namcap judges the libraries the binaries need against what is installed, so the dependencies go in first.
 . ./PKGBUILD
