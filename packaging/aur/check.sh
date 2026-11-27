@@ -3,7 +3,6 @@
 set -eu
 
 # namcap judges the libraries the binaries need against what is installed, so the dependencies go in first.
-# shellcheck source=/dev/null
 . ./PKGBUILD
 pacman -S --noconfirm --needed "${depends[@]}"
 sudo -u builder makepkg --noconfirm --cleanbuild
