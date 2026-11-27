@@ -1,0 +1,20 @@
+pkgbase = cerberus-bin
+	pkgdesc = Desktop terminal built around the Claude Code CLI
+	pkgver = 1.1.0
+	pkgrel = 1
+	url = https://github.com/Amritesh-878/Cerberus
+	arch = x86_64
+	license = MIT
+	depends = webkit2gtk-4.1
+	depends = gtk3
+	depends = hicolor-icon-theme
+	provides = cerberus
+	conflicts = cerberus
+	options = !strip
+	options = !debug
+	source = https://github.com/Amritesh-878/Cerberus/releases/download/v1.1.0/Cerberus_1.1.0_amd64.deb
+	source = LICENSE-1.1.0::https://raw.githubusercontent.com/Amritesh-878/Cerberus/v1.1.0/LICENSE
+	sha256sums = 78b6153d51509035024343ee1c44a624fd83d1a93a66a7a7c629d527a8d46729
+	sha256sums = c256919bcba411f107ff4baee32fdc504c172fb2469dbb12153811b3aa604c21
+
+pkgname = cerberus-bin

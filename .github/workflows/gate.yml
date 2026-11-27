@@ -81,11 +81,37 @@ jobs:
       - run: cargo audit
         working-directory: src-tauri
 
+  # Builds the AUR package from the published .deb it names, as an Arch user's makepkg would.
+  aur:
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - run: pacman -Syu --noconfirm namcap
+
+      # makepkg refuses to run as root.
+      - run: |
+          useradd -m builder
+          cp -r packaging/aur /home/builder/aur
+          chown -R builder /home/builder/aur
+
+      - name: Check .SRCINFO matches the PKGBUILD
+        working-directory: /home/builder/aur
+        run: sudo -u builder makepkg --printsrcinfo | diff -u .SRCINFO -
+
+      - name: Build the package and lint it
+        working-directory: /home/builder/aur
+        run: sh "$GITHUB_WORKSPACE/packaging/aur/check.sh"
+
   # The ruleset requires one check named `gate`; a skipped required job would count as a pass.
   gate:
-    needs: [check, audit]
+    needs: [check, audit, aur]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - run: test "${{ needs.check.result }}" = success
       - run: test "${{ needs.audit.result }}" = success
+      - run: test "${{ needs.aur.result }}" = success
