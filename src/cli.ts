@@ -16,3 +16,8 @@ export function linksCli(platform: Platform): boolean {
 export function installCli(): Promise<Linked> {
   return invoke<Linked>("install_cli");
 }
+
+/** What `~/.local/bin/cerberus` runs now, as the core words it. */
+export function cliState(): Promise<string> {
+  return invoke<string>("cli_state");
+}

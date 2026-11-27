@@ -13,7 +13,7 @@ import {
   setSuggestions,
   wrapperFailure,
 } from "./accounts";
-import { installCli, type Linked, linksCli } from "./cli";
+import { cliState, installCli, type Linked, linksCli } from "./cli";
 import { PLATFORM } from "./keys";
 import { LiveSetting } from "./LiveSetting";
 import { MessagesSetting } from "./MessagesSetting";
@@ -307,9 +307,20 @@ export function CliInstall() {
   const [error, setError] = createSignal<string>();
   // Two links made at once would race to replace each other.
   const [busy, setBusy] = createSignal(false);
+  const [state, setState] = createSignal<string>();
+  const readState = () => {
+    cliState().then(setState, (e: unknown) => {
+      setState(undefined);
+      console.error("could not read what the cerberus command runs:", e);
+    });
+  };
+  readState();
 
   return (
     <div class="cli-install">
+      <Show when={state()}>
+        {(line) => <p class="hint cli-state">{line()}</p>}
+      </Show>
       <button
         type="button"
         disabled={busy()}
@@ -319,6 +330,7 @@ export function CliInstall() {
             .then((result) => {
               setError(undefined);
               setLinked(result);
+              readState();
             })
             .catch((e: unknown) => {
               setLinked(undefined);
@@ -334,7 +346,7 @@ export function CliInstall() {
       <Show when={linked()}>
         {(result) => (
           <>
-            <p>{result().message}</p>
+            <p class="cli-result">{result().message}</p>
             <Show when={result().pathLine}>
               {(line) => (
                 <pre>

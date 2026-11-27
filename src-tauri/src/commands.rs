@@ -797,3 +797,8 @@ pub async fn continue_on_account(
 pub async fn install_cli(app: AppHandle) -> Result<Linked, LinkError> {
     blocking(move || cli_link::install(app.path().home_dir().ok())).await
 }
+
+#[tauri::command]
+pub async fn cli_state(app: AppHandle) -> Result<String, LinkError> {
+    blocking(move || cli_link::state(app.path().home_dir().ok())).await
+}

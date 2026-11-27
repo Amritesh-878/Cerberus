@@ -79,6 +79,11 @@ pub fn live_helper() {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Before the login shell read, which can take seconds, since the command answers and exits.
+    #[cfg(target_os = "linux")]
+    if std::env::var_os(cli_link::CLI_VAR).is_some() {
+        open::appimage_console().exit_process();
+    }
     #[cfg(unix)]
     login_path::adopt();
     let context = tauri::generate_context!();
@@ -188,6 +193,7 @@ pub fn run() {
             commands::tree_save,
             commands::continue_on_account,
             commands::install_cli,
+            commands::cli_state,
             panel::panel_changes,
             handback::handoff_message,
             handback::handoff_offer,
