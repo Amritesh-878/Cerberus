@@ -228,6 +228,24 @@ mod tests {
     }
 
     #[test]
+    fn a_users_xdg_data_dirs_without_usr_share_comes_back_as_it_was() {
+        let mut vars = image_env(&[]);
+        vars.retain(|(n, _)| n != "XDG_DATA_DIRS");
+        // The hook's `/usr/share` always follows the image's folders, so the rest is the user's own value.
+        vars.push((
+            "XDG_DATA_DIRS".to_owned(),
+            format!(
+                "{APPDIR}/usr/share/:{APPDIR}/usr/share:/usr/share:/opt/share:/usr/local/share"
+            ),
+        ));
+
+        assert_eq!(
+            value(&after(&vars), "XDG_DATA_DIRS"),
+            Some("/opt/share:/usr/local/share")
+        );
+    }
+
+    #[test]
     fn a_folder_that_only_starts_like_the_image_is_kept() {
         let vars = image_env(&[("MANPATH", "/tmp/.mount_CerberAb12x/share/man")]);
 
