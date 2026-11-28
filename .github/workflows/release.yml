@@ -38,7 +38,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf zsh fish
 
       # v6.1.1 by commit. It installs the pnpm version package.json's packageManager names.
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115
